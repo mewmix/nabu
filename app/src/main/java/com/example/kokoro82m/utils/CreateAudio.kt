@@ -4,7 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
-import android.util.Log
+import com.example.kokoro82m.utils.DebugLogger
 
 fun createAudio(
     phonemes: String,
@@ -17,7 +17,7 @@ fun createAudio(
     val SAMPLE_RATE = 22050
 
     if (phonemes.length > MAX_PHONEME_LENGTH) {
-        Log.w("Kokoro", "Phonemes are too long, truncating to $MAX_PHONEME_LENGTH phonemes")
+        DebugLogger.log("Phonemes too long, truncating to $MAX_PHONEME_LENGTH")
     }
     val truncatedPhonemes = phonemes.take(MAX_PHONEME_LENGTH)
 
@@ -65,7 +65,7 @@ fun createAudioFromStyleVector(
     val SAMPLE_RATE = 22050
 
     if (phonemes.length > MAX_PHONEME_LENGTH) {
-        Log.w("Kokoro", "Phonemes are too long, truncating to $MAX_PHONEME_LENGTH phonemes")
+        DebugLogger.log("Phonemes too long, truncating to $MAX_PHONEME_LENGTH")
     }
     val truncatedPhonemes = phonemes.take(MAX_PHONEME_LENGTH)
 

@@ -1,14 +1,14 @@
 package com.example.kokoro82m
 
 import KokoroTheme
-import MixerScreen
 import com.example.kokoro82m.screens.BookScreen
 import com.example.kokoro82m.screens.CreationsScreen
+import com.example.kokoro82m.screens.SettingsScreen
+import com.example.kokoro82m.screens.MixerScreen
 import ai.onnxruntime.OrtSession
 import android.app.Application
 import android.content.Context
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -59,6 +59,8 @@ import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.createAudio
 import com.example.kokoro82m.utils.playAudio
 import com.example.kokoro82m.utils.saveAudio
+import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.DebugLogger
 import com.google.android.material.color.DynamicColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -134,7 +136,7 @@ private fun generateAudio(
     scope.launch(Dispatchers.IO) {
         try {
             val phonemes = phonemeConverter.phonemize(text)
-            Log.d("Kokoro", "Phonemes: $phonemes")
+            DebugLogger.log("Phonemes: $phonemes")
             withContext(Dispatchers.Main) {
                 Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
             }
@@ -153,10 +155,8 @@ private fun generateAudio(
             if (shouldSave) {
                 saveAudio(audioData, context)
             }
-
-            session.close()
         } catch (e: Exception) {
-            Log.e("Kokoro", "Error: ${e.message}")
+            DebugLogger.log("Error: ${e.message}")
             withContext(Dispatchers.Main) {
                 Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -170,9 +170,10 @@ private fun generateAudio(
 
 sealed class Screen(val title: String) {
     object Basic : Screen("Basic TTS")
-    object MixerDemo : Screen("Mixer Demo")
+    object Mixer : Screen("Mixer")
     object Book : Screen("Audio Book")
     object Creations : Screen("Creations")
+    object Settings : Screen("Settings")
     object About : Screen("About this app")
 }
 
@@ -201,10 +202,10 @@ fun MainScreen(
                     onClick = { currentScreen = Screen.Basic }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Info, contentDescription = "Demo") },
-                    label = { Text("Demo") },
-                    selected = currentScreen == Screen.MixerDemo,
-                    onClick = { currentScreen = Screen.MixerDemo }
+                    icon = { Icon(Icons.Default.Info, contentDescription = "Mixer") },
+                    label = { Text("Mixer") },
+                    selected = currentScreen == Screen.Mixer,
+                    onClick = { currentScreen = Screen.Mixer }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Info, contentDescription = "Book") },
@@ -219,6 +220,12 @@ fun MainScreen(
                     onClick = { currentScreen = Screen.Creations }
                 )
                 NavigationBarItem(
+                    icon = { Icon(Icons.Default.Info, contentDescription = "Settings") },
+                    label = { Text("Settings") },
+                    selected = currentScreen == Screen.Settings,
+                    onClick = { currentScreen = Screen.Settings }
+                )
+                NavigationBarItem(
                     icon = { Icon(Icons.Default.Info, contentDescription = "About") },
                     label = { Text("About") },
                     selected = currentScreen == Screen.About,
@@ -230,7 +237,7 @@ fun MainScreen(
         Box(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
                 Screen.Basic -> BasicScreen(session = session, onGenerateAudio)
-                Screen.MixerDemo -> MixerScreen(
+                Screen.Mixer -> MixerScreen(
                     session = session,
                     phonemeConverter = phonemeConverter,
                     styleLoader = StyleLoader(LocalContext.current)
@@ -240,6 +247,7 @@ fun MainScreen(
                     phonemeConverter = phonemeConverter
                 )
                 Screen.Creations -> CreationsScreen()
+                Screen.Settings -> SettingsScreen()
                 Screen.About -> AboutScreen()
             }
         }
@@ -252,9 +260,10 @@ fun BasicScreen(
     session: OrtSession,
     onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit
 ) {
+    val context = LocalContext.current
     var text by remember { mutableStateOf("This is her warm heart, her warmest kokoro, unwavering love and comfort.") }
-    var style by remember { mutableStateOf("af_sarah") }
-    var speed by remember { mutableFloatStateOf(1.0f) }
+    var style by remember { mutableStateOf(SettingsManager.getStyle(context)) }
+    var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
 
@@ -298,7 +307,10 @@ fun BasicScreen(
         ) {
             TextField(
                 value = style,
-                onValueChange = { style = it },
+                onValueChange = {
+                    style = it
+                    SettingsManager.setStyle(context, it)
+                },
                 label = { Text("Style") },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -318,6 +330,7 @@ fun BasicScreen(
                         text = { Text(name) },
                         onClick = {
                             style = name
+                            SettingsManager.setStyle(context, name)
                             expanded = false
                         }
                     )
@@ -328,7 +341,10 @@ fun BasicScreen(
         Text("Speed: $speed")
         Slider(
             value = speed,
-            onValueChange = { speed = it },
+            onValueChange = {
+                speed = it
+                SettingsManager.setSpeed(context, it)
+            },
             valueRange = 0.5f..2.0f,
             steps = 5,
             modifier = Modifier.fillMaxWidth()
@@ -372,6 +388,11 @@ fun BasicScreen(
             ) {
                 Text(if (isProcessing) "GPU Processing..." else "Play & Save")
             }
+        }
+
+        if (SettingsManager.isDebug(context)) {
+            val logs = DebugLogger.getLogs().joinToString("\n")
+            Text(logs, modifier = Modifier.fillMaxWidth())
         }
     }
 }

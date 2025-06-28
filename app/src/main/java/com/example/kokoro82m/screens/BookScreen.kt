@@ -47,7 +47,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
-import android.util.Log
 import com.example.kokoro82m.utils.AudioPlayer
 import com.example.kokoro82m.utils.InterpolationMode
 import com.example.kokoro82m.utils.PhonemeConverter
@@ -55,6 +54,8 @@ import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.createAudioFromStyleVector
 import com.example.kokoro82m.utils.mixStyles
 import com.example.kokoro82m.utils.saveAudio
+import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -77,7 +78,7 @@ fun BookScreen(
     var selectedStyles by remember { mutableStateOf(listOf("af_sarah")) }
     var weights by remember { mutableStateOf(mapOf("af_sarah" to 1f)) }
     var interpolationMode by remember { mutableStateOf(InterpolationMode.LINEAR) }
-    var speed by remember { mutableFloatStateOf(1.0f) }
+    var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var debugMessage by remember { mutableStateOf<String?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
@@ -126,7 +127,10 @@ fun BookScreen(
         Text("Speed: $speed")
         Slider(
             value = speed,
-            onValueChange = { speed = it },
+            onValueChange = {
+                speed = it
+                SettingsManager.setSpeed(context, it)
+            },
             valueRange = 0.5f..2.0f,
             steps = 5,
             modifier = Modifier.fillMaxWidth()
@@ -228,6 +232,11 @@ fun BookScreen(
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
+
+        if (SettingsManager.isDebug(context)) {
+            val logs = DebugLogger.getLogs().joinToString("\n")
+            Text(logs, modifier = Modifier.padding(top = 8.dp))
+        }
     }
 }
 
@@ -269,7 +278,7 @@ private fun playBook(
             onLineChanged(-1)
             withContext(Dispatchers.Main) { onFinished() }
         } catch (e: Exception) {
-            Log.e("Kokoro", "playBook failed: ${e.localizedMessage}")
+            DebugLogger.log("playBook failed: ${e.localizedMessage}")
         }
     }
 }
