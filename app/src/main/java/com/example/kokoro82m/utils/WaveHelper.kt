@@ -17,7 +17,7 @@ import java.util.Locale
 fun saveAudio(audioData: FloatArray, context: Context, name: String) {
     val sampleRate = 22050
 
-    val safeName = name.replace(Regex("[^a-zA-Z0-9_\-]"), "_")
+    val safeName = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 
     val contentValues = ContentValues().apply {
