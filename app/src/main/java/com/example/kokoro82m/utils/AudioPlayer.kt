@@ -74,10 +74,10 @@ class AudioPlayer(
             DebugLogger.log("AudioPlayer start play")
             currentState = PlayerState.PLAYING
             track.play()
-            while (position < data.size && currentState == PlayerState.PLAYING) {
-                val written = track.write(data, position, data.size - position)
-                if (written <= 0) break
-                position += written
+            track.write(data, 0, data.size)
+            // Wait for playback to complete if not paused
+            while (track.playbackHeadPosition < data.size / 2 && currentState == PlayerState.PLAYING) {
+                kotlinx.coroutines.delay(10) // Small delay to prevent busy-waiting
             }
             if (currentState != PlayerState.PAUSED) {
                 stop()
@@ -98,10 +98,10 @@ class AudioPlayer(
             DebugLogger.log("AudioPlayer start play blocking")
             currentState = PlayerState.PLAYING
             track.play()
-            while (position < data.size && currentState == PlayerState.PLAYING && coroutineContext.isActive) {
-                val written = track.write(data, position, data.size - position)
-                if (written <= 0) break
-                position += written
+            track.write(data, 0, data.size)
+            // Wait for playback to complete if not paused
+            while (track.playbackHeadPosition < data.size / 2 && currentState == PlayerState.PLAYING && coroutineContext.isActive) {
+                kotlinx.coroutines.delay(10) // Small delay to prevent busy-waiting
             }
             if (currentState != PlayerState.PAUSED) {
                 stop()

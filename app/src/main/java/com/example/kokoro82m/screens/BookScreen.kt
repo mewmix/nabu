@@ -26,6 +26,7 @@ import com.example.kokoro82m.viewmodel.BookViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -56,6 +57,7 @@ fun BookScreen(
     var interpolationMode by remember { mutableStateOf(InterpolationMode.LINEAR) }
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var debugMessage by remember { mutableStateOf<String?>(null) }
+    var isProcessing by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -170,32 +172,28 @@ fun BookScreen(
                     onClick = {
                         if (playerState == PlayerState.PLAYING) {
                             bookViewModel.audioPlayer.pause()
-                            playJob?.cancel()
                         } else {
-                            if (playerState == PlayerState.PAUSED) {
-                                bookViewModel.audioPlayer.play()
-                            } else {
-                                playJob = playBook(
-                                    scope = scope,
-                                    session = session,
-                                    phonemeConverter = phonemeConverter,
-                                    styleLoader = styleLoader,
-                                    selectedStyles = selectedStyles,
-                                    weights = weights,
-                                    mode = interpolationMode,
-                                    speed = speed,
-                                    lines = lines,
-                                    startLine = currentLine.coerceAtLeast(0),
-                                    bookUri = bookUri,
-                                    audioPlayer = bookViewModel.audioPlayer,
-                                    context = context,
-                                    onLineChanged = { bookViewModel.setCurrentLine(it) },
-                                    onFinished = {
-                                        bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
-                                        bookmarkLine = -1
-                                    }
-                                )
-                            }
+                            playJob?.cancel()
+                            playJob = playBook(
+                                scope = scope,
+                                session = session,
+                                phonemeConverter = phonemeConverter,
+                                styleLoader = styleLoader,
+                                selectedStyles = selectedStyles,
+                                weights = weights,
+                                mode = interpolationMode,
+                                speed = speed,
+                                lines = lines,
+                                startLine = currentLine.coerceAtLeast(0),
+                                bookUri = bookUri,
+                                audioPlayer = bookViewModel.audioPlayer,
+                                context = context,
+                                onLineChanged = { bookViewModel.setCurrentLine(it) },
+                                onFinished = {
+                                    bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
+                                    bookmarkLine = -1
+                                }
+                            )
                         }
                     },
                     enabled = lines.isNotEmpty(),
@@ -221,6 +219,7 @@ fun BookScreen(
                 }
                 Button(
                     onClick = {
+                        isProcessing = true
                         scope.launch(Dispatchers.IO) {
                             try {
                                 debugMessage = null
@@ -247,13 +246,17 @@ fun BookScreen(
                                 withContext(Dispatchers.Main) {
                                     debugMessage = e.localizedMessage
                                 }
+                            } finally {
+                                withContext(Dispatchers.Main) {
+                                    isProcessing = false
+                                }
                             }
                         }
                     },
-                    enabled = lines.isNotEmpty(),
+                    enabled = lines.isNotEmpty() && !isProcessing,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Save")
+                    Text(if (isProcessing) "Saving..." else "Save")
                 }
             }
         }
@@ -265,6 +268,7 @@ fun BookScreen(
                     .fillMaxWidth()
                     .clickable {
                         bookViewModel.setCurrentLine(index)
+                        playJob?.cancel() // Stop any existing playback
                         playJob = playBook(
                             scope = scope,
                             session = session,
@@ -310,6 +314,29 @@ fun BookScreen(
     }
 }
 
+private suspend fun playAudio(
+    line: String,
+    styleVector: Array<FloatArray>,
+    speed: Float,
+    session: OrtSession,
+    phonemeConverter: PhonemeConverter,
+    audioPlayer: AudioPlayer
+) {
+    try {
+        val phonemes = phonemeConverter.phonemize(line)
+        val (audio, _) = createAudioFromStyleVector(
+            phonemes = phonemes,
+            voice = styleVector,
+            speed = speed,
+            session = session
+        )
+        audioPlayer.prepare(audio)
+        audioPlayer.playBlocking()
+    } catch (e: Exception) {
+        DebugLogger.log("playAudio failed: ${e.localizedMessage}")
+    }
+}
+
 private fun playBook(
     scope: CoroutineScope,
     session: OrtSession,
@@ -337,33 +364,42 @@ private fun playBook(
                 mode = mode
             )
             for (index in startLine until lines.size) {
-                if (audioPlayer.getState() == PlayerState.IDLE) {
+                if (!isActive) {
                     completed = false
                     break
                 }
+
                 withContext(Dispatchers.Main) {
                     onLineChanged(index)
                 }
                 bookUri?.let { BookmarkManager.save(context, it.toString(), index) }
                 val line = lines[index]
-                val phonemes = phonemeConverter.phonemize(line)
-                val (audio, _) = createAudioFromStyleVector(
-                    phonemes = phonemes,
-                    voice = mixedVector,
+
+                playAudio(
+                    line = line,
+                    styleVector = mixedVector,
                     speed = speed,
-                    session = session
+                    session = session,
+                    phonemeConverter = phonemeConverter,
+                    audioPlayer = audioPlayer
                 )
-                audioPlayer.prepare(audio)
-                audioPlayer.playBlocking()
+
+                if (audioPlayer.getState() == PlayerState.PAUSED) {
+                    completed = false
+                    break
+                }
             }
         } catch (e: Exception) {
             completed = false
             DebugLogger.log("playBook failed: ${e.localizedMessage}")
         } finally {
             withContext(Dispatchers.Main) {
-                onLineChanged(-1)
-                if (completed) {
-                    onFinished()
+                if (audioPlayer.getState() != PlayerState.PAUSED) {
+                    onLineChanged(-1)
+                    if (completed) {
+                        onFinished()
+                    }
+                    audioPlayer.stop()
                 }
             }
         }
