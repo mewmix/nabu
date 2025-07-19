@@ -156,7 +156,7 @@ private fun generateAudio(
             )
 
             if (shouldSave) {
-                saveAudio(audioData, context)
+                saveAudio(audioData, context, style)
             }
         } catch (e: Exception) {
             DebugLogger.log("Error: ${e.message}")

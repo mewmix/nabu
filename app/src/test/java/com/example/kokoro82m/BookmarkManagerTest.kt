@@ -1,4 +1,5 @@
 import android.content.Context
+import com.example.kokoro82m.utils.Bookmark
 import com.example.kokoro82m.utils.BookmarkManager
 import com.example.kokoro82m.utils.DatabaseManager
 import org.junit.Assert.assertEquals
@@ -12,16 +13,17 @@ class BookmarkManagerTest {
     @Test
     fun saveLoadAndClearBookmark() {
         val uri = "sample"
+        val bookmark = Bookmark(5, 100)
         mockStatic(DatabaseManager::class.java).use { db ->
-            db.`when`<Int?> { DatabaseManager.getBookmark(context, uri) }.thenReturn(5)
-            BookmarkManager.save(context, uri, 5)
-            db.verify { DatabaseManager.setBookmark(context, uri, 5) }
-            assertEquals(5, BookmarkManager.load(context, uri))
+            db.`when`<Bookmark?> { DatabaseManager.getBookmark(context, uri) }.thenReturn(bookmark)
+            BookmarkManager.save(context, uri, 5, 100)
+            db.verify { DatabaseManager.setBookmark(context, uri, 5, 100) }
+            assertEquals(bookmark, BookmarkManager.load(context, uri))
 
-            db.`when`<Int?> { DatabaseManager.getBookmark(context, uri) }.thenReturn(null)
+            db.`when`<Bookmark?> { DatabaseManager.getBookmark(context, uri) }.thenReturn(null)
             BookmarkManager.clear(context, uri)
             db.verify { DatabaseManager.clearBookmark(context, uri) }
-            assertEquals(-1, BookmarkManager.load(context, uri))
+            assertEquals(null, BookmarkManager.load(context, uri))
         }
     }
 }

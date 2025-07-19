@@ -10,20 +10,19 @@ class DatabaseHelper private constructor(context: Context) :
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT)")
-        db.execSQL("CREATE TABLE IF NOT EXISTS bookmarks(uri TEXT PRIMARY KEY, line INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS bookmarks(uri TEXT PRIMARY KEY, line INTEGER, position INTEGER)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion != newVersion) {
-            db.execSQL("DROP TABLE IF EXISTS settings")
+        if (oldVersion < 2) {
             db.execSQL("DROP TABLE IF EXISTS bookmarks")
-            onCreate(db)
+            db.execSQL("CREATE TABLE IF NOT EXISTS bookmarks(uri TEXT PRIMARY KEY, line INTEGER, position INTEGER)")
         }
     }
 
     companion object {
         private const val DATABASE_NAME = "app.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         @Volatile private var instance: DatabaseHelper? = null
 
@@ -59,22 +58,25 @@ object DatabaseManager {
         return default
     }
 
-    fun setBookmark(context: Context, uri: String, line: Int) {
+    fun setBookmark(context: Context, uri: String, line: Int, position: Int) {
         val values = ContentValues().apply {
             put("uri", uri)
             put("line", line)
+            put("position", position)
         }
         helper(context).writableDatabase.insertWithOnConflict(
             "bookmarks", null, values, SQLiteDatabase.CONFLICT_REPLACE
         )
     }
 
-    fun getBookmark(context: Context, uri: String): Int? {
+    fun getBookmark(context: Context, uri: String): Bookmark? {
         val db = helper(context).readableDatabase
-        db.query("bookmarks", arrayOf("line"), "uri=?", arrayOf(uri), null, null, null)
+        db.query("bookmarks", arrayOf("line", "position"), "uri=?", arrayOf(uri), null, null, null)
             .use { cursor ->
                 if (cursor.moveToFirst()) {
-                    return cursor.getInt(0)
+                    val line = cursor.getInt(0)
+                    val position = cursor.getInt(1)
+                    return Bookmark(line, position)
                 }
             }
         return null
@@ -84,3 +86,4 @@ object DatabaseManager {
         helper(context).writableDatabase.delete("bookmarks", "uri=?", arrayOf(uri))
     }
 }
+

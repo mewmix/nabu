@@ -8,6 +8,9 @@ import com.example.kokoro82m.utils.DebugLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
+import kotlin.coroutines.coroutineContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -26,8 +29,8 @@ class AudioPlayer(
 
     private val sampleRate = 22050
 
-    fun prepare(audio: FloatArray) {
-        DebugLogger.log("AudioPlayer prepare length=${audio.size}")
+    fun prepare(audio: FloatArray, position: Int = 0) {
+        DebugLogger.log("AudioPlayer prepare length=${audio.size}, position=$position")
         release() // Release any existing track
         val channelConfig = AudioFormat.CHANNEL_OUT_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
@@ -55,7 +58,7 @@ class AudioPlayer(
             shortBuffer.put(pcmValue)
         }
         pcmData = byteBuffer.array()
-        position = 0
+        this.position = position
     }
 
     fun play() {
@@ -68,13 +71,37 @@ class AudioPlayer(
         }
 
         scope.launch(Dispatchers.IO) {
-            DebugLogger.log("AudioPlayer start play")
+            DebugLogger.log("AudioPlayer start play from position $position")
             currentState = PlayerState.PLAYING
             track.play()
-            while (position < data.size && currentState == PlayerState.PLAYING) {
-                val written = track.write(data, position, data.size - position)
-                if (written <= 0) break
-                position += written
+            track.write(data, position, data.size - position)
+            // Wait for playback to complete if not paused
+            while (track.playbackHeadPosition < (data.size - position) / 2 && currentState == PlayerState.PLAYING) {
+                kotlinx.coroutines.delay(10) // Small delay to prevent busy-waiting
+            }
+            if (currentState != PlayerState.PAUSED) {
+                stop()
+            }
+        }
+    }
+
+    suspend fun playBlocking() {
+        val track = audioTrack ?: return
+        val data = pcmData ?: return
+
+        if (currentState == PlayerState.PAUSED) {
+            resume()
+            return
+        }
+
+        withContext(Dispatchers.IO) {
+            DebugLogger.log("AudioPlayer start play blocking from position $position")
+            currentState = PlayerState.PLAYING
+            track.play()
+            track.write(data, position, data.size - position)
+            // Wait for playback to complete if not paused
+            while (track.playbackHeadPosition < (data.size - position) / 2 && currentState == PlayerState.PLAYING && coroutineContext.isActive) {
+                kotlinx.coroutines.delay(10) // Small delay to prevent busy-waiting
             }
             if (currentState != PlayerState.PAUSED) {
                 stop()
@@ -84,17 +111,18 @@ class AudioPlayer(
 
     fun pause() {
         if (currentState == PlayerState.PLAYING) {
+            position += audioTrack?.playbackHeadPosition ?: 0
             audioTrack?.pause()
             currentState = PlayerState.PAUSED
-            DebugLogger.log("AudioPlayer pause")
+            DebugLogger.log("AudioPlayer pause at $position")
         }
     }
 
     private fun resume() {
         if (currentState == PlayerState.PAUSED) {
+            DebugLogger.log("AudioPlayer resume from $position")
             audioTrack?.play()
             currentState = PlayerState.PLAYING
-            DebugLogger.log("AudioPlayer resume")
         }
     }
 
@@ -115,4 +143,13 @@ class AudioPlayer(
     }
 
     fun isPlaying(): Boolean = currentState == PlayerState.PLAYING
+
+    fun getState(): PlayerState = currentState
+
+    fun getPosition(): Int {
+        if (currentState == PlayerState.PLAYING) {
+            return position + (audioTrack?.playbackHeadPosition ?: 0)
+        }
+        return position
+    }
 }

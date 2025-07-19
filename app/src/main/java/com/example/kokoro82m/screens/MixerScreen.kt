@@ -49,6 +49,7 @@ import com.example.kokoro82m.utils.playAudio
 import com.example.kokoro82m.utils.saveAudio
 import com.example.kokoro82m.utils.SettingsManager
 import com.example.kokoro82m.utils.DebugLogger
+import com.example.kokoro82m.utils.buildStyleFileName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -148,7 +149,17 @@ fun MixerScreen(
                     isProcessing = true
                     scope.launch {
                         val mixed = mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
-                        generateAudio(text, mixed, speed, shouldSaveFile, session, phonemeConverter, scope, context) {
+                        generateAudio(
+                            text,
+                            mixed,
+                            speed,
+                            shouldSaveFile,
+                            null,
+                            session,
+                            phonemeConverter,
+                            scope,
+                            context
+                        ) {
                             isProcessing = false
                         }
                     }
@@ -163,7 +174,18 @@ fun MixerScreen(
                     isProcessing = true
                     scope.launch {
                         val mixed = mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
-                        generateAudio(text, mixed, speed, shouldSaveFile, session, phonemeConverter, scope, context) {
+                        val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
+                        generateAudio(
+                            text,
+                            mixed,
+                            speed,
+                            shouldSaveFile,
+                            fileName,
+                            session,
+                            phonemeConverter,
+                            scope,
+                            context
+                        ) {
                             isProcessing = false
                         }
                     }
@@ -201,6 +223,7 @@ private fun generateAudio(
     style: Array<FloatArray>,
     speed: Float,
     shouldSaveFile: Boolean,
+    fileName: String?,
     session: OrtSession,
     phonemeConverter: PhonemeConverter,
     scope: kotlinx.coroutines.CoroutineScope,
@@ -216,8 +239,8 @@ private fun generateAudio(
                 speed = speed,
                 session = session
             )
-            if (shouldSaveFile) {
-                saveAudio(audio, context)
+            if (shouldSaveFile && fileName != null) {
+                saveAudio(audio, context, fileName)
             }
             playAudio(audio, scope) {}
         } catch (e: Exception) {
@@ -241,6 +264,7 @@ private fun saveStyleConfig(
         .putString("mode", mode.name)
         .apply()
 }
+
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class,
     ExperimentalMaterial3Api::class

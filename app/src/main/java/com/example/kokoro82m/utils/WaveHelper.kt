@@ -14,14 +14,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-fun saveAudio(audioData: FloatArray, context: Context) {
+fun saveAudio(audioData: FloatArray, context: Context, name: String) {
     val sampleRate = 22050
 
-
+    val safeName = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 
     val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, "KOKORO_$timeStamp.wav")
+        put(MediaStore.MediaColumns.DISPLAY_NAME, "${safeName}_$timeStamp.wav")
         put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
         put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
     }
