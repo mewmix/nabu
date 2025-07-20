@@ -6,6 +6,8 @@ import com.example.kokoro82m.screens.CreationsScreen
 import com.example.kokoro82m.screens.SettingsScreen
 import com.example.kokoro82m.screens.MixerScreen
 import com.example.kokoro82m.screens.MoreScreen
+import com.example.kokoro.ui.ChatScreen
+import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
 import android.content.Context
@@ -145,10 +147,15 @@ private fun generateAudio(
             }
 
 
-            val (audioData, sampleRate) = createAudio(
-                voice = style, phonemes = phonemes, speed = speed, context = context,
-                session = session
-            )
+            val (audioData, sampleRate) = PerfHud.record("ONNX synth") {
+                createAudio(
+                    voice = style,
+                    phonemes = phonemes,
+                    speed = speed,
+                    context = context,
+                    session = session
+                )
+            }
 
             playAudio(
                 audioData, scope,
@@ -175,6 +182,7 @@ sealed class Screen(val title: String) {
     object Basic : Screen("Basic TTS")
     object Mixer : Screen("Mixer")
     object Book : Screen("Audio Book")
+    object Chat : Screen("Chat")
     object More : Screen("More")
     object Creations : Screen("Creations")
     object Settings : Screen("Settings")
@@ -189,12 +197,16 @@ fun MainScreen(
     onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Basic) }
+    var hudEnabled by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(currentScreen.title) }
+                title = { Text(currentScreen.title) },
+                actions = {
+                    Switch(checked = hudEnabled, onCheckedChange = { hudEnabled = it })
+                }
             )
         },
         bottomBar = {
@@ -216,6 +228,12 @@ fun MainScreen(
                     label = { Text("Book") },
                     selected = currentScreen == Screen.Book,
                     onClick = { currentScreen = Screen.Book }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Info, contentDescription = "Chat") },
+                    label = { Text("Chat") },
+                    selected = currentScreen == Screen.Chat,
+                    onClick = { currentScreen = Screen.Chat }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Info, contentDescription = "About") },
@@ -244,6 +262,7 @@ fun MainScreen(
                     session = session,
                     phonemeConverter = phonemeConverter
                 )
+                Screen.Chat -> ChatScreen(LocalContext.current, hudEnabled)
                 Screen.More -> MoreScreen { screen ->
                     currentScreen = when (screen) {
                         "Creations" -> Screen.Creations
