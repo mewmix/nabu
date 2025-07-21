@@ -58,6 +58,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.kokoro82m.data.UserPreferencesRepository
 import com.example.kokoro82m.screens.Acknowledgements
 import com.example.kokoro82m.utils.MainViewModel
 import com.example.kokoro82m.utils.PhonemeConverter
@@ -85,11 +86,13 @@ class MyApplication : Application() {
 class MainActivity : ComponentActivity() {
     private lateinit var phonemeConverter: PhonemeConverter
     private val scope = MainScope()
+    private lateinit var userPreferencesRepository: UserPreferencesRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
         enableEdgeToEdge()
+        userPreferencesRepository = UserPreferencesRepository(this)
 
         setContent {
             KokoroTheme {
@@ -115,7 +118,8 @@ class MainActivity : ComponentActivity() {
                             shouldSave,
                             onComplete
                         )
-                    }
+                    },
+                    userPreferencesRepository = userPreferencesRepository
                 )
             }
         }
@@ -197,7 +201,8 @@ sealed class Screen(val title: String) {
 fun MainScreen(
     session: OrtSession,
     phonemeConverter: PhonemeConverter,
-    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit
+    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
+    userPreferencesRepository: UserPreferencesRepository
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Basic) }
     var hudEnabled by remember { mutableStateOf(false) }
@@ -279,7 +284,7 @@ fun MainScreen(
                 Screen.Creations -> CreationsScreen()
                 Screen.Settings -> SettingsScreen()
                 Screen.About -> AboutScreen()
-                Screen.Models -> ModelsScreen()
+                Screen.Models -> ModelsScreen(userPreferencesRepository)
             }
         }
     }

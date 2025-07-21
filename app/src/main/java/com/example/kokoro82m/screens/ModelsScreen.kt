@@ -14,28 +14,41 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.kokoro82m.data.Model
 import com.example.kokoro82m.data.ModelDownloader
 import com.example.kokoro82m.data.ModelManager
+import com.example.kokoro82m.data.UserPreferencesRepository
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ModelsScreen() {
+fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
     val context = LocalContext.current
     val modelManager = remember { ModelManager(context) }
-    val modelDownloader = remember { ModelDownloader(context) }
+    val modelDownloader = remember { ModelDownloader(context, userPreferencesRepository) }
     val models = modelManager.models
+    val scope = rememberCoroutineScope()
 
     var showDialog by remember { mutableStateOf(false) }
     var selectedModel by remember { mutableStateOf<Model?>(null) }
     var hfToken by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        userPreferencesRepository.hfToken.collect { token ->
+            if (token != null) {
+                hfToken = token
+            }
+        }
+    }
 
     if (showDialog) {
         AlertDialog(
@@ -46,7 +59,12 @@ fun ModelsScreen() {
                     Text("This model is gated. Please enter your Hugging Face token to download.")
                     TextField(
                         value = hfToken,
-                        onValueChange = { hfToken = it },
+                        onValueChange = {
+                            hfToken = it
+                            scope.launch {
+                                userPreferencesRepository.saveHfToken(it)
+                            }
+                        },
                         label = { Text("Token") }
                     )
                 }
@@ -55,7 +73,7 @@ fun ModelsScreen() {
                 Button(
                     onClick = {
                         selectedModel?.let {
-                            modelDownloader.downloadModel(it, hfToken)
+                            modelDownloader.downloadModel(it)
                         }
                         showDialog = false
                     }
