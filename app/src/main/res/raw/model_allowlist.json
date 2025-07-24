@@ -3,7 +3,7 @@
     "name": "Gemma 3n IT 4B",
     "description": "Gemma 3n Instruct 4B parameter model",
     "repo": "google/gemma-3n-E4B-it-int4",
-    "downloadUrl": "https://huggingface.co/google/gemma-3n-E4B-it-int4/resolve/main/model.task",
+    "downloadUrl": "https://huggingface.co/google/gemma-3n-E4B-it-litert-preview/resolve/main/gemma-3n-E4B-it-int4.task",
     "gated": true
   }
 }
