@@ -44,8 +44,10 @@ object OnnxRuntimeManager {
 
     @Synchronized
     fun reinitialize(context: Context, modelPath: String) {
-        session?.close()
-        initialize(context, modelPath)
+        if (modelPath.endsWith(".onnx")) {
+            session?.close()
+            initialize(context, modelPath)
+        }
     }
 
     private fun createSession(context: Context): OrtSession {
