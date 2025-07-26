@@ -7,7 +7,6 @@ import com.example.kokoro82m.screens.SettingsScreen
 import com.example.kokoro82m.screens.MixerScreen
 import com.example.kokoro82m.screens.MoreScreen
 import com.example.kokoro82m.screens.ModelsScreen
-import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
 import android.content.Context
@@ -153,15 +152,13 @@ private fun generateAudio(
             }
 
 
-            val (audioData, sampleRate) = PerfHud.record("ONNX synth") {
-                createAudio(
-                    voice = style,
-                    phonemes = phonemes,
-                    speed = speed,
-                    context = context,
-                    session = session
-                )
-            }
+            val (audioData, sampleRate) = createAudio(
+                voice = style,
+                phonemes = phonemes,
+                speed = speed,
+                context = context,
+                session = session
+            )
 
             playAudio(
                 audioData, scope,
@@ -205,7 +202,6 @@ fun MainScreen(
     userPreferencesRepository: UserPreferencesRepository
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Basic) }
-    var hudEnabled by remember { mutableState of(false) }
     val context = LocalContext.current
     val viewModel: MainViewModel = viewModel { MainViewModel(context) }
 
@@ -214,9 +210,6 @@ fun MainScreen(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text(currentScreen.title) },
-                actions = {
-                    Switch(checked = hudEnabled, onCheckedChange = { checked -> hudEnabled = checked })
-                }
             )
         },
         bottomBar = {

@@ -9,14 +9,18 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.kokoro.chat.ChatScreen
 import com.example.kokoro.chat.ChatViewModel
 import com.example.kokoro.chat.LlmInference
+import java.io.File
 
 class ChatActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val modelId = "gemma-3n-E4B-it-int4"
+        val modelFile = File(filesDir, "models/$modelId.task")
+
         val llmInference = LlmInference(
             context = applicationContext,
-            modelPath = LlmInference.getModelFile(applicationContext, "gemma-2b-it-cpu-int4.bin").absolutePath
+            modelPath = modelFile.absolutePath
         )
         llmInference.initialize()
 
@@ -29,7 +33,10 @@ class ChatActivity : ComponentActivity() {
         }
 
         setContent {
-            ChatScreen(viewModel = viewModel)
+            ChatScreen(
+                viewModel = viewModel,
+                onBackPressed = { finish() }
+            )
         }
     }
 }

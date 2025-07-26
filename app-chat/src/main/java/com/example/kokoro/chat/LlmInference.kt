@@ -5,6 +5,13 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
 import java.io.File
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.FileOutputStream
+
 class LlmInference(
     private val context: Context,
     private val modelPath: String
@@ -32,15 +39,4 @@ class LlmInference(
         llmInference?.close()
     }
 
-    companion object {
-        fun getModelFile(context: Context, modelName: String): File {
-            val modelFile = File(context.cacheDir, modelName)
-            if (!modelFile.exists()) {
-                // In a real app, you would download the model here.
-                // For this example, we'll just create an empty file.
-                modelFile.createNewFile()
-            }
-            return modelFile
-        }
-    }
 }
