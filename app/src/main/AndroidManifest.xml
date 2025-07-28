@@ -40,6 +40,13 @@
             android:forceDarkAllowed="true"
             android:configChanges="uiMode">
         </activity>
+        <activity
+            android:name=".ChatTtsActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme"
+            android:forceDarkAllowed="true"
+            android:configChanges="uiMode">
+        </activity>
     </application>
 
 </manifest>

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -188,7 +189,8 @@ sealed class Screen(val title: String) {
     object Basic : Screen("Basic TTS")
     object Mixer : Screen("Mixer")
     object Book : Screen("Audio Book")
-    object Chat : Screen("Chat")
+    object Chat : Screen("Chat") // Existing Chat (for ChatActivity)
+    object ChatTts : Screen("Chat TTS") // New screen state for ChatTtsActivity if needed for selection
     object More : Screen("More")
     object Creations : Screen("Creations")
     object Settings : Screen("Settings")
@@ -240,13 +242,27 @@ fun MainScreen(
                     onClick = { currentScreen = Screen.Book }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Info, contentDescription = "Chat") },
+                    icon = { Icon(Icons.Default.Info, contentDescription = "Chat") }, // Existing Chat
                     label = { Text("Chat") },
-                    selected = currentScreen == Screen.Chat,
+                    selected = currentScreen == Screen.Chat, // This might not highlight correctly if always launching an activity
                     onClick = {
                         context.startActivity(Intent(context, ChatActivity::class.java))
+                        // Optionally set currentScreen if you want to try and reflect selection,
+                        // but launching a new activity makes this tricky.
+                        // currentScreen = Screen.Chat
                     }
                 )
+                // START --- New NavigationBarItem for ChatTtsActivity ---
+                NavigationBarItem(
+                    icon = { Icon(Icons.Filled.RecordVoiceOver, contentDescription = "Chat TTS") }, // Example new icon
+                    label = { Text("Chat TTS") },
+                    selected = currentScreen == Screen.ChatTts, // For selection state
+                    onClick = {
+                        context.startActivity(Intent(context, ChatTtsActivity::class.java))
+                        // currentScreen = Screen.ChatTts // If you want to try and reflect selection
+                    }
+                )
+                // END --- New NavigationBarItem for ChatTtsActivity ---
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Info, contentDescription = "About") },
                     label = { Text("About") },
@@ -275,7 +291,11 @@ fun MainScreen(
                     phonemeConverter = phonemeConverter
                 )
                 Screen.Chat -> {
-                    // No-op, handled by onClick
+                    // No-op, handled by onClick which starts ChatActivity
+                }
+                Screen.ChatTts -> {
+                    // No-op, handled by onClick which starts ChatTtsActivity
+                    // This case is primarily for the 'selected' state of the NavigationBarItem
                 }
                 Screen.More -> MoreScreen { screen ->
                     currentScreen = when (screen) {
