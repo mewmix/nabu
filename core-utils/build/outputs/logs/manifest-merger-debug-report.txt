@@ -1,0 +1,16 @@
+-- Merging decision tree log ---
+manifest
+ADDED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml:2:13-83
+INJECTED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml:2:13-83
+	package
+		INJECTED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml
+	xmlns:android
+		ADDED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml:2:23-81
+uses-sdk
+INJECTED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml reason: use-sdk injection requested
+INJECTED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml
+INJECTED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml
+	android:targetSdkVersion
+		INJECTED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml
+	android:minSdkVersion
+		INJECTED from C:\Users\AKlein.APR1\Kokoro-82M-Android\core-utils\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest18098082512973526721.xml

@@ -2,7 +2,7 @@ package com.example.kokoro.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.kokoro82m.utils.DebugLogger
+import com.example.kokoro82m.utils.DebugLogger // This import will now resolve correctly
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

@@ -40,6 +40,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core-utils"))
     implementation("com.google.mediapipe:tasks-genai:0.10.24")
     implementation(platform("androidx.compose:compose-bom:2023.08.00"))
     implementation("androidx.compose.ui:ui")

@@ -31,3 +31,4 @@ rootProject.name = "kokoro82m"
 include(":app")
 include(":app-chat")
 include(":app-tts")
+include(":core-utils")
