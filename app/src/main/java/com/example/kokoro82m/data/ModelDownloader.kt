@@ -23,23 +23,38 @@ class ModelDownloader(
     fun downloadModel(model: Model) {
         scope.launch {
             val token = userPreferencesRepository.hfToken.first()
+            val modelDir = File(context.filesDir, "models")
+            if (!modelDir.exists()) modelDir.mkdirs()
+            val finalFile = File(modelDir, "${model.id}.task")
+            val tempFile = File(modelDir, "${model.id}.task.part")
+
+            if (finalFile.exists()) {
+                model.isDownloaded = true
+                model.hasPartial = false
+                return@launch
+            }
+
+            val existingSize = if (tempFile.exists()) tempFile.length() else 0L
+            model.hasPartial = existingSize > 0
+
             try {
                 val url = URL(model.downloadUrl)
                 val connection = url.openConnection() as HttpsURLConnection
                 token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                if (existingSize > 0) {
+                    connection.setRequestProperty("Range", "bytes=$existingSize-")
+                }
                 connection.connect()
 
-                val total = connection.contentLength
+                val contentLength = connection.getHeaderFieldInt("Content-Length", -1)
+                val total = if (contentLength > 0) contentLength + existingSize else -1
                 val input = connection.inputStream
 
-                val modelDir = File(context.filesDir, "models")
-                if (!modelDir.exists()) modelDir.mkdirs()
-                val destFile = File(modelDir, "${model.id}.task")
-                val output = FileOutputStream(destFile)
+                val output = FileOutputStream(tempFile, existingSize > 0)
 
                 val buffer = ByteArray(1024)
                 var bytesRead: Int
-                var downloaded = 0
+                var downloaded = existingSize
                 while (input.read(buffer).also { bytesRead = it } != -1) {
                     output.write(buffer, 0, bytesRead)
                     downloaded += bytesRead
@@ -51,8 +66,12 @@ class ModelDownloader(
 
                 output.close()
                 input.close()
+
+                tempFile.renameTo(finalFile)
                 model.isDownloaded = true
+                model.hasPartial = false
             } catch (_: Exception) {
+                model.hasPartial = tempFile.exists()
             } finally {
                 _progress.value = _progress.value.toMutableMap().apply { remove(model.id) }
             }

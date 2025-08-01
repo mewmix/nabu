@@ -7,5 +7,6 @@ data class Model(
     val repo: String,
     val downloadUrl: String,
     val gated: Boolean,
-    var isDownloaded: Boolean = false
+    var isDownloaded: Boolean = false,
+    var hasPartial: Boolean = false,
 )

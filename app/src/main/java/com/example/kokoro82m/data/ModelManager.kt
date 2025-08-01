@@ -26,8 +26,11 @@ class ModelManager(private val context: Context) {
                 downloadUrl = modelJson.getString("downloadUrl"),
                 gated = modelJson.optBoolean("gated", false)
             )
-            val modelFile = java.io.File(context.filesDir, "models/${model.id}.task")
+            val modelDir = java.io.File(context.filesDir, "models")
+            val modelFile = java.io.File(modelDir, "${model.id}.task")
+            val partialFile = java.io.File(modelDir, "${model.id}.task.part")
             model.isDownloaded = modelFile.exists()
+            model.hasPartial = !model.isDownloaded && partialFile.exists()
             modelList.add(model)
         }
         return modelList
@@ -35,5 +38,13 @@ class ModelManager(private val context: Context) {
 
     fun getModel(id: String): Model? {
         return models.find { it.id == id }
+    }
+
+    fun deleteModel(model: Model) {
+        val modelDir = java.io.File(context.filesDir, "models")
+        java.io.File(modelDir, "${model.id}.task").delete()
+        java.io.File(modelDir, "${model.id}.task.part").delete()
+        model.isDownloaded = false
+        model.hasPartial = false
     }
 }

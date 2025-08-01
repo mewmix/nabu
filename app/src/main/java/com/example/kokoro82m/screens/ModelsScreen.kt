@@ -109,19 +109,27 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                 }
                 val progress = progressMap[model.id]
                 if (model.isDownloaded) {
-                    Text("Downloaded")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Downloaded")
+                        Button(onClick = { modelManager.deleteModel(model) }) { Text("Delete") }
+                    }
                 } else if (progress != null) {
                     LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
                 } else {
-                    Button(onClick = {
-                        if (model.gated) {
-                            selectedModel = model
-                            showDialog = true
-                        } else {
-                            modelDownloader.downloadModel(model)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            if (model.gated) {
+                                selectedModel = model
+                                showDialog = true
+                            } else {
+                                modelDownloader.downloadModel(model)
+                            }
+                        }) {
+                            Text(if (model.hasPartial) "Resume" else "Download")
                         }
-                    }) {
-                        Text("Download")
+                        if (model.hasPartial) {
+                            Button(onClick = { modelManager.deleteModel(model) }) { Text("Delete") }
+                        }
                     }
                 }
             }
