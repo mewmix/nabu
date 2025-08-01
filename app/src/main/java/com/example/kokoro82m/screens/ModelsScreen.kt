@@ -15,6 +15,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import com.example.kokoro82m.ui.components.ProgressDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -142,18 +143,10 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
             val entry = progressMap.entries.first()
             val downloading = models.find { it.id == entry.key }
             val progress = entry.value
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
-                Text(
-                    text = "Downloading ${downloading?.name ?: "model"} ${(progress * 100).toInt()}%",
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
+            ProgressDialog(
+                message = "Downloading ${downloading?.name ?: "model"} ${(progress * 100).toInt()}%",
+                progress = progress,
+            )
         }
     }
 }
