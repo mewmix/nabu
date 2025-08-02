@@ -42,7 +42,11 @@ class BookViewModel : ViewModel() {
     fun loadBook(context: Context, uri: Uri) {
         _bookUri.value = uri
         viewModelScope.launch(Dispatchers.IO) {
-            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+            val text = try {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            } catch (e: Exception) {
+                null
+            } ?: ""
             withContext(Dispatchers.Main) {
                 _lines.value = text.lines()
             }

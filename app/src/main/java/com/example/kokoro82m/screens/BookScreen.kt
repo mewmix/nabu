@@ -1,6 +1,7 @@
 package com.example.kokoro82m.screens
 
 import ai.onnxruntime.OrtSession
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,6 +69,11 @@ fun BookScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let {
+            // Persist read permission so the URI can be reopened later from saved projects
+            context.contentResolver.takePersistableUriPermission(
+                it,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
             bookViewModel.loadBook(context, it)
         }
     }
