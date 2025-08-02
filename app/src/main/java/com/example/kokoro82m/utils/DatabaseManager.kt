@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import java.io.File
 
 object DatabaseManager {
     fun setProject(context: Context, project: Project) {
@@ -15,10 +16,12 @@ object DatabaseManager {
 
         val values = ContentValues().apply {
             put(DatabaseHelper.COLUMN_URI, project.uri)
+            put(DatabaseHelper.COLUMN_NAME, project.name)
             put(DatabaseHelper.COLUMN_STYLES, stylesJson)
             put(DatabaseHelper.COLUMN_WEIGHTS, weightsJson)
             put(DatabaseHelper.COLUMN_MODE, project.mode.name)
             put(DatabaseHelper.COLUMN_SPEED, project.speed)
+            put(DatabaseHelper.COLUMN_USE_PREGENERATED, if (project.usePregenerated) 1 else 0)
             project.audioPath?.let { put(DatabaseHelper.COLUMN_AUDIO_PATH, it) }
             project.bookmark?.let {
                 put(DatabaseHelper.COLUMN_BOOKMARK_LINE, it.line)
@@ -46,6 +49,7 @@ object DatabaseManager {
 
         var project: Project? = null
         if (cursor.moveToFirst()) {
+            val name = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_NAME))
             val stylesJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_STYLES))
             val weightsJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_WEIGHTS))
             val stylesType = object : TypeToken<List<String>>() {}.type
@@ -59,13 +63,58 @@ object DatabaseManager {
             val bookmark = if (bookmarkLine != -1) Bookmark(bookmarkLine, bookmarkPosition) else null
             val audioPathIndex = cursor.getColumnIndex(DatabaseHelper.COLUMN_AUDIO_PATH)
             val audioPath = if (audioPathIndex != -1) cursor.getString(audioPathIndex) else null
+            val usePregeneratedIdx = cursor.getColumnIndex(DatabaseHelper.COLUMN_USE_PREGENERATED)
+            val usePregenerated = if (usePregeneratedIdx != -1) cursor.getInt(usePregeneratedIdx) == 1 else false
 
-            project = Project(uri, styles, weights, mode, speed, bookmark, audioPath)
+            project = Project(uri, name, styles, weights, mode, speed, bookmark, audioPath, usePregenerated)
         }
 
         cursor.close()
         db.close()
         return project
+    }
+
+    fun getProjects(context: Context): List<Project> {
+        val dbHelper = DatabaseHelper(context)
+        val db = dbHelper.readableDatabase
+        val gson = Gson()
+        val cursor = db.query(DatabaseHelper.TABLE_PROJECTS, null, null, null, null, null, null)
+        val projects = mutableListOf<Project>()
+        val stylesType = object : TypeToken<List<String>>() {}.type
+        val weightsType = object : TypeToken<Map<String, Float>>() {}.type
+        while (cursor.moveToNext()) {
+            val uri = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_URI))
+            val name = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_NAME))
+            val stylesJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_STYLES))
+            val weightsJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_WEIGHTS))
+            val styles = gson.fromJson<List<String>>(stylesJson, stylesType)
+            val weights = gson.fromJson<Map<String, Float>>(weightsJson, weightsType)
+            val mode = InterpolationMode.valueOf(cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_MODE)))
+            val speed = cursor.getFloat(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_SPEED))
+            val bookmarkLine = cursor.getInt(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BOOKMARK_LINE))
+            val bookmarkPosition = cursor.getInt(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BOOKMARK_POSITION))
+            val bookmark = if (bookmarkLine != -1) Bookmark(bookmarkLine, bookmarkPosition) else null
+            val audioPathIndex = cursor.getColumnIndex(DatabaseHelper.COLUMN_AUDIO_PATH)
+            val audioPath = if (audioPathIndex != -1) cursor.getString(audioPathIndex) else null
+            val usePregeneratedIdx = cursor.getColumnIndex(DatabaseHelper.COLUMN_USE_PREGENERATED)
+            val usePregenerated = if (usePregeneratedIdx != -1) cursor.getInt(usePregeneratedIdx) == 1 else false
+            projects.add(Project(uri, name, styles, weights, mode, speed, bookmark, audioPath, usePregenerated))
+        }
+        cursor.close()
+        db.close()
+        return projects
+    }
+
+    fun deleteProject(context: Context, uri: String) {
+        val project = getProject(context, uri)
+        val dbHelper = DatabaseHelper(context)
+        val db = dbHelper.writableDatabase
+        db.delete(DatabaseHelper.TABLE_PROJECTS, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
+        db.delete(DatabaseHelper.TABLE_AUDIO_LINES, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
+        db.close()
+        project?.audioPath?.let { path ->
+            try { File(path).deleteRecursively() } catch (_: Exception) {}
+        }
     }
 
     fun setBookmark(context: Context, uri: String, line: Int, position: Int) {
