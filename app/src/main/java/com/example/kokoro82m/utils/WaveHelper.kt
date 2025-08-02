@@ -13,6 +13,8 @@ import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.File
+import java.nio.ShortBuffer
 
 fun saveAudio(audioData: FloatArray, context: Context, name: String) {
     val sampleRate = 22050
@@ -84,6 +86,20 @@ fun saveAudioInternal(audioData: FloatArray, file: java.io.File) {
         outputStream.write(header)
         outputStream.write(byteBuffer.array())
     }
+}
+
+fun loadAudioInternal(file: File): FloatArray {
+    val bytes = file.readBytes()
+    if (bytes.size <= 44) return FloatArray(0)
+    val data = ByteBuffer.wrap(bytes, 44, bytes.size - 44)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .asShortBuffer()
+    val floats = FloatArray(data.remaining())
+    var i = 0
+    while (data.hasRemaining()) {
+        floats[i++] = data.get().toFloat() / Short.MAX_VALUE
+    }
+    return floats
 }
 
 private fun createWavHeader(dataSize: Int, sampleRate: Int): ByteArray {

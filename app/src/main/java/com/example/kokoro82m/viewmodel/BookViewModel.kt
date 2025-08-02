@@ -66,6 +66,7 @@ class BookViewModel : ViewModel() {
         bookUri: Uri?,
         context: Context,
         bookmark: Bookmark?,
+        usePregenerated: Boolean,
         onFinished: () -> Unit,
     ) {
         playJob?.cancel()
@@ -86,6 +87,7 @@ class BookViewModel : ViewModel() {
             onLineChanged = { setCurrentLine(it) },
             onFinished = onFinished,
             bookmark = bookmark,
+            usePregenerated = usePregenerated,
         )
     }
 

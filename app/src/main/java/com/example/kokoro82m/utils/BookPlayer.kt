@@ -10,6 +10,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
+import java.io.File
 
 fun playBook(
     scope: CoroutineScope,
@@ -28,6 +29,7 @@ fun playBook(
     onLineChanged: (Int) -> Unit,
     onFinished: () -> Unit,
     bookmark: Bookmark?,
+    usePregenerated: Boolean,
 ): Job {
     return scope.launch(Dispatchers.IO) {
         DebugLogger.log("Starting playbook from line $startLine")
@@ -45,6 +47,14 @@ fun playBook(
                 )
                 for (index in startLine until lines.size) {
                     if (!isActive) break
+                    if (usePregenerated && bookUri != null) {
+                        val path = DatabaseManager.getAudioLine(context, bookUri.toString(), index)
+                        if (path != null) {
+                            val audio = loadAudioInternal(File(path))
+                            audioBuffer.send(Pair(audio, index))
+                            continue
+                        }
+                    }
                     val line = lines[index]
                     val phonemes = phonemeConverter.phonemize(line)
                     val (audio, _) = createAudioFromStyleVector(
