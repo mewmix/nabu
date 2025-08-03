@@ -3,6 +3,8 @@ package com.example.kokoro82m.utils
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
@@ -16,7 +18,7 @@ import java.util.Locale
 import java.io.File
 import java.nio.ShortBuffer
 
-fun saveAudio(audioData: FloatArray, context: Context, name: String) {
+fun saveAudio(audioData: FloatArray, context: Context, name: String): Uri? {
     val sampleRate = 22050
 
     val safeName = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")
@@ -28,9 +30,7 @@ fun saveAudio(audioData: FloatArray, context: Context, name: String) {
         put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
     }
 
-
     val header = createWavHeader(audioData.size, sampleRate)
-
 
     val byteBuffer = ByteBuffer.allocate(audioData.size * 2)
     byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
@@ -47,9 +47,7 @@ fun saveAudio(audioData: FloatArray, context: Context, name: String) {
     uri?.let {
         try {
             resolver.openOutputStream(it)?.use { outputStream: OutputStream ->
-
                 outputStream.write(header)
-
                 outputStream.write(byteBuffer.array())
             }
             Log.d("Kokoro", "Audio saved to: $uri")
@@ -68,6 +66,15 @@ fun saveAudio(audioData: FloatArray, context: Context, name: String) {
             Toast.makeText(context, "Failed to create audio file", Toast.LENGTH_LONG).show()
         }
     }
+    return uri
+}
+
+fun openAudioFile(context: Context, uri: Uri) {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "audio/wav")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Open with"))
 }
 
 fun saveAudioInternal(audioData: FloatArray, file: java.io.File) {
