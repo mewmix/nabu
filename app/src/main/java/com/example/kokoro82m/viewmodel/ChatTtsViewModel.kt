@@ -15,6 +15,7 @@ import com.example.kokoro82m.utils.DebugLogger
 import com.example.kokoro82m.utils.createAudioFromStyleVector
 import com.example.kokoro82m.utils.mixStyles
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -61,8 +62,21 @@ class ChatTtsViewModel(
     private val _speed = MutableStateFlow(1.0f)
     val speed = _speed.asStateFlow()
 
+    private val audioQueue = Channel<FloatArray>(Channel.UNLIMITED)
+
     init {
         llmInference.initialize()
+        // Launch a coroutine to play queued audio sequentially
+        viewModelScope.launch {
+            for (audio in audioQueue) {
+                try {
+                    audioPlayer.prepare(audio)
+                    audioPlayer.playBlocking()
+                } catch (e: Exception) {
+                    DebugLogger.log("Audio playback error: ${e.localizedMessage}")
+                }
+            }
+        }
     }
 
     fun sendMessage(message: String) {
@@ -71,33 +85,55 @@ class ChatTtsViewModel(
         _isLoading.value = true
 
         val responseBuilder = StringBuilder()
+        val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false)  // placeholder
 
-        viewModelScope.launch(Dispatchers.IO) { // 1. Outer scope for IO work
-            llmInference.sendMessage(message) { partial, done -> // 2. This is a REGULAR callback
+        viewModelScope.launch(Dispatchers.IO) {
+            llmInference.sendMessage(message) { partial, done ->
                 if (!done) {
                     responseBuilder.append(partial)
+                    sentenceBuilder.append(partial)
                     val last = _chatMessages.value.last()
                     _chatMessages.value =
                         _chatMessages.value.dropLast(1) + last.copy(message = responseBuilder.toString())
+                    processSentences(sentenceBuilder, false)
                 } else {
-                    // 3. Hop back to the main thread safely for UI updates & suspend function calls
-                    viewModelScope.launch { // Defaults to Main dispatcher for viewModelScope
+                    viewModelScope.launch {
                         _isLoading.value = false
                         DebugLogger.log("ChatTtsViewModel response complete")
-                        synthesizeAndPlay(responseBuilder.toString()) // synthesizeAndPlay can now be called
+                        processSentences(sentenceBuilder, true)
                     }
                 }
             }
         }
     }
 
+    private fun processSentences(builder: StringBuilder, done: Boolean) {
+        var text = builder.toString()
+        val regex = Regex("[.!?]")
+        var match = regex.find(text)
+        while (match != null) {
+            val end = match.range.last + 1
+            val sentence = text.substring(0, end).trim()
+            DebugLogger.log("Queueing sentence: $sentence")
+            synthesizeAndQueue(sentence)
+            text = text.substring(end)
+            match = regex.find(text)
+        }
+        builder.clear()
+        builder.append(text)
+        if (done && builder.isNotEmpty()) {
+            val sentence = builder.toString().trim()
+            builder.clear()
+            synthesizeAndQueue(sentence)
+        }
+    }
 
-    private fun synthesizeAndPlay(text: String) {
+    private fun synthesizeAndQueue(text: String) {
         viewModelScope.launch {
             _isSynthesizing.value = true
             try {
-                // Perform all heavy computations on a background thread
+                DebugLogger.log("Synthesizing: ${text}")
                 val audioData = withContext(Dispatchers.IO) {
                     val mixedVector = mixStyles(
                         styleLoader,
@@ -113,18 +149,13 @@ class ChatTtsViewModel(
                         speed = _speed.value,
                         session = ortSession
                     )
-                    data // Return the resulting audio data
+                    data
                 }
-
-                // Switch back to the main thread to update UI and play audio
-                _isSynthesizing.value = false
-                audioPlayer.prepare(audioData)
-                audioPlayer.play()
-
+                audioQueue.send(audioData)
             } catch (e: Exception) {
+                DebugLogger.log("Error synthesizing sentence: ${e.localizedMessage}")
+            } finally {
                 _isSynthesizing.value = false
-                // Handle error, e.g., show a toast
-                android.util.Log.e("ChatTtsViewModel", "Error synthesizing audio", e)
             }
         }
     }
