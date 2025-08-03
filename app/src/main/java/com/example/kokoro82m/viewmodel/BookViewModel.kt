@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ai.onnxruntime.OrtSession
 import com.example.kokoro82m.utils.AudioPlayer
-import com.example.kokoro82m.utils.Bookmark
 import com.example.kokoro82m.utils.InterpolationMode
 import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.PlayerState
@@ -69,7 +68,6 @@ class BookViewModel : ViewModel() {
         startLine: Int,
         bookUri: Uri?,
         context: Context,
-        bookmark: Bookmark?,
         usePregenerated: Boolean,
         onFinished: () -> Unit,
     ) {
@@ -90,7 +88,6 @@ class BookViewModel : ViewModel() {
             context = context,
             onLineChanged = { setCurrentLine(it) },
             onFinished = onFinished,
-            bookmark = bookmark,
             usePregenerated = usePregenerated,
         )
     }

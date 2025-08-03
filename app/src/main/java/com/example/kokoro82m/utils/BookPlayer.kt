@@ -28,7 +28,6 @@ fun playBook(
     context: Context,
     onLineChanged: (Int) -> Unit,
     onFinished: () -> Unit,
-    bookmark: Bookmark?,
     usePregenerated: Boolean,
 ): Job {
     return scope.launch(Dispatchers.IO) {
@@ -83,10 +82,9 @@ fun playBook(
                 withContext(Dispatchers.Main) {
                     onLineChanged(index)
                 }
-                val position = if (index == bookmark?.line) bookmark.position else 0
-                DebugLogger.log("Playing line $index with position $position")
+                DebugLogger.log("Playing line $index")
 
-                audioPlayer.prepare(audio, position)
+                audioPlayer.prepare(audio, 0)
                 audioPlayer.playBlocking()
 
                 if (audioPlayer.getState() == PlayerState.PAUSED) {
