@@ -7,7 +7,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -282,9 +281,8 @@ fun BookScreen(
                         if (playerState == PlayerState.PLAYING) {
                             bookViewModel.audioPlayer.pause()
                             bookUri?.let {
-                                val position = bookViewModel.audioPlayer.getPosition()
-                                DebugLogger.log("Saving bookmark at line $currentLine, position $position")
-                                BookmarkManager.save(context, it.toString(), currentLine, position)
+                                DebugLogger.log("Saving bookmark at line $currentLine")
+                                BookmarkManager.save(context, it.toString(), currentLine)
                                 val project = Project(
                                     uri = it.toString(),
                                     name = projectName,
@@ -292,12 +290,16 @@ fun BookScreen(
                                     weights = weights,
                                     mode = interpolationMode,
                                     speed = speed,
-                                    bookmark = Bookmark(currentLine, position),
+                                    bookmark = Bookmark(currentLine),
                                     usePregenerated = usePregenerated
                                 )
                                 ProjectManager.save(context, project)
+                                bookmark = Bookmark(currentLine)
                             }
                         } else {
+                            if (playerState == PlayerState.PAUSED) {
+                                bookViewModel.audioPlayer.stop()
+                            }
                             bookViewModel.startPlayback(
                                 session = session,
                                 phonemeConverter = phonemeConverter,
@@ -310,7 +312,6 @@ fun BookScreen(
                                 startLine = currentLine.coerceAtLeast(0),
                                 bookUri = bookUri,
                                 context = context,
-                                bookmark = bookmark,
                                 usePregenerated = usePregenerated,
                                 onFinished = {
                                     bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
@@ -464,26 +465,29 @@ fun BookScreen(
                     .fillMaxWidth()
                     .combinedClickable(
                         onClick = {
-                            bookViewModel.setCurrentLine(index)
-                            bookViewModel.startPlayback(
-                                session = session,
-                                phonemeConverter = phonemeConverter,
-                                styleLoader = styleLoader,
-                                selectedStyles = selectedStyles,
-                                weights = weights,
-                                mode = interpolationMode,
-                                speed = speed,
-                                lines = lines,
-                                startLine = index,
-                                bookUri = bookUri,
-                                context = context,
-                                bookmark = bookmark,
-                                usePregenerated = usePregenerated,
-                                onFinished = {
-                                    bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
-                                    bookmark = null
-                                },
-                            )
+                            if (selectedLines.contains(index)) {
+                                selectedLines.remove(index)
+                            } else {
+                                bookViewModel.setCurrentLine(index)
+                                bookViewModel.startPlayback(
+                                    session = session,
+                                    phonemeConverter = phonemeConverter,
+                                    styleLoader = styleLoader,
+                                    selectedStyles = selectedStyles,
+                                    weights = weights,
+                                    mode = interpolationMode,
+                                    speed = speed,
+                                    lines = lines,
+                                    startLine = index,
+                                    bookUri = bookUri,
+                                    context = context,
+                                    usePregenerated = usePregenerated,
+                                    onFinished = {
+                                        bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
+                                        bookmark = null
+                                    },
+                                )
+                            }
                         },
                         onLongClick = {
                             if (selectedLines.contains(index)) {

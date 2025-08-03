@@ -8,7 +8,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "kokoro.db"
-        private const val DATABASE_VERSION = 3
+        private const val DATABASE_VERSION = 4
         const val TABLE_PROJECTS = "projects"
         const val COLUMN_ID = "_id"
         const val COLUMN_URI = "uri"
@@ -18,7 +18,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_MODE = "mode"
         const val COLUMN_SPEED = "speed"
         const val COLUMN_BOOKMARK_LINE = "bookmark_line"
-        const val COLUMN_BOOKMARK_POSITION = "bookmark_position"
         const val COLUMN_AUDIO_PATH = "audio_path"
         const val COLUMN_USE_PREGENERATED = "use_pregenerated"
 
@@ -41,7 +40,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 "$COLUMN_MODE TEXT," +
                 "$COLUMN_SPEED REAL," +
                 "$COLUMN_BOOKMARK_LINE INTEGER," +
-                "$COLUMN_BOOKMARK_POSITION INTEGER," +
                 "$COLUMN_AUDIO_PATH TEXT," +
                 "$COLUMN_USE_PREGENERATED INTEGER)"
         db.execSQL(createProjectsTable)
