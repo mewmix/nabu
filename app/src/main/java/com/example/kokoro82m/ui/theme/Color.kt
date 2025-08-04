@@ -3,25 +3,25 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
 val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF0061A6),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFD1E4FF),
-    onPrimaryContainer = Color(0xFF001D36),
-    secondary = Color(0xFF006875),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFF96F0FF),
-    onSecondaryContainer = Color(0xFF001F24),
+    primary = Color(0xFFB388FF),
+    onPrimary = Color(0xFF000000),
+    primaryContainer = Color(0xFFEDE7F6),
+    onPrimaryContainer = Color(0xFF1B0033),
+    secondary = Color(0xFF8C9EFF),
+    onSecondary = Color(0xFF000000),
+    secondaryContainer = Color(0xFFE8EAF6),
+    onSecondaryContainer = Color(0xFF121A48),
 )
 
 val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF9ECAFF),
-    onPrimary = Color(0xFF003258),
-    primaryContainer = Color(0xFF00497D),
-    onPrimaryContainer = Color(0xFFD1E4FF),
-    secondary = Color(0xFF4FD8EB),
-    onSecondary = Color(0xFF00363D),
-    secondaryContainer = Color(0xFF004F58),
-    onSecondaryContainer = Color(0xFF96F0FF),
+    primary = Color(0xFFB388FF),
+    onPrimary = Color(0xFF371E73),
+    primaryContainer = Color(0xFF6C43A5),
+    onPrimaryContainer = Color(0xFFEDE7F6),
+    secondary = Color(0xFF8C9EFF),
+    onSecondary = Color(0xFF1A237E),
+    secondaryContainer = Color(0xFF3949AB),
+    onSecondaryContainer = Color(0xFFE8EAF6),
 )
 
 val LinkColorLight = Color(0xFF0000EE)
