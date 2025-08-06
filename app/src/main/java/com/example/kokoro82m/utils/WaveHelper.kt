@@ -50,18 +50,18 @@ fun saveAudio(audioData: FloatArray, context: Context, name: String): Uri? {
                 outputStream.write(header)
                 outputStream.write(byteBuffer.array())
             }
-            Log.d("Kokoro", "Audio saved to: $uri")
+            Log.d("Nabu", "Audio saved to: $uri")
             (context as? Activity)?.runOnUiThread {
                 Toast.makeText(context, "Audio saved to Music directory", Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
-            Log.e("Kokoro", "Error saving audio: ${e.message}")
+            Log.e("Nabu", "Error saving audio: ${e.message}")
             (context as? Activity)?.runOnUiThread {
                 Toast.makeText(context, "Error saving audio", Toast.LENGTH_LONG).show()
             }
         }
     } ?: run {
-        Log.e("Kokoro", "Failed to create audio file")
+        Log.e("Nabu", "Failed to create audio file")
         (context as? Activity)?.runOnUiThread {
             Toast.makeText(context, "Failed to create audio file", Toast.LENGTH_LONG).show()
         }

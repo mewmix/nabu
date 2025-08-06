@@ -1,6 +1,7 @@
 package com.example.kokoro82m
 
-import KokoroTheme
+import NabuTheme
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.kokoro82m.screens.BookScreen
 import com.example.kokoro82m.screens.CreationsScreen
 import com.example.kokoro82m.screens.SettingsScreen
@@ -138,6 +139,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
         enableEdgeToEdge()
@@ -146,7 +148,7 @@ class MainActivity : ComponentActivity() {
         val startScreen = screenFromString(intent.getStringExtra(EXTRA_START_SCREEN))
 
         setContent {
-            KokoroTheme {
+            NabuTheme {
                 LaunchedEffect(Unit) {
                     WindowCompat.setDecorFitsSystemWindows(window, false)
                 }

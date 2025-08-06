@@ -1,5 +1,5 @@
-# Kokoro-82M-Android
-A minimal Android demo app for **Kokoro-82M** TTS model in int8 quantization.
+# Nabu Android
+A minimal Android demo app branded as **Nabu**, powered by the Kokoro-82M TTS model in int8 quantization.
 
 Kokoro-82M origin model: https://huggingface.co/hexgrad/Kokoro-82M<br>
 Kokoro-82M int8-quant model: https://github.com/thewh1teagle/kokoro-onnx

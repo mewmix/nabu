@@ -1,6 +1,6 @@
 package com.example.kokoro82m
 
-import KokoroTheme
+import NabuTheme
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -79,7 +79,7 @@ class ChatTtsActivity : ComponentActivity() {
         }
 
         setContent {
-            KokoroTheme {
+            NabuTheme {
                 ChatTtsScreen(viewModel = viewModel, modelName = model.name, onBackPressed = { finish() })
             }
         }

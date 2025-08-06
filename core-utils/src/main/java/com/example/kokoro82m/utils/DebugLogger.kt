@@ -20,7 +20,7 @@ object DebugLogger {
             if (!logDirectory.exists()) {
                 logDirectory.mkdirs()
             }
-            logFile = File(logDirectory, "kokoro_log.txt")
+              logFile = File(logDirectory, "nabu_log.txt")
         }
     }
 
@@ -32,7 +32,7 @@ object DebugLogger {
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         val logMessage = "$timestamp: $message"
         logs.add(logMessage)
-        Log.d("Kokoro", logMessage)
+          Log.d("Nabu", logMessage)
 
         // Write to file
         try {
@@ -41,7 +41,7 @@ object DebugLogger {
                 it.append("\n")
             }
         } catch (e: IOException) {
-            Log.e("Kokoro", "Failed to write to log file", e)
+              Log.e("Nabu", "Failed to write to log file", e)
         }
     }
 

@@ -8,7 +8,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.example.kokoro82m.ui.theme.AppTypography
 
 @Composable
-fun KokoroTheme(
+fun NabuTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
