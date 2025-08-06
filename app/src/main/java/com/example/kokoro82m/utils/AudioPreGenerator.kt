@@ -8,6 +8,7 @@ import java.io.File
 import com.example.kokoro82m.utils.SettingsManager
 import com.example.kokoro82m.utils.TtsEngine
 import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
+import com.example.kokoro82m.utils.KittenPhonemizer
 
 suspend fun preGenerateBook(
     context: Context,
@@ -31,16 +32,17 @@ suspend fun preGenerateBook(
     for ((index, line) in lines.withIndex()) {
         if (DatabaseManager.getAudioLine(context, project.uri, index) != null) continue
         DebugLogger.log("Generating line $index for ${project.uri}")
-        val phonemes = phonemeConverter.phonemize(line)
         val engine = SettingsManager.getTtsEngine(context)
         val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
+            val (_, tokens) = KittenPhonemizer.phonemize(line)
             createKittenAudioFromStyleVector(
-                phonemes = phonemes,
+                tokens = tokens,
                 voice = mixed,
                 speed = project.speed,
                 session = session,
             )
         } else {
+            val phonemes = phonemeConverter.phonemize(line)
             createAudioFromStyleVector(
                 phonemes = phonemes,
                 voice = mixed,

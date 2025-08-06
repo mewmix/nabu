@@ -375,15 +375,16 @@ fun BookScreen(
                                 val engine = SettingsManager.getTtsEngine(context)
                                 val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
                                 for (line in lines) {
-                                    val phonemes = phonemeConverter.phonemize(line)
                                     val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                                        val (_, tokens) = KittenPhonemizer.phonemize(line)
                                         createKittenAudioFromStyleVector(
-                                            phonemes = phonemes,
+                                            tokens = tokens,
                                             voice = mixedVector,
                                             speed = speed,
                                             session = session
                                         )
                                     } else {
+                                        val phonemes = phonemeConverter.phonemize(line)
                                         createAudioFromStyleVector(
                                             phonemes = phonemes,
                                             voice = mixedVector,
@@ -424,15 +425,16 @@ fun BookScreen(
                                     val engine = SettingsManager.getTtsEngine(context)
                                     val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
                                     for (i in selectedLines.sorted()) {
-                                        val phonemes = phonemeConverter.phonemize(lines[i])
                                         val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                                            val (_, tokens) = KittenPhonemizer.phonemize(lines[i])
                                             createKittenAudioFromStyleVector(
-                                                phonemes = phonemes,
+                                                tokens = tokens,
                                                 voice = mixedVector,
                                                 speed = speed,
                                                 session = session
                                             )
                                         } else {
+                                            val phonemes = phonemeConverter.phonemize(lines[i])
                                             createAudioFromStyleVector(
                                                 phonemes = phonemes,
                                                 voice = mixedVector,

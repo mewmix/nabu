@@ -9,6 +9,7 @@ import com.example.kokoro.chat.LlmInference
 import com.example.kokoro82m.utils.AudioPlayer
 import com.example.kokoro82m.utils.InterpolationMode
 import com.example.kokoro82m.utils.KittenAudioPlayer
+import com.example.kokoro82m.utils.KittenPhonemizer
 import com.example.kokoro82m.utils.KokoroAudioPlayer
 import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.PlayerState
@@ -153,16 +154,17 @@ class ChatTtsViewModel(
                         _weights.value,
                         _interpolationMode.value
                     )
-                    val phonemes = phonemeConverter.phonemize(text)
                     val engine = SettingsManager.getTtsEngine(context)
                     val (data, _) = if (engine == TtsEngine.KITTEN) {
+                        val (_, tokens) = KittenPhonemizer.phonemize(text)
                         createKittenAudioFromStyleVector(
-                            phonemes = phonemes,
+                            tokens = tokens,
                             voice = mixedVector,
                             speed = _speed.value,
                             session = ortSession
                         )
                     } else {
+                        val phonemes = phonemeConverter.phonemize(text)
                         createAudioFromStyleVector(
                             phonemes = phonemes,
                             voice = mixedVector,
