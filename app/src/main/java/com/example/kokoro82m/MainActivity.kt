@@ -74,6 +74,7 @@ import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.createAudio
 import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
+import com.example.kokoro82m.utils.KittenPhonemizer
 import com.example.kokoro82m.utils.playAudio
 import com.example.kokoro82m.utils.saveAudio
 import com.example.kokoro82m.utils.SettingsManager
@@ -214,25 +215,28 @@ private fun generateAudio(
 ) {
     scope.launch(Dispatchers.IO) {
         try {
-            val phonemes = phonemeConverter.phonemize(text)
-            DebugLogger.log("Phonemes: $phonemes")
-            withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
-            }
-
-
             val engine = SettingsManager.getTtsEngine(context)
             val (audioData, sampleRate) = PerfHud.record("ONNX synth") {
                 if (engine == TtsEngine.KITTEN) {
+                    val (phonemeStr, tokens) = KittenPhonemizer.phonemize(text)
+                    DebugLogger.log("Phonemes: $phonemeStr")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Phonemes: $phonemeStr", Toast.LENGTH_LONG).show()
+                    }
                     val loader = StyleLoader(context)
                     val voiceArray = loader.getStyleArray(style)
                     createKittenAudioFromStyleVector(
-                        phonemes = phonemes,
+                        tokens = tokens,
                         voice = voiceArray,
                         speed = speed,
                         session = session
                     )
                 } else {
+                    val phonemes = phonemeConverter.phonemize(text)
+                    DebugLogger.log("Phonemes: $phonemes")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
+                    }
                     createAudio(
                         voice = style,
                         phonemes = phonemes,

@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.kokoro82m.utils.InterpolationMode
 import com.example.kokoro82m.utils.PhonemeConverter
+import com.example.kokoro82m.utils.KittenPhonemizer
 import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.createAudioFromStyleVector
 import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
@@ -235,16 +236,17 @@ private fun generateAudio(
 ) {
     scope.launch(Dispatchers.IO) {
         try {
-            val phonemes = phonemeConverter.phonemize(text)
             val engine = SettingsManager.getTtsEngine(context)
             val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
+                val (_, tokens) = KittenPhonemizer.phonemize(text)
                 createKittenAudioFromStyleVector(
-                    phonemes = phonemes,
+                    tokens = tokens,
                     voice = style,
                     speed = speed,
                     session = session
                 )
             } else {
+                val phonemes = phonemeConverter.phonemize(text)
                 createAudioFromStyleVector(
                     phonemes = phonemes,
                     voice = style,

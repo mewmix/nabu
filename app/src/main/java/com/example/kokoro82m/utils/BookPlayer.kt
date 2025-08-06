@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import java.io.File
 import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
+import com.example.kokoro82m.utils.KittenPhonemizer
 import com.example.kokoro82m.utils.SettingsManager
 import com.example.kokoro82m.utils.TtsEngine
 
@@ -58,16 +59,17 @@ fun playBook(
                         }
                     }
                     val line = lines[index]
-                    val phonemes = phonemeConverter.phonemize(line)
                     val engine = SettingsManager.getTtsEngine(context)
                     val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                        val (_, tokens) = KittenPhonemizer.phonemize(line)
                         createKittenAudioFromStyleVector(
-                            phonemes = phonemes,
+                            tokens = tokens,
                             voice = mixedVector,
                             speed = speed,
                             session = session,
                         )
                     } else {
+                        val phonemes = phonemeConverter.phonemize(line)
                         createAudioFromStyleVector(
                             phonemes = phonemes,
                             voice = mixedVector,
