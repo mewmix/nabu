@@ -370,14 +370,24 @@ fun BookScreen(
                                     mode = interpolationMode
                                 )
                                 val audioData = mutableListOf<Float>()
+                                val engine = SettingsManager.getTtsEngine(context)
                                 for (line in lines) {
                                     val phonemes = phonemeConverter.phonemize(line)
-                                    val (audio, _) = createAudioFromStyleVector(
-                                        phonemes = phonemes,
-                                        voice = mixedVector,
-                                        speed = speed,
-                                        session = session
-                                    )
+                                    val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                                        createKittenAudioFromStyleVector(
+                                            phonemes = phonemes,
+                                            voice = mixedVector,
+                                            speed = speed,
+                                            session = session
+                                        )
+                                    } else {
+                                        createAudioFromStyleVector(
+                                            phonemes = phonemes,
+                                            voice = mixedVector,
+                                            speed = speed,
+                                            session = session
+                                        )
+                                    }
                                     audioData.addAll(audio.toList())
                                 }
                                 val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
@@ -408,14 +418,24 @@ fun BookScreen(
                                         mode = interpolationMode
                                     )
                                     val audioData = mutableListOf<Float>()
+                                    val engine = SettingsManager.getTtsEngine(context)
                                     for (i in selectedLines.sorted()) {
                                         val phonemes = phonemeConverter.phonemize(lines[i])
-                                        val (audio, _) = createAudioFromStyleVector(
-                                            phonemes = phonemes,
-                                            voice = mixedVector,
-                                            speed = speed,
-                                            session = session
-                                        )
+                                        val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                                            createKittenAudioFromStyleVector(
+                                                phonemes = phonemes,
+                                                voice = mixedVector,
+                                                speed = speed,
+                                                session = session
+                                            )
+                                        } else {
+                                            createAudioFromStyleVector(
+                                                phonemes = phonemes,
+                                                voice = mixedVector,
+                                                speed = speed,
+                                                session = session
+                                            )
+                                        }
                                         audioData.addAll(audio.toList())
                                     }
                                     val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode) + "_clip"

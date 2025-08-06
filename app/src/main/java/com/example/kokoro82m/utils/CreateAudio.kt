@@ -100,3 +100,45 @@ fun createAudioFromStyleVector(
 
     return Pair(audioTensor, SAMPLE_RATE)
 }
+
+fun createKittenAudioFromStyleVector(
+    phonemes: String,
+    voice: Array<FloatArray>,
+    speed: Float,
+    session: OrtSession,
+): Pair<FloatArray, Int> {
+    val MAX_PHONEME_LENGTH = 400
+    val SAMPLE_RATE = 24000
+
+    val truncatedPhonemes = phonemes.take(MAX_PHONEME_LENGTH)
+    val tokens = Tokenizer.tokenize(truncatedPhonemes)
+    val paddedTokens = listOf(0L) + tokens.toList() + listOf(0L)
+
+    val tokenTensor = OnnxTensor.createTensor(
+        OrtEnvironment.getEnvironment(),
+        arrayOf(paddedTokens.toLongArray())
+    )
+    val styleTensor = OnnxTensor.createTensor(
+        OrtEnvironment.getEnvironment(),
+        voice
+    )
+    val speedTensor = OnnxTensor.createTensor(
+        OrtEnvironment.getEnvironment(),
+        floatArrayOf(speed)
+    )
+
+    val inputs = mapOf(
+        "input_ids" to tokenTensor,
+        "style" to styleTensor,
+        "speed" to speedTensor
+    )
+    val results = session.run(inputs)
+    val audioTensor = results[0].value as FloatArray
+    results.close()
+
+    val start = 5000
+    val end = if (audioTensor.size > 10000) audioTensor.size - 10000 else audioTensor.size
+    val trimmed = audioTensor.copyOfRange(start, end)
+
+    return Pair(trimmed, SAMPLE_RATE)
+}

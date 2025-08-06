@@ -5,6 +5,9 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.TtsEngine
+import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
 
 suspend fun preGenerateBook(
     context: Context,
@@ -29,12 +32,22 @@ suspend fun preGenerateBook(
         if (DatabaseManager.getAudioLine(context, project.uri, index) != null) continue
         DebugLogger.log("Generating line $index for ${project.uri}")
         val phonemes = phonemeConverter.phonemize(line)
-        val (audio, _) = createAudioFromStyleVector(
-            phonemes = phonemes,
-            voice = mixed,
-            speed = project.speed,
-            session = session,
-        )
+        val engine = SettingsManager.getTtsEngine(context)
+        val (audio, _) = if (engine == TtsEngine.KITTEN) {
+            createKittenAudioFromStyleVector(
+                phonemes = phonemes,
+                voice = mixed,
+                speed = project.speed,
+                session = session,
+            )
+        } else {
+            createAudioFromStyleVector(
+                phonemes = phonemes,
+                voice = mixed,
+                speed = project.speed,
+                session = session,
+            )
+        }
         val file = File(baseDir, "$index.wav")
         saveAudioInternal(audio, file)
         DatabaseManager.setAudioLine(context, project.uri, index, file.absolutePath)

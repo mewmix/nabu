@@ -73,9 +73,11 @@ import com.example.kokoro82m.utils.MainViewModel
 import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.createAudio
+import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
 import com.example.kokoro82m.utils.playAudio
 import com.example.kokoro82m.utils.saveAudio
 import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.TtsEngine
 import com.example.kokoro82m.utils.DebugLogger
 import com.google.android.material.color.DynamicColors
 import kotlinx.coroutines.CoroutineScope
@@ -219,14 +221,26 @@ private fun generateAudio(
             }
 
 
+            val engine = SettingsManager.getTtsEngine(context)
             val (audioData, sampleRate) = PerfHud.record("ONNX synth") {
-                createAudio(
-                    voice = style,
-                    phonemes = phonemes,
-                    speed = speed,
-                    context = context,
-                    session = session
-                )
+                if (engine == TtsEngine.KITTEN) {
+                    val loader = StyleLoader(context)
+                    val voiceArray = loader.getStyleArray(style)
+                    createKittenAudioFromStyleVector(
+                        phonemes = phonemes,
+                        voice = voiceArray,
+                        speed = speed,
+                        session = session
+                    )
+                } else {
+                    createAudio(
+                        voice = style,
+                        phonemes = phonemes,
+                        speed = speed,
+                        context = context,
+                        session = session
+                    )
+                }
             }
 
             playAudio(

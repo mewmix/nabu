@@ -44,10 +44,12 @@ import com.example.kokoro82m.utils.InterpolationMode
 import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.createAudioFromStyleVector
+import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
 import com.example.kokoro82m.utils.mixStyles
 import com.example.kokoro82m.utils.playAudio
 import com.example.kokoro82m.utils.saveAudio
 import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.TtsEngine
 import com.example.kokoro82m.utils.DebugLogger
 import com.example.kokoro82m.utils.buildStyleFileName
 import kotlinx.coroutines.Dispatchers
@@ -233,12 +235,22 @@ private fun generateAudio(
     scope.launch(Dispatchers.IO) {
         try {
             val phonemes = phonemeConverter.phonemize(text)
-            val (audio, _) = createAudioFromStyleVector(
-                phonemes = phonemes,
-                voice = style,
-                speed = speed,
-                session = session
-            )
+            val engine = SettingsManager.getTtsEngine(context)
+            val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                createKittenAudioFromStyleVector(
+                    phonemes = phonemes,
+                    voice = style,
+                    speed = speed,
+                    session = session
+                )
+            } else {
+                createAudioFromStyleVector(
+                    phonemes = phonemes,
+                    voice = style,
+                    speed = speed,
+                    session = session
+                )
+            }
             if (shouldSaveFile && fileName != null) {
                 saveAudio(audio, context, fileName)
             }

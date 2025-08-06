@@ -13,6 +13,9 @@ import com.example.kokoro82m.utils.PlayerState
 import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.DebugLogger
 import com.example.kokoro82m.utils.createAudioFromStyleVector
+import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
+import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.TtsEngine
 import com.example.kokoro82m.utils.mixStyles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -143,13 +146,22 @@ class ChatTtsViewModel(
                         _interpolationMode.value
                     )
                     val phonemes = phonemeConverter.phonemize(text)
-
-                    val (data, _) = createAudioFromStyleVector(
-                        phonemes = phonemes,
-                        voice = mixedVector,
-                        speed = _speed.value,
-                        session = ortSession
-                    )
+                    val engine = SettingsManager.getTtsEngine(context)
+                    val (data, _) = if (engine == TtsEngine.KITTEN) {
+                        createKittenAudioFromStyleVector(
+                            phonemes = phonemes,
+                            voice = mixedVector,
+                            speed = _speed.value,
+                            session = ortSession
+                        )
+                    } else {
+                        createAudioFromStyleVector(
+                            phonemes = phonemes,
+                            voice = mixedVector,
+                            speed = _speed.value,
+                            session = ortSession
+                        )
+                    }
                     data
                 }
                 audioQueue.send(audioData)
