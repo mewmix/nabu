@@ -11,9 +11,8 @@ import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-fun playAudio(audioData: FloatArray, scope: CoroutineScope, onComplete: () -> Unit) {
+fun playAudio(audioData: FloatArray, sampleRate: Int, scope: CoroutineScope, onComplete: () -> Unit) {
     scope.launch(Dispatchers.IO) {
-        val sampleRate = 22050
         val channelConfig = CHANNEL_OUT_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)

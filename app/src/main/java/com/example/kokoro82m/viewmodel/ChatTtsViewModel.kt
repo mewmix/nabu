@@ -8,11 +8,17 @@ import com.example.kokoro.chat.ChatMessage
 import com.example.kokoro.chat.LlmInference
 import com.example.kokoro82m.utils.AudioPlayer
 import com.example.kokoro82m.utils.InterpolationMode
+import com.example.kokoro82m.utils.KittenAudioPlayer
+import com.example.kokoro82m.utils.KittenPhonemizer
+import com.example.kokoro82m.utils.KokoroAudioPlayer
 import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.PlayerState
 import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.DebugLogger
 import com.example.kokoro82m.utils.createAudioFromStyleVector
+import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
+import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.TtsEngine
 import com.example.kokoro82m.utils.mixStyles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -31,8 +37,14 @@ class ChatTtsViewModel(
     // Dependencies
     private val phonemeConverter = PhonemeConverter(context)
     val styleLoader = StyleLoader(context)
-    private val audioPlayer = AudioPlayer(viewModelScope) { newState ->
-        _playerState.value = newState
+    private val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sarah"
+    private val audioPlayer: AudioPlayer = when (SettingsManager.getTtsEngine(context)) {
+        TtsEngine.KOKORO -> KokoroAudioPlayer(viewModelScope) { newState ->
+            _playerState.value = newState
+        }
+        TtsEngine.KITTEN -> KittenAudioPlayer(viewModelScope) { newState ->
+            _playerState.value = newState
+        }
     }
 
     // Chat State
@@ -50,10 +62,10 @@ class ChatTtsViewModel(
     val playerState = _playerState.asStateFlow()
 
     // Mixer State
-    private val _selectedStyles = MutableStateFlow(listOf("af_sarah"))
+    private val _selectedStyles = MutableStateFlow(listOf(defaultVoice))
     val selectedStyles = _selectedStyles.asStateFlow()
 
-    private val _weights = MutableStateFlow(mapOf("af_sarah" to 1f))
+    private val _weights = MutableStateFlow(mapOf(defaultVoice to 1f))
     val weights = _weights.asStateFlow()
 
     private val _interpolationMode = MutableStateFlow(InterpolationMode.LINEAR)
@@ -142,14 +154,24 @@ class ChatTtsViewModel(
                         _weights.value,
                         _interpolationMode.value
                     )
-                    val phonemes = phonemeConverter.phonemize(text)
-
-                    val (data, _) = createAudioFromStyleVector(
-                        phonemes = phonemes,
-                        voice = mixedVector,
-                        speed = _speed.value,
-                        session = ortSession
-                    )
+                    val engine = SettingsManager.getTtsEngine(context)
+                    val (data, _) = if (engine == TtsEngine.KITTEN) {
+                        val (_, tokens) = KittenPhonemizer.phonemize(text)
+                        createKittenAudioFromStyleVector(
+                            tokens = tokens,
+                            voice = mixedVector,
+                            speed = _speed.value,
+                            session = ortSession
+                        )
+                    } else {
+                        val phonemes = phonemeConverter.phonemize(text)
+                        createAudioFromStyleVector(
+                            phonemes = phonemes,
+                            voice = mixedVector,
+                            speed = _speed.value,
+                            session = ortSession
+                        )
+                    }
                     data
                 }
                 audioQueue.send(audioData)
@@ -173,7 +195,7 @@ class ChatTtsViewModel(
         _selectedStyles.value -= style
         _weights.value -= style
         if (_selectedStyles.value.isEmpty()) {
-            addStyle("af_sarah") // Ensure at least one style is always selected
+            addStyle(defaultVoice) // Ensure at least one style is always selected
         }
     }
 

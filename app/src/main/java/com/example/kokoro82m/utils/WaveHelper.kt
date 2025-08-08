@@ -18,9 +18,7 @@ import java.util.Locale
 import java.io.File
 import java.nio.ShortBuffer
 
-fun saveAudio(audioData: FloatArray, context: Context, name: String): Uri? {
-    val sampleRate = 22050
-
+fun saveAudio(audioData: FloatArray, context: Context, name: String, sampleRate: Int): Uri? {
     val safeName = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 
@@ -77,8 +75,7 @@ fun openAudioFile(context: Context, uri: Uri) {
     context.startActivity(Intent.createChooser(intent, "Open with"))
 }
 
-fun saveAudioInternal(audioData: FloatArray, file: java.io.File) {
-    val sampleRate = 22050
+fun saveAudioInternal(audioData: FloatArray, file: java.io.File, sampleRate: Int) {
     val header = createWavHeader(audioData.size, sampleRate)
 
     val byteBuffer = ByteBuffer.allocate(audioData.size * 2)

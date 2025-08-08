@@ -1,0 +1,8 @@
+{
+  "name": "Kitten TTS Nano",
+  "version": "0.1",
+  "type": "ONNX1",
+  "model": "kitten-tts-nano-0.1",
+  "voices" : "voices.npz",
+  "model_file": "kitten_tts_nano_v0_1.onnx"
+}

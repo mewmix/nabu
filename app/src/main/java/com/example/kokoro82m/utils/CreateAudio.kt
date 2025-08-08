@@ -100,3 +100,40 @@ fun createAudioFromStyleVector(
 
     return Pair(audioTensor, SAMPLE_RATE)
 }
+
+fun createKittenAudioFromStyleVector(
+    tokens: LongArray,
+    voice: Array<FloatArray>,
+    speed: Float,
+    session: OrtSession,
+): Pair<FloatArray, Int> {
+    val SAMPLE_RATE = 24000
+
+    val tokenTensor = OnnxTensor.createTensor(
+        OrtEnvironment.getEnvironment(),
+        arrayOf(tokens)
+    )
+    val styleTensor = OnnxTensor.createTensor(
+        OrtEnvironment.getEnvironment(),
+        voice
+    )
+    val speedTensor = OnnxTensor.createTensor(
+        OrtEnvironment.getEnvironment(),
+        floatArrayOf(speed)
+    )
+
+    val inputs = mapOf(
+        "input_ids" to tokenTensor,
+        "style" to styleTensor,
+        "speed" to speedTensor
+    )
+    val results = session.run(inputs)
+    val audioTensor = results[0].value as FloatArray
+    results.close()
+
+    val start = 5000
+    val end = if (audioTensor.size > 10000) audioTensor.size - 10000 else audioTensor.size
+    val trimmed = audioTensor.copyOfRange(start, end)
+
+    return Pair(trimmed, SAMPLE_RATE)
+}

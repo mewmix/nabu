@@ -1,7 +1,0 @@
-com.example.kokoro82m.utils.core-utils-pngs-0 /Users/luisocampo/AndroidStudioProjects/Kokoro-82M-Android/core-utils/build/generated/res/pngs/release
-com.example.kokoro82m.utils.core-utils-resValues-1 /Users/luisocampo/AndroidStudioProjects/Kokoro-82M-Android/core-utils/build/generated/res/resValues/release
-com.example.kokoro82m.utils.core-utils-mergeReleaseResources-2 /Users/luisocampo/AndroidStudioProjects/Kokoro-82M-Android/core-utils/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
-com.example.kokoro82m.utils.core-utils-mergeReleaseResources-3 /Users/luisocampo/AndroidStudioProjects/Kokoro-82M-Android/core-utils/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
-com.example.kokoro82m.utils.core-utils-release-4 /Users/luisocampo/AndroidStudioProjects/Kokoro-82M-Android/core-utils/build/intermediates/merged_res/release/mergeReleaseResources
-com.example.kokoro82m.utils.core-utils-main-5 /Users/luisocampo/AndroidStudioProjects/Kokoro-82M-Android/core-utils/src/main/res
-com.example.kokoro82m.utils.core-utils-release-6 /Users/luisocampo/AndroidStudioProjects/Kokoro-82M-Android/core-utils/src/release/res

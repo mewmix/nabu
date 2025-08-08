@@ -23,4 +23,13 @@ object SettingsManager {
 
     fun getSpeed(context: Context, default: Float = 1.0f): Float =
         DatabaseManager.getSetting(context, "speed")?.toFloat() ?: default
+
+    fun setTtsEngine(context: Context, engine: TtsEngine) {
+        DatabaseManager.setSetting(context, "tts_engine", engine.name)
+    }
+
+    fun getTtsEngine(context: Context, default: TtsEngine = TtsEngine.KOKORO): TtsEngine =
+        DatabaseManager.getSetting(context, "tts_engine")?.let {
+            runCatching { TtsEngine.valueOf(it) }.getOrNull()
+        } ?: default
 }

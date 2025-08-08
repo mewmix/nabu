@@ -35,6 +35,7 @@ object OnnxRuntimeManager {
         if (environment == null) {
             environment = OrtEnvironment.getEnvironment()
         }
+        session?.close()
         session = if (modelPath != null) {
             createSession(modelPath)
         } else {
@@ -57,8 +58,13 @@ object OnnxRuntimeManager {
             addConfigEntry("nnapi.gpu_precision_loss_allowed", "true")
         }
 
-        return context.resources.openRawResource(R.raw.kokoro).use { stream ->
-            environment!!.createSession(stream.readBytes(), options)
+        return when (SettingsManager.getTtsEngine(context)) {
+            TtsEngine.KOKORO -> context.resources.openRawResource(R.raw.kokoro).use { stream ->
+                environment!!.createSession(stream.readBytes(), options)
+            }
+            TtsEngine.KITTEN -> context.assets.open("kitten_tts/kitten_tts_nano_v0_1.onnx").use { stream ->
+                environment!!.createSession(stream.readBytes(), options)
+            }
         }
     }
 

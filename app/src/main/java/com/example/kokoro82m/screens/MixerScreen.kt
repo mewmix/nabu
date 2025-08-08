@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,12 +43,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.kokoro82m.utils.InterpolationMode
 import com.example.kokoro82m.utils.PhonemeConverter
+import com.example.kokoro82m.utils.KittenPhonemizer
 import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.createAudioFromStyleVector
+import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
 import com.example.kokoro82m.utils.mixStyles
 import com.example.kokoro82m.utils.playAudio
 import com.example.kokoro82m.utils.saveAudio
 import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.TtsEngine
 import com.example.kokoro82m.utils.DebugLogger
 import com.example.kokoro82m.utils.buildStyleFileName
 import kotlinx.coroutines.Dispatchers
@@ -70,10 +74,11 @@ fun MixerScreen(
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
 
+    val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sarah"
     val initial = remember {
         loadStyleConfig(context) ?: Triple(
-            listOf("af_sarah"),
-            mapOf("af_sarah" to 1f),
+            listOf(defaultVoice),
+            mapOf(defaultVoice to 1f),
             InterpolationMode.LINEAR
         )
     }
@@ -232,17 +237,28 @@ private fun generateAudio(
 ) {
     scope.launch(Dispatchers.IO) {
         try {
-            val phonemes = phonemeConverter.phonemize(text)
-            val (audio, _) = createAudioFromStyleVector(
-                phonemes = phonemes,
-                voice = style,
-                speed = speed,
-                session = session
-            )
-            if (shouldSaveFile && fileName != null) {
-                saveAudio(audio, context, fileName)
+            val engine = SettingsManager.getTtsEngine(context)
+            val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
+                val (_, tokens) = KittenPhonemizer.phonemize(text)
+                createKittenAudioFromStyleVector(
+                    tokens = tokens,
+                    voice = style,
+                    speed = speed,
+                    session = session
+                )
+            } else {
+                val phonemes = phonemeConverter.phonemize(text)
+                createAudioFromStyleVector(
+                    phonemes = phonemes,
+                    voice = style,
+                    speed = speed,
+                    session = session
+                )
             }
-            playAudio(audio, scope) {}
+            if (shouldSaveFile && fileName != null) {
+                saveAudio(audio, context, fileName, sampleRate)
+            }
+            playAudio(audio, sampleRate, scope) {}
         } catch (e: Exception) {
             DebugLogger.log("Mixer error: ${e.message}")
         } finally {
@@ -266,9 +282,7 @@ private fun saveStyleConfig(
 }
 
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class,
-    ExperimentalMaterial3Api::class
-)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun StyleSelector(
     styleNames: List<String>,
@@ -316,7 +330,7 @@ fun StyleSelector(
                     .fillMaxWidth()
             )
 
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
             ) {
