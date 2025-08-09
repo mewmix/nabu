@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -63,11 +64,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     fun loadBook(context: Context, uri: Uri) {
         _bookUri.value = uri
         viewModelScope.launch(Dispatchers.IO) {
-            val text = try {
-                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-            } catch (e: Exception) {
-                null
-            } ?: ""
+            val text = DocumentReader.asFlow(context, uri).chunks.toList().joinToString("\n")
             withContext(Dispatchers.Main) {
                 _lines.value = text.lines()
             }
