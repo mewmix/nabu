@@ -83,6 +83,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
     implementation(libs.material3)
     implementation("com.github.medavox:IPA-Transcribers:v0.2")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation("org.jsoup:jsoup:1.17.2")
 
     val lifecycle_version = "2.8.7"
     val arch_version = "2.2.0"

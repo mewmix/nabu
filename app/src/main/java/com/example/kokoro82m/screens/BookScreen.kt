@@ -79,6 +79,7 @@ fun BookScreen(
                 it,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
+            bookViewModel.openDocument(it)
             bookViewModel.loadBook(context, it)
         }
     }
@@ -252,6 +253,7 @@ fun BookScreen(
                                         Text(p.name, modifier = Modifier.weight(1f))
                                         Button(onClick = {
                                             val uri = Uri.parse(p.uri)
+                                            bookViewModel.openDocument(uri)
                                             bookViewModel.loadBook(context, uri)
                                         }) { Text("Load") }
                                         Button(onClick = {

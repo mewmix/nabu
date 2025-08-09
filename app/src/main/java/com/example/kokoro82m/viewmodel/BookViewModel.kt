@@ -1,19 +1,22 @@
 package com.example.kokoro82m.viewmodel
 
+import android.app.Application
 import android.content.Context
 import android.net.Uri
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ai.onnxruntime.OrtSession
 import com.example.kokoro82m.utils.AudioPlayer
 import com.example.kokoro82m.utils.AudioPlayerManager
 import com.example.kokoro82m.utils.InterpolationMode
+import com.example.kokoro82m.utils.ChunkFeeder
 import com.example.kokoro82m.utils.KittenAudioPlayer
 import com.example.kokoro82m.utils.KokoroAudioPlayer
 import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.PlayerState
 import com.example.kokoro82m.utils.PlaybackNotification
 import com.example.kokoro82m.utils.StyleLoader
+import com.example.kokoro82m.utils.DocumentReader
 import com.example.kokoro82m.utils.TtsEngine
 import com.example.kokoro82m.utils.playBook
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class BookViewModel : ViewModel() {
+class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _bookUri = MutableStateFlow<Uri?>(null)
     val bookUri = _bookUri.asStateFlow()
 
@@ -122,5 +125,14 @@ class BookViewModel : ViewModel() {
         _audioPlayer?.stop()
         appContext?.let { PlaybackNotification.cancel(it) }
         AudioPlayerManager.player = null
+    }
+
+    fun openDocument(uri: Uri) {
+        val result = DocumentReader.asFlow(app, uri, chunkSize = 1600)
+        ChunkFeeder.start(viewModelScope, result.chunks)
+    }
+
+    fun stopReading() {
+        ChunkFeeder.stop()
     }
 }
