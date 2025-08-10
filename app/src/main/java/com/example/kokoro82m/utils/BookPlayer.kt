@@ -10,6 +10,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collect
 import java.io.File
 import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
 import com.example.kokoro82m.utils.KittenPhonemizer
@@ -60,24 +61,26 @@ fun playBook(
                     }
                     val line = lines[index]
                     val engine = SettingsManager.getTtsEngine(context)
-                    val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                    if (engine == TtsEngine.KITTEN) {
                         val (_, tokens) = KittenPhonemizer.phonemize(line)
-                        createKittenAudioFromStyleVector(
+                        val (audio, _) = createKittenAudioFromStyleVector(
                             tokens = tokens,
                             voice = mixedVector,
                             speed = speed,
                             session = session,
                         )
+                        audioBuffer.send(Pair(audio, index))
                     } else {
                         val phonemes = phonemeConverter.phonemize(line)
-                        createAudioFromStyleVector(
+                        createAudioFlowFromStyleVector(
                             phonemes = phonemes,
                             voice = mixedVector,
                             speed = speed,
                             session = session,
-                        )
+                        ).collect { chunk ->
+                            audioBuffer.send(Pair(chunk, index))
+                        }
                     }
-                    audioBuffer.send(Pair(audio, index))
                 }
             } catch (e: Exception) {
                 DebugLogger.log("Audio generation failed: ${e.localizedMessage}")
@@ -88,16 +91,20 @@ fun playBook(
 
         // Consumer
         try {
+            var lastIndex = -1
             for ((audio, index) in audioBuffer) {
                 if (!isActive) {
                     completed = false
                     break
                 }
 
-                withContext(Dispatchers.Main) {
-                    onLineChanged(index)
+                if (index != lastIndex) {
+                    withContext(Dispatchers.Main) {
+                        onLineChanged(index)
+                    }
+                    DebugLogger.log("Playing line $index")
+                    lastIndex = index
                 }
-                DebugLogger.log("Playing line $index")
 
                 audioPlayer.prepare(audio, 0)
                 audioPlayer.playBlocking()
