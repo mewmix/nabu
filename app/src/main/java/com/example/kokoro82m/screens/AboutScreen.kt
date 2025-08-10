@@ -5,6 +5,8 @@ import LinkColorLight
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.example.kokoro82m.R
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
@@ -34,6 +38,14 @@ fun Acknowledgements() {
             .padding(16.dp)
             .fillMaxWidth()
     ) {
+        Image(
+            painter = painterResource(id = R.drawable.ic_nabu_logo),
+            contentDescription = "Nabu Logo",
+            modifier = Modifier
+                .height(120.dp)
+                .fillMaxWidth(),
+            contentScale = ContentScale.Fit
+        )
         Text(
             text = "Thank You for Making This Happen!",
             style = MaterialTheme.typography.bodyMedium,
