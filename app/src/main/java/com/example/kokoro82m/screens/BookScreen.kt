@@ -578,12 +578,7 @@ fun BookScreen(
             }
         }
 
-        item {
-            if (SettingsManager.isDebug(context)) {
-                val logs = DebugLogger.getLogs().joinToString("\n")
-                Text(logs, modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_medium)))
-            }
-        }
+        // Debug logs moved to dedicated screen
     }
 
     if (isPregenerating) {

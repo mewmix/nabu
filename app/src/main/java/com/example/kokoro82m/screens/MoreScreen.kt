@@ -9,10 +9,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.kokoro82m.utils.SettingsManager
 
 @Composable
 fun MoreScreen(onNavigate: (String) -> Unit) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -36,6 +39,14 @@ fun MoreScreen(onNavigate: (String) -> Unit) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Models")
+        }
+        if (SettingsManager.isDebug(context)) {
+            Button(
+                onClick = { onNavigate("DebugLog") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Debug Log")
+            }
         }
     }
 }

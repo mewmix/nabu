@@ -8,6 +8,7 @@ import com.example.kokoro82m.screens.SettingsScreen
 import com.example.kokoro82m.screens.MixerScreen
 import com.example.kokoro82m.screens.MoreScreen
 import com.example.kokoro82m.screens.ModelsScreen
+import com.example.kokoro82m.screens.DebugLogScreen
 import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
@@ -285,6 +286,7 @@ private fun screenFromString(name: String?): Screen = when (name) {
     "Settings" -> Screen.Settings
     "About" -> Screen.About
     "Models" -> Screen.Models
+    "DebugLog" -> Screen.DebugLog
     else -> Screen.Basic
 }
 
@@ -299,6 +301,7 @@ sealed class Screen(val title: String) {
     object Settings : Screen("Settings")
     object About : Screen("About this app")
     object Models : Screen("Models")
+    object DebugLog : Screen("Debug Log")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -403,6 +406,7 @@ fun MainScreen(
                         "Creations" -> Screen.Creations
                         "Settings" -> Screen.Settings
                         "Models" -> Screen.Models
+                        "DebugLog" -> Screen.DebugLog
                         else -> currentScreen
                     }
                 }
@@ -410,6 +414,7 @@ fun MainScreen(
                 Screen.Settings -> SettingsScreen()
                 Screen.About -> AboutScreen()
                 Screen.Models -> ModelsScreen(userPreferencesRepository)
+                Screen.DebugLog -> DebugLogScreen()
             }
         }
     }

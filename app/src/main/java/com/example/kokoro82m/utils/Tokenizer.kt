@@ -10,7 +10,7 @@ class Tokenizer {
 
 
         fun tokenize(phonemes: String): LongArray {
-            println("ALL PHONEMES: $phonemes")
+            DebugLogger.log("ALL PHONEMES: $phonemes")
             if (phonemes.length > MAX_PHONEME_LENGTH) {
                 throw IllegalArgumentException(
                     "Text is too long, must be less than $MAX_PHONEME_LENGTH phonemes"

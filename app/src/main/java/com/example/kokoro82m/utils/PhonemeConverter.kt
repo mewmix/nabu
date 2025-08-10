@@ -23,16 +23,16 @@ class PhonemeConverter(context: Context) {
                         if (parts.size == 2) {
                             phonemeMap[parts[0]] = parts[1]
                         } else {
-                            println("Invalid line format: $line")
+                            DebugLogger.log("Invalid line format: $line")
                         }
                     }
                 }
-            println("Dictionary loaded successfully. Total entries: ${phonemeMap.size}")
+            DebugLogger.log("Dictionary loaded successfully. Total entries: ${phonemeMap.size}")
         } catch (e: IOException) {
-            println("Error loading dictionary: ${e.message}")
+            DebugLogger.log("Error loading dictionary: ${e.message}")
             e.printStackTrace()
         } catch (e: Resources.NotFoundException) {
-            println("Dictionary file not found: ${e.message}")
+            DebugLogger.log("Dictionary file not found: ${e.message}")
             e.printStackTrace()
         }
     }
@@ -64,7 +64,7 @@ class PhonemeConverter(context: Context) {
     fun phonemize(text: String, lang: String = "en-us", norm: Boolean = true): String {
 
         val normalizedText = if (norm) normalizeText(text) else text
-        println("normalText: $normalizedText")
+        DebugLogger.log("normalText: $normalizedText")
 
 
         val wordsAndPunctuation = normalizedText
@@ -74,7 +74,7 @@ class PhonemeConverter(context: Context) {
 
         val phonemes = StringBuilder()
         for ((index, word) in wordsAndPunctuation.withIndex()) {
-            println("word: $word")
+            DebugLogger.log("word: $word")
             val ipaPhonemes = if (word.matches(Regex("[^a-zA-Z']+"))) {
                 word
             } else {

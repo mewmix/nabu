@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
-import android.util.Log
 import android.widget.Toast
 import java.io.OutputStream
 import java.nio.ByteBuffer
@@ -48,18 +47,18 @@ fun saveAudio(audioData: FloatArray, context: Context, name: String, sampleRate:
                 outputStream.write(header)
                 outputStream.write(byteBuffer.array())
             }
-            Log.d("Nabu", "Audio saved to: $uri")
+            DebugLogger.log("Audio saved to: $uri")
             (context as? Activity)?.runOnUiThread {
                 Toast.makeText(context, "Audio saved to Music directory", Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
-            Log.e("Nabu", "Error saving audio: ${e.message}")
+            DebugLogger.log("Error saving audio: ${e.message}")
             (context as? Activity)?.runOnUiThread {
                 Toast.makeText(context, "Error saving audio", Toast.LENGTH_LONG).show()
             }
         }
     } ?: run {
-        Log.e("Nabu", "Failed to create audio file")
+        DebugLogger.log("Failed to create audio file")
         (context as? Activity)?.runOnUiThread {
             Toast.makeText(context, "Failed to create audio file", Toast.LENGTH_LONG).show()
         }

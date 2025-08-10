@@ -207,10 +207,7 @@ fun MixerScreen(
             ) { Text(if (isProcessing) "Mixing..." else "Play & Save") }
         }
 
-        if (SettingsManager.isDebug(context)) {
-            val logs = DebugLogger.getLogs().joinToString("\n")
-            Text(logs, modifier = Modifier.fillMaxWidth())
-        }
+        // Debug logs moved to dedicated screen
     }
 }
 
