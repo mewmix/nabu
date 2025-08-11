@@ -38,17 +38,22 @@ class PhonemeConverter(context: Context) {
     }
 
     private fun convertToPhonemes(word: String): String {
-
         if (word.matches(Regex("[^a-zA-Z']+"))) {
             return word
         }
 
+        val cleanUpper = word.replace(Regex("[^a-zA-Z']"), "").uppercase()
+        val phonemesFromDict = phonemeMap[cleanUpper]
 
-        val cleanWord = word.replace(Regex("[^a-zA-Z']"), "").uppercase()
-        val arpabetWithoutStress = cleanWord.replace(Regex("[0-9]"), "ˈ")
-        val phonemes = phonemeMap[arpabetWithoutStress] ?: return fallbackTranscribe(word)
+        val wasAllLowercase = word.all { it.isLowerCase() }
+        if (phonemesFromDict != null && wasAllLowercase && word.length <= 3) {
+            val stressCount = phonemesFromDict.count { it == 'ˈ' || it == 'ˌ' }
+            if (stressCount > 1) {
+                return fallbackTranscribe(word)
+            }
+        }
 
-
+        val phonemes = phonemesFromDict ?: return fallbackTranscribe(word)
 
         return phonemes.split(",").first().trim()
     }
