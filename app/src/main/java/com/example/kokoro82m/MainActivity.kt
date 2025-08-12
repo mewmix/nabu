@@ -54,7 +54,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -311,16 +310,12 @@ fun MainScreen(
     initialScreen: Screen = Screen.Basic
 ) {
     var currentScreen by remember { mutableStateOf(initialScreen) }
-    var hudEnabled by remember { mutableStateOf(false) }
     val context = LocalContext.current
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(currentScreen.title) },
-                actions = {
-                    Switch(checked = hudEnabled, onCheckedChange = { checked -> hudEnabled = checked })
-                }
+                title = { Text(currentScreen.title) }
             )
         },
         bottomBar = {
