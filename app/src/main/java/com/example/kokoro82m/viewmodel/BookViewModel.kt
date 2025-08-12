@@ -64,9 +64,12 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     fun loadBook(context: Context, uri: Uri) {
         _bookUri.value = uri
         viewModelScope.launch(Dispatchers.IO) {
-            val text = DocumentReader.asFlow(context, uri).chunks.toList().joinToString("\n")
+            val lines = DocumentReader
+                .asFlow(context, uri, byLine = true, lineLength = 120)
+                .chunks
+                .toList()
             withContext(Dispatchers.Main) {
-                _lines.value = text.lines()
+                _lines.value = lines
             }
         }
     }
@@ -125,7 +128,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun openDocument(uri: Uri) {
-        val result = DocumentReader.asFlow(app, uri, chunkSize = 1600)
+        val result = DocumentReader.asFlow(app, uri, byLine = true, lineLength = 120)
         ChunkFeeder.start(viewModelScope, result.chunks)
     }
 
