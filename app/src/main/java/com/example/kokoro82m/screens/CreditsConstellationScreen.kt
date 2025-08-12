@@ -89,8 +89,18 @@ fun CreditsConstellationScreen() {
         CreditGroup(
             title = "Our Credit Wall",
             entries = listOf(
-                CreditEntry("Jane Doe"),
-                CreditEntry("John Smith")
+                CreditEntry(
+                    "puff-dayo: original Kokoro TTS implementation, ONNX runtime, style mixer, app template",
+                    "https://github.com/puff-dayo/Kokoro-82M-Android"
+                ),
+                CreditEntry(
+                    "Google AI Edge Gallery for LLM and Hugging Face model downloading",
+                    "https://github.com/google-ai-edge/gallery"
+                ),
+                CreditEntry(
+                    "LiteRT community on Hugging Face",
+                    "https://huggingface.co/litert-community"
+                )
             )
         )
     }
