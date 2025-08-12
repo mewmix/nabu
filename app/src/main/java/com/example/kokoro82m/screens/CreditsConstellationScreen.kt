@@ -51,37 +51,34 @@ data class CreditGroup(
 
 @Composable
 fun CreditsConstellationScreen() {
+    // FIX: The legacyCredits data structure was flattened to prevent overlapping nodes.
+    // The nested group was removed, and its entries were moved to the parent.
     val legacyCredits = remember {
         CreditGroup(
             title = "Original Credits",
-            entries = emptyList(),
-            children = listOf(
-                CreditGroup(
-                    title = "Credits",
-                    entries = listOf(
-                        CreditEntry(
-                            "Kokoro: a frontier TTS model (Apache 2.0)",
-                            "https://huggingface.co/hexgrad/Kokoro-82M"
-                        ),
-                        CreditEntry(
-                            "Kokoro-ONNX: converted kokoro (MIT)",
-                            "https://github.com/thewh1teagle/kokoro-onnx"
-                        ),
-                        CreditEntry(
-                            "CMU dict: a pronunciation dictionary",
-                            "http://www.speech.cs.cmu.edu/cgi-bin/cmudict"
-                        ),
-                        CreditEntry(
-                            "IPA Transcribers: language transliterators (GPL-3.0)",
-                            "https://github.com/kotlinguistics/IPA-Transcribers"
-                        ),
-                        CreditEntry(
-                            "Android NNAPI: a machine learning API",
-                            "https://developer.android.com/ndk/guides/neuralnetworks"
-                        )
-                    )
+            entries = listOf(
+                CreditEntry(
+                    "Kokoro: a frontier TTS model (Apache 2.0)",
+                    "https://huggingface.co/hexgrad/Kokoro-82M"
+                ),
+                CreditEntry(
+                    "Kokoro-ONNX: converted kokoro (MIT)",
+                    "https://github.com/thewh1teagle/kokoro-onnx"
+                ),
+                CreditEntry(
+                    "CMU dict: a pronunciation dictionary",
+                    "http://www.speech.cs.cmu.edu/cgi-bin/cmudict"
+                ),
+                CreditEntry(
+                    "IPA Transcribers: language transliterators (GPL-3.0)",
+                    "https://github.com/kotlinguistics/IPA-Transcribers"
+                ),
+                CreditEntry(
+                    "Android NNAPI: a machine learning API",
+                    "https://developer.android.com/ndk/guides/neuralnetworks"
                 )
-            )
+            ),
+            children = emptyList() // No longer has nested children
         )
     }
 
@@ -90,7 +87,7 @@ fun CreditsConstellationScreen() {
             title = "Our Credit Wall",
             entries = listOf(
                 CreditEntry(
-                    "puff-dayo: original Kokoro TTS implementation, ONNX runtime, style mixer, app template",
+                    "puff-dayo: original Android Kokoro TTS implementation, ONNX runtime, style mixer, app template",
                     "https://github.com/puff-dayo/Kokoro-82M-Android"
                 ),
                 CreditEntry(
