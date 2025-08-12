@@ -14,13 +14,18 @@ object DocumentReader {
         ctx: Context,
         uri: Uri,
         chunkSize: Int = 1600,
-        byLine: Boolean = false
+        byLine: Boolean = false,
+        lineLength: Int = 120
     ): Result {
         val (seq, meta) = TextExtractor.extract(ctx, uri, if (byLine) Int.MAX_VALUE else chunkSize)
         val fl = flow {
             for (block in seq) {
                 if (byLine) {
-                    block.lineSequence().forEach { emit(it) }
+                    block.lineSequence()
+                        .flatMap { it.chunked(lineLength).asSequence() }
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .forEach { emit(it) }
                 } else {
                     emit(block)
                 }
