@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,9 +25,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -97,9 +100,17 @@ fun ChatScreen(
                 OutlinedTextField(
                     value = message,
                     onValueChange = { message = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 80.dp),
                     label = { Text("Message") },
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    maxLines = 5,
+                    minLines = 3
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
@@ -136,8 +147,11 @@ fun MessageBubble(chatMessage: ChatMessage) {
                 containerColor = if (chatMessage.isFromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
             )
         ) {
-            Text(
-                text = chatMessage.message,
+            val formatted = chatMessage.message
+                .replace("\\n", "\n")
+                .replace("/n", "\n")
+            MarkdownText(
+                markdown = formatted,
                 modifier = Modifier.padding(12.dp)
             )
         }

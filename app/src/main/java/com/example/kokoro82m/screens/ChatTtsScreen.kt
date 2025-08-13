@@ -15,9 +15,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,7 +28,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -63,6 +68,7 @@ fun ChatTtsScreen(
 
     var message by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var showMixerSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(chatMessages.size) {
         if (chatMessages.isNotEmpty()) {
@@ -87,44 +93,60 @@ fun ChatTtsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+
             // Mixer Settings in a Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp)
+                    .padding(8.dp),
             ) {
-                Column(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text("Voice Mixer Settings", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    StyleSelector(
-                        styleNames = viewModel.styleLoader.names,
-                        selectedStyles = selectedStyles,
-                        onAddStyle = viewModel::addStyle,
-                        onRemoveStyle = viewModel::removeStyle
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    WeightSliders(
-                        selectedStyles = selectedStyles,
-                        weights = weights,
-                        onWeightChanged = viewModel::updateWeight
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    InterpolationModeSelector(
-                        currentMode = interpolationMode,
-                        onModeSelected = viewModel::updateInterpolationMode
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Speed: ${"%.2f".format(speed)}")
-                    Slider(
-                        value = speed,
-                        onValueChange = { viewModel.updateSpeed(it) },
-                        valueRange = 0.5f..2.0f,
-                        steps = 15
-                    )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showMixerSettings = !showMixerSettings },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Voice Mixer Settings",
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Icon(
+                            imageVector = if (showMixerSettings) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (showMixerSettings) "Collapse" else "Expand",
+                        )
+                    }
+                    if (showMixerSettings) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            StyleSelector(
+                                styleNames = viewModel.styleLoader.names,
+                                selectedStyles = selectedStyles,
+                                onAddStyle = viewModel::addStyle,
+                                onRemoveStyle = viewModel::removeStyle,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            WeightSliders(
+                                selectedStyles = selectedStyles,
+                                weights = weights,
+                                onWeightChanged = viewModel::updateWeight,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            InterpolationModeSelector(
+                                currentMode = interpolationMode,
+                                onModeSelected = viewModel::updateInterpolationMode,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Speed: ${"%.2f".format(speed)}")
+                            Slider(
+                                value = speed,
+                                onValueChange = { viewModel.updateSpeed(it) },
+                                valueRange = 0.5f..2.0f,
+                                steps = 15,
+                            )
+                        }
+                    }
                 }
             }
 
@@ -184,7 +206,11 @@ fun ChatTtsScreen(
                     onValueChange = { message = it },
                     modifier = Modifier.weight(1f),
                     label = { Text("Message") },
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
