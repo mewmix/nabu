@@ -39,7 +39,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.RecordVoiceOver
-import androidx.compose.ui.res.painterResource
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -327,13 +328,13 @@ fun MainScreen(
                     onClick = { currentScreen = Screen.Basic }
                 )
                 NavigationBarItem(
-                    icon = { Icon(painterResource(id = R.drawable.instant_mix_24), contentDescription = "Mixer") },
+                    icon = { Icon(Icons.Default.VolumeUp, contentDescription = "Mixer") },
                     label = { Text("Mixer") },
                     selected = currentScreen == Screen.Mixer,
                     onClick = { currentScreen = Screen.Mixer }
                 )
                 NavigationBarItem(
-                    icon = { Icon(painterResource(id = R.drawable.books_movies_and_music_24), contentDescription = "Book") },
+                    icon = { Icon(Icons.Default.MenuBook, contentDescription = "Book") },
                     label = { Text("Book") },
                     selected = currentScreen == Screen.Book,
                     onClick = { currentScreen = Screen.Book }
