@@ -87,6 +87,7 @@ dependencies {
     implementation("com.github.medavox:IPA-Transcribers:v0.2")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("org.jsoup:jsoup:1.17.2")
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     val lifecycle_version = "2.8.7"
     val arch_version = "2.2.0"

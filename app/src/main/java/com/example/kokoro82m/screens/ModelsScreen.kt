@@ -1,5 +1,8 @@
 package com.example.kokoro82m.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,11 +40,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
+import androidx.documentfile.provider.DocumentFile
 import com.example.kokoro82m.data.Model
 import com.example.kokoro82m.data.ModelDownloader
 import com.example.kokoro82m.data.ModelManager
 import com.example.kokoro82m.data.UserPreferencesRepository
 import com.example.kokoro82m.utils.DebugLogger
+import java.io.File
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,6 +62,37 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
     var showDialog by remember { mutableStateOf(false) }
     var selectedModel by remember { mutableStateOf<Model?>(null) }
     var hfToken by remember { mutableStateOf("") }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            val document = DocumentFile.fromSingleUri(context, it)
+            val name = document?.name ?: return@let
+            if (name.endsWith(".task")) {
+                val modelDir = File(context.filesDir, "models").apply { if (!exists()) mkdirs() }
+                context.contentResolver.openInputStream(it)?.use { inputStream ->
+                    File(modelDir, name).outputStream().use { output ->
+                        inputStream.copyTo(output)
+                    }
+                }
+                val id = name.removeSuffix(".task")
+                val model = Model(
+                    id = id,
+                    name = id,
+                    description = "Local model",
+                    repo = "",
+                    downloadUrl = "",
+                    gated = false,
+                    isDownloaded = true
+                )
+                modelManager.addLocalModel(model)
+                DebugLogger.log("ModelsScreen: Imported $name")
+            } else {
+                DebugLogger.log("ModelsScreen: Selected file is not a .task file")
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         userPreferencesRepository.hfToken.collect { token ->
@@ -113,6 +149,12 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item {
+                Button(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                    Text("Import Local Model")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
             items(models) { model ->
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(text = model.name, style = MaterialTheme.typography.titleMedium)
