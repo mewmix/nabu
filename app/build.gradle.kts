@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.kokoro82m"
+    namespace = "com.example.nabu"
     compileSdk = 35
 
     defaultConfig {

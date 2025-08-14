@@ -12,7 +12,7 @@ class LlmController private constructor(val llm: LlmInference) {
     companion object {
         private const val CHAT_MODEL_ID = "gemma-2b-it-cpu"
         fun bootstrap(ctx: Context): LlmController? {
-            val modelManager = com.example.kokoro82m.data.ModelManager(ctx)
+            val modelManager = com.example.nabu.data.ModelManager(ctx)
             val model = modelManager.getModel(CHAT_MODEL_ID)
 
             if (model == null || !model.isDownloaded) {

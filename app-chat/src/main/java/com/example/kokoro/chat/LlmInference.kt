@@ -3,15 +3,7 @@ package com.example.kokoro.chat
 import android.content.Context
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
-import java.io.File
-import com.example.kokoro82m.utils.DebugLogger
-
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.FileOutputStream
+import com.example.nabu.utils.DebugLogger
 
 class LlmInference(
     private val context: Context,
