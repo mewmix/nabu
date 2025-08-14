@@ -33,6 +33,7 @@ import kotlinx.coroutines.withContext
 fun SettingsScreen() {
     val context = LocalContext.current
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
+    var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
     var expanded by remember { mutableStateOf(false) }
 
@@ -52,6 +53,17 @@ fun SettingsScreen() {
                 }
             )
             Text(text = "Debug Mode", modifier = Modifier.padding(start = 8.dp))
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = benchmark,
+                onCheckedChange = {
+                    benchmark = it
+                    SettingsManager.setBenchmark(context, it)
+                }
+            )
+            Text(text = "Benchmark Mode", modifier = Modifier.padding(start = 8.dp))
         }
 
         ExposedDropdownMenuBox(

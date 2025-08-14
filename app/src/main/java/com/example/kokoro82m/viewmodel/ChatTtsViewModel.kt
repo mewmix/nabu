@@ -20,6 +20,8 @@ import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
 import com.example.kokoro82m.utils.SettingsManager
 import com.example.kokoro82m.utils.TtsEngine
 import com.example.kokoro82m.utils.mixStyles
+import com.example.kokoro82m.utils.BenchmarkManager
+import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,12 +98,25 @@ class ChatTtsViewModel(
         _chatMessages.value += ChatMessage(message, true)
         _isLoading.value = true
 
+        val benchmarkEnabled = SettingsManager.isBenchmark(context)
+        if (benchmarkEnabled) {
+            BenchmarkManager.startLlm()
+        }
+
         val responseBuilder = StringBuilder()
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false)  // placeholder
 
         viewModelScope.launch(Dispatchers.IO) {
             llmInference.sendMessage(message) { partial, done ->
+                if (benchmarkEnabled) {
+                    if (!done) {
+                        BenchmarkManager.recordPartial(partial)
+                    } else {
+                        BenchmarkManager.finishLlm()
+                        BenchmarkManager.profileSystem(context)
+                    }
+                }
                 if (!done) {
                     responseBuilder.append(partial)
                     sentenceBuilder.append(partial)
@@ -146,6 +161,10 @@ class ChatTtsViewModel(
         viewModelScope.launch {
             _isSynthesizing.value = true
             try {
+                val benchmark = SettingsManager.isBenchmark(context)
+                if (benchmark) {
+                    BenchmarkManager.handoff()
+                }
                 DebugLogger.log("Synthesizing: ${text}")
                 val audioData = withContext(Dispatchers.IO) {
                     val mixedVector = mixStyles(
@@ -155,7 +174,8 @@ class ChatTtsViewModel(
                         _interpolationMode.value
                     )
                     val engine = SettingsManager.getTtsEngine(context)
-                    val (data, _) = if (engine == TtsEngine.KITTEN) {
+                    val ttsStart = SystemClock.elapsedRealtime()
+                    val (data, sampleRate) = if (engine == TtsEngine.KITTEN) {
                         val (_, tokens) = KittenPhonemizer.phonemize(text)
                         createKittenAudioFromStyleVector(
                             tokens = tokens,
@@ -171,6 +191,12 @@ class ChatTtsViewModel(
                             speed = _speed.value,
                             session = ortSession
                         )
+                    }
+                    val genMs = SystemClock.elapsedRealtime() - ttsStart
+                    if (benchmark) {
+                        val audioMs = data.size * 1000L / sampleRate
+                        BenchmarkManager.recordTts(engine, genMs, audioMs)
+                        BenchmarkManager.profileSystem(context)
                     }
                     data
                 }

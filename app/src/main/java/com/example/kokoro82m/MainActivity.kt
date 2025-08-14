@@ -20,6 +20,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
@@ -76,6 +77,7 @@ import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.StyleLoader
 import com.example.kokoro82m.utils.createAudio
 import com.example.kokoro82m.utils.createKittenAudioFromStyleVector
+import com.example.kokoro82m.utils.BenchmarkManager
 import com.example.kokoro82m.utils.KittenPhonemizer
 import com.example.kokoro82m.utils.playAudio
 import com.example.kokoro82m.utils.saveAudio
@@ -180,6 +182,10 @@ class MainActivity : ComponentActivity() {
                     userPreferencesRepository = userPreferencesRepository,
                     initialScreen = startScreen
                 )
+
+                if (SettingsManager.isBenchmark(this@MainActivity)) {
+                    PerfHud.Overlay()
+                }
             }
         }
 
@@ -217,6 +223,7 @@ private fun generateAudio(
     scope.launch(Dispatchers.IO) {
         try {
             val engine = SettingsManager.getTtsEngine(context)
+            val ttsStart = SystemClock.elapsedRealtime()
             val (audioData, sampleRate) = if (engine == TtsEngine.KITTEN) {
                 val (phonemeStr, tokens) = KittenPhonemizer.phonemize(text)
                 DebugLogger.log("Phonemes: $phonemeStr")
@@ -248,6 +255,12 @@ private fun generateAudio(
                         session = session
                     )
                 }
+            }
+            val genMs = SystemClock.elapsedRealtime() - ttsStart
+            if (SettingsManager.isBenchmark(context)) {
+                val audioMs = audioData.size * 1000L / sampleRate
+                BenchmarkManager.recordTts(engine, genMs, audioMs)
+                BenchmarkManager.profileSystem(context)
             }
 
             playAudio(

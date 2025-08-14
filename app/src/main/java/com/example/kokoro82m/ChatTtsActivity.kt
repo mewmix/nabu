@@ -15,6 +15,8 @@ import com.example.kokoro82m.data.Model
 import com.example.kokoro82m.screens.ChatTtsScreen
 import com.example.kokoro82m.utils.OnnxRuntimeManager
 import com.example.kokoro82m.utils.DebugLogger
+import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro.galleryport.PerfHud
 import com.example.kokoro82m.viewmodel.ChatTtsViewModel
 import java.io.File
 
@@ -81,6 +83,9 @@ class ChatTtsActivity : ComponentActivity() {
         setContent {
             NabuTheme {
                 ChatTtsScreen(viewModel = viewModel, modelName = model.name, onBackPressed = { finish() })
+                if (SettingsManager.isBenchmark(this@ChatTtsActivity)) {
+                    PerfHud.Overlay()
+                }
             }
         }
     }
