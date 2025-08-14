@@ -1,11 +1,4 @@
 {
-  "gemma-3n-E2B-it-int4": {
-    "name": "Gemma 3n IT 2B",
-    "description": "Preview version of Gemma 3n E2B ready for deployment on Android",
-    "repo": "google/gemma-3n-E2B-it-litert-preview",
-    "downloadUrl": "https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/gemma-3n-E2B-it-int4.task",
-    "gated": true
-  },
   "gemma-3n-E4B-it-int4": {
     "name": "Gemma 3n IT 4B",
     "description": "Gemma 3n Instruct 4B parameter model",
