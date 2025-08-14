@@ -9,9 +9,15 @@ This project is a fork of the excellent [Kokoro-82M-Android](https://github.com/
 ## Screenshots
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e44217f7-92b3-4f28-9d87-7a1797c80819" width="25%" alt="Basic TTS Screen" />
-  <img src="https://github.com/user-attachments/assets/81736bf6-cc51-4aae-aeb2-daae648fb7f9" width="25%" alt="Voice Mixer Screen" />
-  <em>(Screenshots from the original Kokoro-82M-Android app)</em>
+![Image](https://github.com/user-attachments/assets/9b854972-a608-43ac-bea3-4ab8e637e2f8)
+
+![Image](https://github.com/user-attachments/assets/03859019-6dea-4652-93ad-bc5a825d6aa9)
+
+![Image](https://github.com/user-attachments/assets/151d9cf5-f367-4f7b-8e5a-b766a7507445)
+
+![Image](https://github.com/user-attachments/assets/bc4047b5-0974-4007-8ead-ff99901f2fa0)
+
+![Image](https://github.com/user-attachments/assets/8cb2ec1e-2e1b-4826-91ec-d158e06de5d6)
 </p>
 
 **New features in Nabu:**
