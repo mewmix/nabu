@@ -30,7 +30,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -206,11 +205,7 @@ fun ChatTtsScreen(
                     onValueChange = { message = it },
                     modifier = Modifier.weight(1f),
                     label = { Text("Message") },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                    shape = RoundedCornerShape(24.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(

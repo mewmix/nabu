@@ -76,18 +76,26 @@ class ChatTtsViewModel(
     private val _speed = MutableStateFlow(1.0f)
     val speed = _speed.asStateFlow()
 
-    private val audioQueue = Channel<FloatArray>(Channel.UNLIMITED)
+    private val audioQueue = Channel<Pair<Int, FloatArray>>(Channel.UNLIMITED)
+    private var lineIndex = 0
 
     init {
         llmInference.initialize()
-        // Launch a coroutine to play queued audio sequentially
+        // Launch a coroutine to play queued audio in the order they were generated
         viewModelScope.launch {
-            for (audio in audioQueue) {
-                try {
-                    audioPlayer.prepare(audio)
-                    audioPlayer.playBlocking()
-                } catch (e: Exception) {
-                    DebugLogger.log("Audio playback error: ${e.localizedMessage}")
+            val pending = mutableMapOf<Int, FloatArray>()
+            var nextIndex = 0
+            for ((index, audio) in audioQueue) {
+                pending[index] = audio
+                while (pending.containsKey(nextIndex)) {
+                    val data = pending.remove(nextIndex)!!
+                    try {
+                        audioPlayer.prepare(data)
+                        audioPlayer.playBlocking()
+                    } catch (e: Exception) {
+                        DebugLogger.log("Audio playback error: ${e.localizedMessage}")
+                    }
+                    nextIndex++
                 }
             }
         }
@@ -144,7 +152,7 @@ class ChatTtsViewModel(
             val end = match.range.last + 1
             val sentence = text.substring(0, end).trim()
             DebugLogger.log("Queueing sentence: $sentence")
-            synthesizeAndQueue(sentence)
+            synthesizeAndQueue(cleanText(sentence))
             text = text.substring(end)
             match = regex.find(text)
         }
@@ -153,11 +161,12 @@ class ChatTtsViewModel(
         if (done && builder.isNotEmpty()) {
             val sentence = builder.toString().trim()
             builder.clear()
-            synthesizeAndQueue(sentence)
+            synthesizeAndQueue(cleanText(sentence))
         }
     }
 
     private fun synthesizeAndQueue(text: String) {
+        val currentIndex = lineIndex++
         viewModelScope.launch {
             _isSynthesizing.value = true
             try {
@@ -200,13 +209,19 @@ class ChatTtsViewModel(
                     }
                     data
                 }
-                audioQueue.send(audioData)
+                audioQueue.send(currentIndex to audioData)
             } catch (e: Exception) {
                 DebugLogger.log("Error synthesizing sentence: ${e.localizedMessage}")
             } finally {
                 _isSynthesizing.value = false
             }
         }
+    }
+
+    private fun cleanText(text: String): String {
+        val replaced = text.replace("\\n", "\n").replace("/n", "\n")
+        val markdownRegex = Regex("[*_`>#\\[\\](){},]")
+        return replaced.replace(markdownRegex, "")
     }
 
     // --- Mixer State Updaters ---
