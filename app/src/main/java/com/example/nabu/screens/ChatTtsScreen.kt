@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,6 +61,7 @@ fun ChatTtsScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isSynthesizing by viewModel.isSynthesizing.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
+    val ttsEnabled by viewModel.ttsEnabled.collectAsState()
 
     val selectedStyles by viewModel.selectedStyles.collectAsState()
     val weights by viewModel.weights.collectAsState()
@@ -82,6 +85,13 @@ fun ChatTtsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBackPressed) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.toggleTtsEnabled() }) {
+                        val icon = if (ttsEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff
+                        val desc = if (ttsEnabled) "Disable TTS" else "Enable TTS"
+                        Icon(icon, contentDescription = desc)
                     }
                 }
             )
