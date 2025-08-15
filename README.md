@@ -16,8 +16,7 @@ This project is a fork of the excellent [Kokoro-82M-Android](https://github.com/
 
 </p>
 
-**New features in Nabu:**
-*(New screenshots showcasing the Chat, Model Manager, and Book Reader would go here)*
+
 
 ## Features & Enhancements
 
