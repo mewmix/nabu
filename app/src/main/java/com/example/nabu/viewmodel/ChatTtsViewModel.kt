@@ -63,6 +63,9 @@ class ChatTtsViewModel(
     private val _playerState = MutableStateFlow(PlayerState.IDLE)
     val playerState = _playerState.asStateFlow()
 
+    private val _ttsEnabled = MutableStateFlow(true)
+    val ttsEnabled = _ttsEnabled.asStateFlow()
+
     // Mixer State
     private val _selectedStyles = MutableStateFlow(listOf(defaultVoice))
     val selectedStyles = _selectedStyles.asStateFlow()
@@ -98,6 +101,14 @@ class ChatTtsViewModel(
                     nextIndex++
                 }
             }
+        }
+    }
+
+    fun toggleTtsEnabled() {
+        val enabled = !_ttsEnabled.value
+        _ttsEnabled.value = enabled
+        if (!enabled) {
+            audioPlayer.stop()
         }
     }
 
@@ -166,6 +177,7 @@ class ChatTtsViewModel(
     }
 
     private fun synthesizeAndQueue(text: String) {
+        if (!_ttsEnabled.value) return
         val currentIndex = lineIndex++
         viewModelScope.launch {
             _isSynthesizing.value = true
