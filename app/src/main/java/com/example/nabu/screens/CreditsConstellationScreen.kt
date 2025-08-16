@@ -102,7 +102,11 @@ fun CreditsConstellationScreen() {
                 ),
                 CreditEntry(
                     "LiteRT community on Hugging Face",
-                    "https://huggingface.co/litert-community"
+                    "https://huggingface.co/litert-community",
+                ),
+                CreditEntry(
+                    "jsoup: HTML parser for EPUB support (MIT) by Jonathan Hedley",
+                    "https://jsoup.org/",
                 )
             )
         )

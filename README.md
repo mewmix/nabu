@@ -67,3 +67,4 @@ This project would not be possible without the amazing work of the open-source c
     *   ONNX Runtime for on-device inference.
     *   Jetpack Compose for the user interface.
     *   [IPA-Transcribers](https://github.com/kotlinguistics/IPA-Transcribers) for phoneme generation.
+    *   [jsoup](https://jsoup.org/) HTML parser used for EPUB support (MIT) by Jonathan Hedley.

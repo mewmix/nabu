@@ -24,7 +24,7 @@ import kotlinx.coroutines.delay
 fun WaveformVisualizer(
     modifier: Modifier = Modifier,
     sampleCount: Int = 1024,
-    lineColor: Color = Color.Blue,
+    lineColor: Color = Color.White,
     visible: Boolean = true,
 ) {
     var samples by remember { mutableStateOf(FloatArray(sampleCount)) }
