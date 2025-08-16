@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.min
 
 class KokoroAudioPlayer(
     private val scope: CoroutineScope,
@@ -18,6 +19,7 @@ class KokoroAudioPlayer(
 ) : AudioPlayer {
     private var audioTrack: AudioTrack? = null
     private var pcmData: ByteArray? = null
+    private var audioFloats: FloatArray? = null
     private var position: Int = 0
     private var currentState: PlayerState = PlayerState.IDLE
         set(value) {
@@ -30,6 +32,7 @@ class KokoroAudioPlayer(
     override fun prepare(audio: FloatArray, position: Int) {
         DebugLogger.log("KokoroAudioPlayer prepare length=${audio.size}, position=$position")
         release() // Release any existing track
+        audioFloats = audio
         val channelConfig = AudioFormat.CHANNEL_OUT_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
@@ -72,10 +75,22 @@ class KokoroAudioPlayer(
             DebugLogger.log("KokoroAudioPlayer start play from position $position")
             currentState = PlayerState.PLAYING
             track.play()
-            track.write(data, position, data.size - position)
-            // Wait for playback to complete if not paused
-            while (track.playbackHeadPosition < (data.size - position) / 2 && currentState == PlayerState.PLAYING) {
-                kotlinx.coroutines.delay(10) // Small delay to prevent busy-waiting
+            val chunkSize = 4096
+            while (position < data.size && currentState == PlayerState.PLAYING && isActive) {
+                val remaining = data.size - position
+                val toWrite = min(chunkSize, remaining)
+                val bytePos = position
+                val written = track.write(data, position, toWrite)
+                if (written > 0) {
+                    val actualSamples = written / 2
+                    audioFloats?.let { PcmTap.pushFloats(it, bytePos / 2, actualSamples) }
+                    position += written
+                } else {
+                    break
+                }
+            }
+            while (track.playbackHeadPosition < data.size / 2 && currentState == PlayerState.PLAYING && isActive) {
+                kotlinx.coroutines.delay(10)
             }
             if (currentState != PlayerState.PAUSED) {
                 stop()
@@ -96,10 +111,22 @@ class KokoroAudioPlayer(
             DebugLogger.log("KokoroAudioPlayer start play blocking from position $position")
             currentState = PlayerState.PLAYING
             track.play()
-            track.write(data, position, data.size - position)
-            // Wait for playback to complete if not paused
-            while (track.playbackHeadPosition < (data.size - position) / 2 && currentState == PlayerState.PLAYING && coroutineContext.isActive) {
-                kotlinx.coroutines.delay(10) // Small delay to prevent busy-waiting
+            val chunkSize = 4096
+            while (position < data.size && currentState == PlayerState.PLAYING && coroutineContext.isActive) {
+                val remaining = data.size - position
+                val toWrite = min(chunkSize, remaining)
+                val bytePos = position
+                val written = track.write(data, position, toWrite)
+                if (written > 0) {
+                    val actualSamples = written / 2
+                    audioFloats?.let { PcmTap.pushFloats(it, bytePos / 2, actualSamples) }
+                    position += written
+                } else {
+                    break
+                }
+            }
+            while (track.playbackHeadPosition < data.size / 2 && currentState == PlayerState.PLAYING && coroutineContext.isActive) {
+                kotlinx.coroutines.delay(10)
             }
             if (currentState != PlayerState.PAUSED) {
                 stop()
@@ -137,6 +164,7 @@ class KokoroAudioPlayer(
         audioTrack?.flush()
         audioTrack?.release()
         audioTrack = null
+        audioFloats = null
         position = 0
     }
 

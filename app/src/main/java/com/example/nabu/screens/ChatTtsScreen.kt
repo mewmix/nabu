@@ -48,7 +48,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.kokoro.chat.MessageBubble
 import com.example.nabu.utils.PlayerState
+import com.example.nabu.utils.PcmTap
 import com.example.nabu.viewmodel.ChatTtsViewModel
+import com.example.nabu.ui.components.WaveformVisualizer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +64,10 @@ fun ChatTtsScreen(
     val isSynthesizing by viewModel.isSynthesizing.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
     val ttsEnabled by viewModel.ttsEnabled.collectAsState()
+
+    LaunchedEffect(playerState) {
+        PcmTap.enabled = playerState == PlayerState.PLAYING
+    }
 
     val selectedStyles by viewModel.selectedStyles.collectAsState()
     val weights by viewModel.weights.collectAsState()
@@ -178,6 +184,13 @@ fun ChatTtsScreen(
                     if(isLoading || isSynthesizing) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
             }
+
+            WaveformVisualizer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                visible = playerState == PlayerState.PLAYING
+            )
 
             // Chat Messages
             LazyColumn(
