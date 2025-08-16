@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.min
 
 fun playAudio(audioData: FloatArray, sampleRate: Int, scope: CoroutineScope, onComplete: () -> Unit) {
     scope.launch(Dispatchers.IO) {
@@ -36,8 +37,24 @@ fun playAudio(audioData: FloatArray, sampleRate: Int, scope: CoroutineScope, onC
         }
 
         audioTrack.play()
-        audioTrack.write(byteBuffer.array(), 0, byteBuffer.array().size)
 
+        val pcmBytes = byteBuffer.array()
+        val chunkSize = 4096
+        var pos = 0
+        while (pos < pcmBytes.size) {
+            val remaining = pcmBytes.size - pos
+            val toWrite = min(chunkSize, remaining)
+            val floatStart = pos / 2
+            val written = audioTrack.write(pcmBytes, pos, toWrite)
+            if (written > 0) {
+                PcmTap.pushFloats(audioData, floatStart, written / 2)
+                pos += written
+            } else {
+                break
+            }
+        }
+
+        audioTrack.stop()
         audioTrack.release()
 
         withContext(Dispatchers.Main) {
