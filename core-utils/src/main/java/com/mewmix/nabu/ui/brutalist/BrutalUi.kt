@@ -246,18 +246,17 @@ fun SwitchToggle(
     modifier: Modifier = Modifier,
     ledColor: Color = Brutal.green
 ) {
+    val interaction = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
             .background(Brutal.panelHl, RoundedCornerShape(6.dp))
             .border(1.dp, Brutal.panelStroke, RoundedCornerShape(6.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp)
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { onToggle(!checked) },
-                    onDragEnd = { /* snap already handled */ },
-                    onDragCancel = {}
-                ) { _, _ -> /* tap/drag same behavior for simplicity */ }
-            },
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Switch
+            ) { onToggle(!checked) },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Led(on = checked, colorOn = ledColor)
