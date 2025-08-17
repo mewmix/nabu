@@ -47,19 +47,25 @@ object TextExtractor {
     private fun extractEpub(ctx: Context, uri: Uri): Sequence<String> = sequence {
         ctx.contentResolver.openInputStream(uri)?.use { input ->
             ZipInputStream(BufferedInputStream(input)).use { zis ->
-                val items = mutableListOf<Pair<String, String>>()
+                val items = mutableListOf<Pair<String, List<String>>>()
                 var e = zis.nextEntry
                 while (e != null) {
                     val n = e.name.lowercase()
                     if (!e.isDirectory && (n.endsWith(".xhtml") || n.endsWith(".html") || n.endsWith(".htm"))) {
                         val html = zis.readBytes().toString(Charsets.UTF_8)
-                        val txt = Jsoup.parse(html).text()
-                        if (txt.isNotBlank()) items.add(n to txt)
+                        val doc = Jsoup.parse(html)
+                        val paras = doc.body().select("p").mapNotNull { p ->
+                            val t = p.text().trim()
+                            if (t.isNotBlank()) t else null
+                        }
+                        if (paras.isNotEmpty()) items.add(n to paras)
                     }
                     zis.closeEntry()
                     e = zis.nextEntry
                 }
-                items.sortedBy { it.first }.forEach { (_, txt) -> yield(txt) }
+                items.sortedBy { it.first }.forEach { (_, paras) ->
+                    paras.forEach { yield(it) }
+                }
             }
         } ?: yield("")
     }
@@ -77,16 +83,21 @@ object TextExtractor {
     }
 
     private fun Sequence<String>.chunkedByChars(maxLen: Int): Sequence<String> = sequence {
-        val buf = StringBuilder()
         for (block in this@chunkedByChars) {
             var i = 0
             while (i < block.length) {
-                val take = min(maxLen - buf.length, block.length - i)
-                buf.append(block, i, i + take); i += take
-                if (buf.length >= maxLen) { yield(buf.toString()); buf.clear() }
+                val end = (i + maxLen).coerceAtMost(block.length)
+                var take = end - i
+                if (end < block.length) {
+                    val sub = block.substring(i, end)
+                    val lastPunct = sub.lastIndexOfAny(charArrayOf('.', '!', '?', ';', ':', ','))
+                    if (lastPunct != -1) take = lastPunct + 1
+                }
+                val chunk = block.substring(i, i + take).trim()
+                if (chunk.isNotEmpty()) yield(chunk)
+                i += take
             }
         }
-        if (buf.isNotEmpty()) yield(buf.toString())
     }
 
     private fun safeName(ctx: Context, uri: Uri): String =
