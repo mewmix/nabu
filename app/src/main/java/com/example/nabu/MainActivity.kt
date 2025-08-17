@@ -51,12 +51,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalSlider
+import com.mewmix.nabu.ui.brutalist.Brutal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -543,15 +544,14 @@ fun BasicScreen(
             }
         }
 
-        Text("Speed: $speed")
-        Slider(
+        Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
+        BrutalSlider(
             value = speed,
             onValueChange = {
                 speed = it
                 SettingsManager.setSpeed(context, it)
             },
-            valueRange = 0.5f..2.0f,
-            steps = 5,
+            range = 0.5f..2.0f,
             modifier = Modifier.fillMaxWidth()
         )
 
