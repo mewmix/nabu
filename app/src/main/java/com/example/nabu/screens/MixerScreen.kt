@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -125,15 +124,14 @@ fun MixerScreen(
             modifier = Modifier.fillMaxWidth()
             )
 
-        Text("Speed: $speed")
-        Slider(
+        Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
+        BrutalSlider(
             value = speed,
             onValueChange = {
                 speed = it
                 SettingsManager.setSpeed(context, it)
             },
-            valueRange = 0.5f..2.0f,
-            steps = 5,
+            range = 0.5f..2.0f,
             modifier = Modifier.fillMaxWidth()
         )
 
