@@ -53,6 +53,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -64,6 +65,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -166,7 +168,7 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     session = viewModel.getSession(),
                     phonemeConverter = phonemeConverter,
-                    onGenerateAudio = { text, style, speed, shouldSave, onComplete ->
+                    onGenerateAudio = { text, style, speed, shouldSave, useRaw, onComplete ->
                         maybeRequestNotificationPermission()
                         generateAudio(
                             phonemeConverter,
@@ -176,6 +178,7 @@ class MainActivity : ComponentActivity() {
                             this@MainActivity,
                             scope,
                             shouldSave,
+                            useRaw,
                             onComplete
                         )
                     },
@@ -217,6 +220,7 @@ private fun generateAudio(
     context: Context,
     scope: CoroutineScope,
     shouldSave: Boolean,
+    useRaw: Boolean,
     onComplete: () -> Unit
 ) {
     val session = OnnxRuntimeManager.getSession()
@@ -225,10 +229,15 @@ private fun generateAudio(
             val engine = SettingsManager.getTtsEngine(context)
             val ttsStart = SystemClock.elapsedRealtime()
             val (audioData, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                val (phonemeStr, tokens) = KittenPhonemizer.phonemize(text)
-                DebugLogger.log("Phonemes: $phonemeStr")
+                val (displayStr, tokens) = if (useRaw) {
+                    KittenPhonemizer.encodeText(text)
+                } else {
+                    KittenPhonemizer.phonemize(text)
+                }
+                val logLabel = if (useRaw) "Raw text" else "Phonemes"
+                DebugLogger.log("$logLabel: $displayStr")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Phonemes: $phonemeStr", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "$logLabel: $displayStr", Toast.LENGTH_LONG).show()
                 }
                 val loader = StyleLoader(context)
                 val voiceArray = loader.getStyleArray(style)
@@ -319,7 +328,7 @@ sealed class Screen(val title: String) {
 fun MainScreen(
     session: OrtSession,
     phonemeConverter: PhonemeConverter,
-    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
+    onGenerateAudio: (String, String, Float, Boolean, Boolean, () -> Unit) -> Unit,
     userPreferencesRepository: UserPreferencesRepository,
     initialScreen: Screen = Screen.Basic
 ) {
@@ -408,7 +417,7 @@ fun MainScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BasicScreen(
-    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
+    onGenerateAudio: (String, String, Float, Boolean, Boolean, () -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
     var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
@@ -425,6 +434,7 @@ fun BasicScreen(
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
+    var useRawText by remember { mutableStateOf(false) }
 
     LaunchedEffect(engine) {
         withContext(Dispatchers.IO) {
@@ -527,6 +537,17 @@ fun BasicScreen(
             }
         }
 
+        if (engine == TtsEngine.KITTEN) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Raw text input")
+                Spacer(modifier = Modifier.width(8.dp))
+                Switch(checked = useRawText, onCheckedChange = { useRawText = it })
+            }
+        }
+
         Text("Speed: $speed")
         Slider(
             value = speed,
@@ -548,7 +569,7 @@ fun BasicScreen(
                 onClick = {
                     shouldSaveFile = false
                     isProcessing = true
-                    onGenerateAudio(text, style, speed, shouldSaveFile) {
+                    onGenerateAudio(text, style, speed, shouldSaveFile, useRawText) {
                         isProcessing = false
                     }
                 },
@@ -566,7 +587,7 @@ fun BasicScreen(
                 onClick = {
                     shouldSaveFile = true
                     isProcessing = true
-                    onGenerateAudio(text, style, speed, shouldSaveFile) {
+                    onGenerateAudio(text, style, speed, shouldSaveFile, useRawText) {
                         isProcessing = false
                     }
                 },
@@ -589,6 +610,6 @@ fun BasicScreen(
 //fun ScreenPreview() {
 //    MainScreen(
 //        session = TODO(),
-//        onGenerateAudio = { _, _, _, _, _ -> }
+//        onGenerateAudio = { _, _, _, _, _, _ -> }
 //    )
 //}
