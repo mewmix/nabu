@@ -13,14 +13,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.text.style.TextAlign
@@ -30,6 +27,9 @@ import com.example.nabu.utils.*
 import com.example.nabu.ui.components.ProgressDialog
 import com.example.nabu.viewmodel.BookViewModel
 import kotlinx.coroutines.launch
+import com.mewmix.nabu.ui.brutalist.PanelBox
+import com.mewmix.nabu.ui.brutalist.BrutalSection
+import com.mewmix.nabu.ui.brutalist.Brutal
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -123,152 +123,131 @@ fun BookScreen(
         }
     }
 
-    LazyColumn(
+    PanelBox(
+        title = "Book · Reader",
         modifier = Modifier
             .fillMaxSize()
-            .padding(dimensionResource(id = R.dimen.padding_large)),
-        verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
-        state = listState
+            .padding(dimensionResource(id = R.dimen.padding_large))
     ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
+            state = listState
+        ) {
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(dimensionResource(id = R.dimen.padding_medium))) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showSettings = !showSettings },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Settings", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Toggle Settings",
-                            modifier = Modifier.graphicsLayer(rotationZ = if (showSettings) 180f else 0f)
-                        )
+            BrutalSection(
+                title = "Settings",
+                expanded = showSettings,
+                onToggle = { showSettings = !showSettings }
+            ) {
+                StyleSelector(
+                    styleNames = styleLoader.names,
+                    selectedStyles = selectedStyles,
+                    onAddStyle = { style ->
+                        selectedStyles = selectedStyles + style
+                        weights = weights + (style to 1f)
+                    },
+                    onRemoveStyle = { style ->
+                        selectedStyles = selectedStyles - style
+                        weights = weights - style
                     }
-                    if (showSettings) {
-                        Divider(modifier = Modifier.padding(vertical = dimensionResource(id = R.dimen.padding_medium)))
-                        StyleSelector(
-                            styleNames = styleLoader.names,
-                            selectedStyles = selectedStyles,
-                            onAddStyle = { style ->
-                                selectedStyles = selectedStyles + style
-                                weights = weights + (style to 1f)
-                            },
-                            onRemoveStyle = { style ->
-                                selectedStyles = selectedStyles - style
-                                weights = weights - style
-                            }
-                        )
-                        WeightSliders(
-                            selectedStyles = selectedStyles,
-                            weights = weights,
-                            onWeightChanged = { style, value ->
-                                weights = weights.toMutableMap().apply { put(style, value) }
-                            }
-                        )
-                        InterpolationModeSelector(
-                            currentMode = interpolationMode,
-                            onModeSelected = { interpolationMode = it }
-                        )
-                        Text("Speed: ${ "%.2f".format(speed)}", style = MaterialTheme.typography.bodyMedium)
-                        Slider(
-                            value = speed,
-                            onValueChange = {
-                                speed = it
-                                SettingsManager.setSpeed(context, it)
-                            },
-                            valueRange = 0.5f..2.0f,
-                            steps = 15,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                )
+                WeightSliders(
+                    selectedStyles = selectedStyles,
+                    weights = weights,
+                    onWeightChanged = { style, value ->
+                        weights = weights.toMutableMap().apply { put(style, value) }
                     }
-                }
+                )
+                InterpolationModeSelector(
+                    currentMode = interpolationMode,
+                    onModeSelected = { interpolationMode = it }
+                )
+                Text(
+                    "Speed: ${ "%.2f".format(speed)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Brutal.textBright,
+                    fontFamily = Brutal.mono
+                )
+                Slider(
+                    value = speed,
+                    onValueChange = {
+                        speed = it
+                        SettingsManager.setSpeed(context, it)
+                    },
+                    valueRange = 0.5f..2.0f,
+                    steps = 15,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(dimensionResource(id = R.dimen.padding_medium))) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showProjectSection = !showProjectSection },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Projects", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Toggle Projects",
-                            modifier = Modifier.graphicsLayer(rotationZ = if (showProjectSection) 180f else 0f)
-                        )
-                    }
-                    if (showProjectSection) {
-                        Divider(modifier = Modifier.padding(vertical = dimensionResource(id = R.dimen.padding_medium)))
-                        OutlinedTextField(
-                            value = projectName,
-                            onValueChange = { projectName = it },
-                            label = { Text("Project Name") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
-                        ) {
-                            Text("Use Pregenerated")
-                            Spacer(modifier = Modifier.weight(1f))
-                            Switch(checked = usePregenerated, onCheckedChange = { usePregenerated = it })
+            BrutalSection(
+                title = "Projects",
+                expanded = showProjectSection,
+                onToggle = { showProjectSection = !showProjectSection }
+            ) {
+                OutlinedTextField(
+                    value = projectName,
+                    onValueChange = { projectName = it },
+                    label = { Text("Project Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                ) {
+                    Text("Use Pregenerated", color = Brutal.textBright, fontFamily = Brutal.mono)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Switch(checked = usePregenerated, onCheckedChange = { usePregenerated = it })
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small)),
+                    modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                ) {
+                    Button(onClick = {
+                        bookUri?.let {
+                            val project = Project(
+                                uri = it.toString(),
+                                name = projectName,
+                                styles = selectedStyles,
+                                weights = weights,
+                                mode = interpolationMode,
+                                speed = speed,
+                                bookmark = bookmark,
+                                usePregenerated = usePregenerated
+                            )
+                            ProjectManager.save(context, project)
+                            projects = ProjectManager.list(context)
                         }
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small)),
-                            modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
-                        ) {
-                            Button(onClick = {
-                                bookUri?.let {
-                                    val project = Project(
-                                        uri = it.toString(),
-                                        name = projectName,
-                                        styles = selectedStyles,
-                                        weights = weights,
-                                        mode = interpolationMode,
-                                        speed = speed,
-                                        bookmark = bookmark,
-                                        usePregenerated = usePregenerated
-                                    )
-                                    ProjectManager.save(context, project)
-                                    projects = ProjectManager.list(context)
-                                }
-                            }) { Text("Save Project") }
-                            Button(onClick = {
-                                bookUri?.let {
-                                    ProjectManager.delete(context, it.toString())
-                                    projects = ProjectManager.list(context)
-                                    projectName = ""
-                                }
-                            }) { Text("Delete Project") }
+                    }) { Text("Save Project") }
+                    Button(onClick = {
+                        bookUri?.let {
+                            ProjectManager.delete(context, it.toString())
+                            projects = ProjectManager.list(context)
+                            projectName = ""
                         }
-                        if (projects.isNotEmpty()) {
-                            Divider(modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small)))
-                            Column(modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))) {
-                                projects.forEach { p ->
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(p.name, modifier = Modifier.weight(1f))
-                                        Button(onClick = {
-                                            val uri = Uri.parse(p.uri)
-                                            bookViewModel.openDocument(uri)
-                                            bookViewModel.loadBook(context, uri)
-                                        }) { Text("Load") }
-                                        Button(onClick = {
-                                            ProjectManager.delete(context, p.uri)
-                                            projects = ProjectManager.list(context)
-                                        }) { Text("Del") }
-                                    }
-                                }
+                    }) { Text("Delete Project") }
+                }
+                if (projects.isNotEmpty()) {
+                    Divider(modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small)))
+                    Column(modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))) {
+                        projects.forEach { p ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(p.name, modifier = Modifier.weight(1f), color = Brutal.textBright, fontFamily = Brutal.mono)
+                                Button(onClick = {
+                                    val uri = Uri.parse(p.uri)
+                                    bookViewModel.openDocument(uri)
+                                    bookViewModel.loadBook(context, uri)
+                                }) { Text("Load") }
+                                Button(onClick = {
+                                    ProjectManager.delete(context, p.uri)
+                                    projects = ProjectManager.list(context)
+                                }) { Text("Del") }
                             }
                         }
                     }
@@ -576,6 +555,7 @@ fun BookScreen(
         }
 
         // Debug logs moved to dedicated screen
+    }
     }
 
     if (isPregenerating) {
