@@ -124,16 +124,18 @@ fun MixerScreen(
             modifier = Modifier.fillMaxWidth()
             )
 
-        Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
-        BrutalSlider(
-            value = speed,
-            onValueChange = {
-                speed = it
-                SettingsManager.setSpeed(context, it)
-            },
-            range = 0.5f..2.0f,
-            modifier = Modifier.fillMaxWidth()
-        )
+        PanelRow(name = "Speed") {
+            BrutalSlider(
+                value = speed,
+                onValueChange = {
+                    speed = it
+                    SettingsManager.setSpeed(context, it)
+                },
+                range = 0.5f..2.0f,
+                modifier = Modifier.weight(1f)
+            )
+            Text("%.2f".format(speed))
+        }
 
         StyleSelector(
             styleNames = styleLoader.names,

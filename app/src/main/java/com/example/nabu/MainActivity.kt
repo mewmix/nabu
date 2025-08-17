@@ -57,6 +57,7 @@ import androidx.compose.material3.TextField
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
+import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.mewmix.nabu.ui.brutalist.Brutal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -544,16 +545,18 @@ fun BasicScreen(
             }
         }
 
-        Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
-        BrutalSlider(
-            value = speed,
-            onValueChange = {
-                speed = it
-                SettingsManager.setSpeed(context, it)
-            },
-            range = 0.5f..2.0f,
-            modifier = Modifier.fillMaxWidth()
-        )
+        PanelRow(name = "Speed") {
+            BrutalSlider(
+                value = speed,
+                onValueChange = {
+                    speed = it
+                    SettingsManager.setSpeed(context, it)
+                },
+                range = 0.5f..2.0f,
+                modifier = Modifier.weight(1f)
+            )
+            Text("%.2f".format(speed))
+        }
 
         Row(
             modifier = Modifier
