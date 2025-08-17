@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +23,7 @@ import com.example.nabu.utils.loadCreations
 import com.example.nabu.utils.playCreation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.mewmix.nabu.ui.brutalist.BrutalButton
 
 @Composable
 fun CreationsScreen() {
@@ -55,7 +55,7 @@ fun CreationsScreen() {
                         modifier = Modifier.weight(1f)
                     )
                     val isPlaying = playingUri == creation.uri && mediaPlayer?.isPlaying == true
-                    Button(onClick = {
+                    BrutalButton(onClick = {
                         if (isPlaying) {
                             mediaPlayer?.pause()
                         } else {
