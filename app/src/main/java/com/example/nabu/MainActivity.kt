@@ -42,7 +42,6 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +56,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.CenterAlignedTopAppBar
+import com.mewmix.nabu.ui.brutalist.PanelBox
+import com.mewmix.nabu.ui.brutalist.BrutalButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -446,13 +447,14 @@ fun BasicScreen(
     var expanded by remember { mutableStateOf(false) }
     var engineExpanded by remember { mutableStateOf(false) }
 
-    Column(
+    PanelBox(
+        title = "Basic · TTS",
         modifier = Modifier
             .padding(16.dp)
-            .fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .fillMaxSize()
     ) {
-        TextField(
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            TextField(
             value = text,
             minLines = 3,
             maxLines = 12,
@@ -565,7 +567,7 @@ fun BasicScreen(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            Button(
+            BrutalButton(
                 onClick = {
                     shouldSaveFile = false
                     isProcessing = true
@@ -583,7 +585,7 @@ fun BasicScreen(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            Button(
+            BrutalButton(
                 onClick = {
                     shouldSaveFile = true
                     isProcessing = true
@@ -599,17 +601,6 @@ fun BasicScreen(
                 Text(if (isProcessing) "GPU Processing..." else "Play & Save")
             }
         }
-
-        
     }
 }
-
-
-//@Preview(showBackground = true)
-//@Composable
-//fun ScreenPreview() {
-//    MainScreen(
-//        session = TODO(),
-//        onGenerateAudio = { _, _, _, _, _, _ -> }
-//    )
-//}
+}

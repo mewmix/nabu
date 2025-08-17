@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +47,7 @@ import com.example.nabu.data.UserPreferencesRepository
 import com.example.nabu.utils.DebugLogger
 import java.io.File
 import kotlinx.coroutines.launch
+import com.mewmix.nabu.ui.brutalist.BrutalButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -122,7 +122,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                 }
             },
             confirmButton = {
-                Button(
+                BrutalButton(
                     onClick = {
                         selectedModel?.let {
                             DebugLogger.log("ModelsScreen: Downloading ${it.name}")
@@ -135,7 +135,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                 }
             },
             dismissButton = {
-                Button(onClick = { showDialog = false }) {
+                BrutalButton(onClick = { showDialog = false }) {
                     Text("Cancel")
                 }
             }
@@ -150,7 +150,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Button(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                BrutalButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
                     Text("Import Local Model")
                 }
                 Spacer(modifier = Modifier.height(8.dp))

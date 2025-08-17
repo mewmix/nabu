@@ -19,12 +19,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -46,6 +42,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mewmix.nabu.ui.brutalist.PanelBox
+import com.mewmix.nabu.ui.brutalist.BrutalSection
+import com.mewmix.nabu.ui.brutalist.Brutal
+import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.example.kokoro.chat.MessageBubble
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PcmTap
@@ -103,65 +103,48 @@ fun ChatTtsScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        PanelBox(
+            title = "Chat · TTS",
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
 
-            // Mixer Settings in a Card
-            Card(
+            BrutalSection(
+                title = "Voice Mixer Settings",
+                expanded = showMixerSettings,
+                onToggle = { showMixerSettings = !showMixerSettings },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
+                    .padding(8.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showMixerSettings = !showMixerSettings },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "Voice Mixer Settings",
-                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        Icon(
-                            imageVector = if (showMixerSettings) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = if (showMixerSettings) "Collapse" else "Expand",
-                        )
-                    }
-                    if (showMixerSettings) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                            StyleSelector(
-                                styleNames = viewModel.styleLoader.names,
-                                selectedStyles = selectedStyles,
-                                onAddStyle = viewModel::addStyle,
-                                onRemoveStyle = viewModel::removeStyle,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            WeightSliders(
-                                selectedStyles = selectedStyles,
-                                weights = weights,
-                                onWeightChanged = viewModel::updateWeight,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            InterpolationModeSelector(
-                                currentMode = interpolationMode,
-                                onModeSelected = viewModel::updateInterpolationMode,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Speed: ${"%.2f".format(speed)}")
-                            Slider(
-                                value = speed,
-                                onValueChange = { viewModel.updateSpeed(it) },
-                                valueRange = 0.5f..2.0f,
-                                steps = 15,
-                            )
-                        }
-                    }
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    StyleSelector(
+                        styleNames = viewModel.styleLoader.names,
+                        selectedStyles = selectedStyles,
+                        onAddStyle = viewModel::addStyle,
+                        onRemoveStyle = viewModel::removeStyle,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    WeightSliders(
+                        selectedStyles = selectedStyles,
+                        weights = weights,
+                        onWeightChanged = viewModel::updateWeight,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    InterpolationModeSelector(
+                        currentMode = interpolationMode,
+                        onModeSelected = viewModel::updateInterpolationMode,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
+                    Slider(
+                        value = speed,
+                        onValueChange = { viewModel.updateSpeed(it) },
+                        valueRange = 0.5f..2.0f,
+                        steps = 15,
+                    )
                 }
             }
 
@@ -231,7 +214,7 @@ fun ChatTtsScreen(
                     shape = RoundedCornerShape(24.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(
+                BrutalButton(
                     onClick = {
                         if (message.isNotBlank()) {
                             viewModel.sendMessage(message)

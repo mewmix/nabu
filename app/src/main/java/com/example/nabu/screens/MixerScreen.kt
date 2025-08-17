@@ -1,5 +1,7 @@
 package com.example.nabu.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,21 +16,23 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.RadioButton
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -40,8 +44,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.mewmix.nabu.ui.brutalist.Brutal
+import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.KittenPhonemizer
@@ -49,6 +57,9 @@ import com.example.nabu.utils.StyleLoader
 import com.example.nabu.utils.createAudioFromStyleVector
 import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
+import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalSlider
+import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.example.nabu.utils.playAudio
 import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.SettingsManager
@@ -96,21 +107,24 @@ fun MixerScreen(
     var weights by remember { mutableStateOf(initial.second) }
     var interpolationMode by remember { mutableStateOf(initial.third) }
 
-    Column(
+    PanelBox(
+        title = "Mixer · Styles",
         modifier = Modifier
             .padding(16.dp)
             .fillMaxSize()
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        TextField(
+        Column(
+            modifier = Modifier.verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            TextField(
             value = text,
             onValueChange = { text = it },
             minLines = 3,
             maxLines = 12,
             label = { Text("Text to speak") },
             modifier = Modifier.fillMaxWidth()
-        )
+            )
 
         Text("Speed: $speed")
         Slider(
@@ -157,7 +171,7 @@ fun MixerScreen(
         )
 
         Row(modifier = Modifier.fillMaxWidth()) {
-            Button(
+            BrutalButton(
                 onClick = {
                     shouldSaveFile = false
                     isProcessing = true
@@ -181,7 +195,7 @@ fun MixerScreen(
                 enabled = !isProcessing
             ) { Text(if (isProcessing) "Mixing..." else "Play") }
 
-            Button(
+            BrutalButton(
                 onClick = {
                     shouldSaveFile = true
                     isProcessing = true
@@ -209,6 +223,7 @@ fun MixerScreen(
 
         // Debug logs moved to dedicated screen
     }
+}
 }
 
 private fun loadStyleConfig(context: android.content.Context): Triple<List<String>, Map<String, Float>, InterpolationMode>? {
@@ -285,7 +300,6 @@ private fun saveStyleConfig(
         .apply()
 }
 
-
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun StyleSelector(
@@ -297,7 +311,11 @@ fun StyleSelector(
     var expanded by remember { mutableStateOf(false) }
 
     Column {
-        Text("Selected Styles:", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "Selected Styles:",
+            style = MaterialTheme.typography.labelLarge,
+            color = Brutal.textBright
+        )
 
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
@@ -306,13 +324,19 @@ fun StyleSelector(
             selectedStyles.forEach { style ->
                 SuggestionChip(
                     onClick = { onRemoveStyle(style) },
-                    label = { Text(style) },
+                    label = { Text(style, color = Brutal.textBright) },
                     icon = {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = "Remove"
+                            contentDescription = "Remove",
+                            tint = Brutal.textBright
                         )
-                    }
+                    },
+                    colors = SuggestionChipDefaults.suggestionChipColors(
+                        containerColor = Brutal.panelBg,
+                        iconContentColor = Brutal.textBright,
+                        labelColor = Brutal.textBright
+                    )
                 )
             }
         }
@@ -327,24 +351,48 @@ fun StyleSelector(
                 value = "",
                 onValueChange = {},
                 readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                placeholder = { Text("Add style...") },
+                trailingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = null,
+                        tint = Brutal.textBright,
+                        modifier = Modifier.graphicsLayer(rotationZ = if (expanded) 180f else 0f)
+                    )
+                },
+                placeholder = { Text("Add style...", color = Brutal.textDim) },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Brutal.panelBg,
+                    unfocusedContainerColor = Brutal.panelBg,
+                    focusedIndicatorColor = Brutal.hairline,
+                    unfocusedIndicatorColor = Brutal.hairline,
+                    cursorColor = Brutal.amber,
+                    focusedTextColor = Brutal.textBright,
+                    unfocusedTextColor = Brutal.textBright,
+                    focusedPlaceholderColor = Brutal.textDim,
+                    unfocusedPlaceholderColor = Brutal.textDim
+                ),
+                textStyle = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier
                     .menuAnchor()
                     .fillMaxWidth()
+                    .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
             )
 
             DropdownMenu(
                 expanded = expanded,
-                onDismissRequest = { expanded = false }
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .background(Brutal.panelBg)
+                    .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
             ) {
                 styleNames.filter { it !in selectedStyles }.forEach { style ->
                     DropdownMenuItem(
-                        text = { Text(style) },
+                        text = { Text(style, color = Brutal.textBright) },
                         onClick = {
                             onAddStyle(style)
                             expanded = false
-                        }
+                        },
+                        colors = MenuDefaults.itemColors(textColor = Brutal.textBright)
                     )
                 }
             }
@@ -362,12 +410,10 @@ fun WeightSliders(
         Text("Style Weights:", style = MaterialTheme.typography.labelLarge)
 
         selectedStyles.forEach { style ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = style, modifier = Modifier.width(120.dp))
-                Slider(
+            PanelRow(name = style) {
+                BrutalSlider(
                     value = weights[style] ?: 0f,
                     onValueChange = { onWeightChanged(style, it) },
-                    valueRange = 0f..1f,
                     modifier = Modifier.weight(1f)
                 )
                 Text(text = "%.2f".format(weights[style] ?: 0f))
