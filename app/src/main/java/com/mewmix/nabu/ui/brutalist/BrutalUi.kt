@@ -10,12 +10,15 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -165,6 +168,41 @@ fun LabelPlate(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+/* ---------- Button ---------- */
+@Composable
+fun BrutalButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val bg = if (enabled) Brutal.panelHl else Brutal.panelBg
+    val border = if (enabled) Brutal.panelStroke else Brutal.hairline
+    Row(
+        modifier
+            .background(bg, RoundedCornerShape(6.dp))
+            .border(1.dp, border, RoundedCornerShape(6.dp))
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        val contentColor = if (enabled) Brutal.textBright else Brutal.textDim
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            ProvideTextStyle(MaterialTheme.typography.labelMedium.copy(fontFamily = Brutal.mono)) {
+                content()
+            }
+        }
     }
 }
 

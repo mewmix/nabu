@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.Brutal
+import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.example.kokoro.chat.MessageBubble
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PcmTap
@@ -214,7 +214,7 @@ fun ChatTtsScreen(
                     shape = RoundedCornerShape(24.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(
+                BrutalButton(
                     onClick = {
                         if (message.isNotBlank()) {
                             viewModel.sendMessage(message)

@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -58,6 +57,7 @@ import com.example.nabu.utils.StyleLoader
 import com.example.nabu.utils.createAudioFromStyleVector
 import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
+import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.example.nabu.utils.playAudio
 import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.SettingsManager
@@ -169,7 +169,7 @@ fun MixerScreen(
         )
 
         Row(modifier = Modifier.fillMaxWidth()) {
-            Button(
+            BrutalButton(
                 onClick = {
                     shouldSaveFile = false
                     isProcessing = true
@@ -193,7 +193,7 @@ fun MixerScreen(
                 enabled = !isProcessing
             ) { Text(if (isProcessing) "Mixing..." else "Play") }
 
-            Button(
+            BrutalButton(
                 onClick = {
                     shouldSaveFile = true
                     isProcessing = true

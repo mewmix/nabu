@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.Brutal
+import com.mewmix.nabu.ui.brutalist.BrutalButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -206,7 +207,7 @@ fun BookScreen(
                     horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small)),
                     modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
                 ) {
-                    Button(onClick = {
+                    BrutalButton(onClick = {
                         bookUri?.let {
                             val project = Project(
                                 uri = it.toString(),
@@ -222,7 +223,7 @@ fun BookScreen(
                             projects = ProjectManager.list(context)
                         }
                     }) { Text("Save Project") }
-                    Button(onClick = {
+                    BrutalButton(onClick = {
                         bookUri?.let {
                             ProjectManager.delete(context, it.toString())
                             projects = ProjectManager.list(context)
@@ -239,12 +240,12 @@ fun BookScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(p.name, modifier = Modifier.weight(1f), color = Brutal.textBright, fontFamily = Brutal.mono)
-                                Button(onClick = {
+                                BrutalButton(onClick = {
                                     val uri = Uri.parse(p.uri)
                                     bookViewModel.openDocument(uri)
                                     bookViewModel.loadBook(context, uri)
                                 }) { Text("Load") }
-                                Button(onClick = {
+                                BrutalButton(onClick = {
                                     ProjectManager.delete(context, p.uri)
                                     projects = ProjectManager.list(context)
                                 }) { Text("Del") }
@@ -262,10 +263,10 @@ fun BookScreen(
                     horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium))
                 ) {
                     Text("Resume at line ${bookmark!!.line + 1}")
-                    Button(onClick = { bookViewModel.setCurrentLine(bookmark!!.line) }) {
+                    BrutalButton(onClick = { bookViewModel.setCurrentLine(bookmark!!.line) }) {
                         Text("Go")
                     }
-                    Button(onClick = {
+                    BrutalButton(onClick = {
                         bookUri?.let { BookmarkManager.clear(context, it.toString()) }
                         bookmark = null
                         bookViewModel.setCurrentLine(-1)
@@ -281,10 +282,10 @@ fun BookScreen(
                 horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small)),
                 maxItemsInEachRow = 3
             ) {
-                Button(onClick = { launcher.launch(arrayOf("text/plain", "application/epub+zip")) }) {
+                BrutalButton(onClick = { launcher.launch(arrayOf("text/plain", "application/epub+zip")) }) {
                     Text("Open")
                 }
-                Button(
+                BrutalButton(
                     onClick = {
                         if (playerState == PlayerState.PLAYING) {
                             bookViewModel.audioPlayer.pause()
@@ -339,7 +340,7 @@ fun BookScreen(
                         }
                     )
                 }
-                Button(
+                BrutalButton(
                     onClick = {
                         bookViewModel.stopPlayback()
                     },
@@ -347,7 +348,7 @@ fun BookScreen(
                 ) {
                     Text("Stop")
                 }
-                Button(
+                BrutalButton(
                     onClick = {
                         isProcessing = true
                         scope.launch {
@@ -397,7 +398,7 @@ fun BookScreen(
                     Text(if (isProcessing) "Saving..." else "Save")
                 }
                 if (selectedLines.isNotEmpty()) {
-                    Button(
+                    BrutalButton(
                         onClick = {
                             isProcessing = true
                             scope.launch {
@@ -448,7 +449,7 @@ fun BookScreen(
                         Text(if (isProcessing) "Saving..." else "Save Clip")
                     }
                 }
-                Button(
+                BrutalButton(
                     onClick = {
                         if (bookUri != null) {
                             isPregenerating = true
