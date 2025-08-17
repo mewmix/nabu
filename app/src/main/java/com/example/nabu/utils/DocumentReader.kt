@@ -2,39 +2,58 @@ package com.example.nabu.utils
 
 import android.content.Context
 import android.net.Uri
+import com.example.nabu.data.PlayableUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 
 object DocumentReader {
-    data class Result(val chunks: Flow<String>, val title: String)
+    private const val SAFE_CHAR_LIMIT = 280
 
-    fun asFlow(
-        ctx: Context,
-        uri: Uri,
-        chunkSize: Int = 1600,
-        byLine: Boolean = false,
-        lineLength: Int = 120
-    ): Result {
-        val (seq, meta) = TextExtractor.extract(ctx, uri, if (byLine) Int.MAX_VALUE else chunkSize)
-        val fl = flow {
-            for (block in seq) {
-                if (byLine) {
-                    // Split incoming text on punctuation or whitespace to create stable
-                    // line-based chunks suitable for bookmarking, while preserving
-                    // document loading behaviour across formats like EPUB.
-                    block.split(Regex("(?<=[.!?])\\s+|\\n+"))
-                        .asSequence()
-                        .flatMap { it.chunked(lineLength).asSequence() }
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .forEach { emit(it) }
-                } else {
-                    emit(block)
+    fun asPlayableUnits(ctx: Context, uri: Uri): Flow<PlayableUnit> {
+        val (textSequence, _) = TextExtractor.extract(ctx, uri, chunkSize = Int.MAX_VALUE)
+        return flow {
+            textSequence.forEachIndexed { paragraphIndex, paragraphText ->
+                val sentences = paragraphText
+                    .split(Regex("(?<=[.!?])\\s*"))
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+
+                if (sentences.isEmpty()) return@forEachIndexed
+
+                var unitIndexInParagraph = 0
+                val sentenceBuffer = StringBuilder()
+
+                sentences.forEach { sentence ->
+                    if (sentenceBuffer.isNotEmpty() && sentenceBuffer.length + sentence.length > SAFE_CHAR_LIMIT) {
+                        emit(
+                            PlayableUnit(
+                                text = sentenceBuffer.toString(),
+                                paragraphIndex = paragraphIndex,
+                                unitIndex = unitIndexInParagraph,
+                            ),
+                        )
+                        sentenceBuffer.clear()
+                        unitIndexInParagraph++
+                    }
+
+                    if (sentenceBuffer.isNotEmpty()) {
+                        sentenceBuffer.append(" ")
+                    }
+                    sentenceBuffer.append(sentence)
+                }
+
+                if (sentenceBuffer.isNotEmpty()) {
+                    emit(
+                        PlayableUnit(
+                            text = sentenceBuffer.toString(),
+                            paragraphIndex = paragraphIndex,
+                            unitIndex = unitIndexInParagraph,
+                        ),
+                    )
                 }
             }
         }.flowOn(Dispatchers.IO)
-        return Result(chunks = fl, title = meta.displayName)
     }
 }

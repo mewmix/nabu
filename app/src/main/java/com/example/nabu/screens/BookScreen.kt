@@ -53,8 +53,9 @@ fun BookScreen(
         }
     }
 
-    val lines by bookViewModel.lines.collectAsState()
-    val currentLine by bookViewModel.currentLine.collectAsState()
+    val playableUnits by bookViewModel.playableUnits.collectAsState()
+    val currentUnitIndex by bookViewModel.currentUnitIndex.collectAsState()
+    val lines = playableUnits.map { it.text }
     val playerState by bookViewModel.playerState.collectAsState()
 
     val bookUri by bookViewModel.bookUri.collectAsState()
@@ -111,19 +112,19 @@ fun BookScreen(
                  projectName = project.name
                  usePregenerated = project.usePregenerated
                 DebugLogger.log("Loaded project: $project")
-                bookViewModel.setCurrentLine(project.bookmark?.line ?: 0)
+                bookViewModel.setCurrentUnitIndex(project.bookmark?.line ?: 0)
             } else {
                 bookmark = BookmarkManager.load(context, uri.toString())
                 DebugLogger.log("Loaded bookmark: $bookmark")
-                bookmark?.let { bookViewModel.setCurrentLine(it.line) } ?: bookViewModel.setCurrentLine(0)
+                bookmark?.let { bookViewModel.setCurrentUnitIndex(it.line) } ?: bookViewModel.setCurrentUnitIndex(0)
             }
             projects = ProjectManager.list(context)
         }
     }
 
-    LaunchedEffect(currentLine) {
-        if (currentLine >= 0) {
-            listState.animateScrollToItem(currentLine)
+    LaunchedEffect(currentUnitIndex) {
+        if (currentUnitIndex >= 0) {
+            listState.animateScrollToItem(currentUnitIndex)
         }
     }
 
@@ -267,13 +268,13 @@ fun BookScreen(
                     horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium))
                 ) {
                     Text("Resume at line ${bookmark!!.line + 1}")
-                    BrutalButton(onClick = { bookViewModel.setCurrentLine(bookmark!!.line) }) {
+                    BrutalButton(onClick = { bookViewModel.setCurrentUnitIndex(bookmark!!.line) }) {
                         Text("Go")
                     }
                     BrutalButton(onClick = {
                         bookUri?.let { BookmarkManager.clear(context, it.toString()) }
                         bookmark = null
-                        bookViewModel.setCurrentLine(-1)
+                        bookViewModel.setCurrentUnitIndex(-1)
                     }) {
                         Text("Clear")
                     }
@@ -294,8 +295,8 @@ fun BookScreen(
                         if (playerState == PlayerState.PLAYING) {
                             bookViewModel.audioPlayer.pause()
                             bookUri?.let {
-                                DebugLogger.log("Saving bookmark at line $currentLine")
-                                BookmarkManager.save(context, it.toString(), currentLine)
+                                DebugLogger.log("Saving bookmark at line $currentUnitIndex")
+                                BookmarkManager.save(context, it.toString(), currentUnitIndex)
                                 val project = Project(
                                     uri = it.toString(),
                                     name = projectName,
@@ -303,11 +304,11 @@ fun BookScreen(
                                     weights = weights,
                                     mode = interpolationMode,
                                     speed = speed,
-                                    bookmark = Bookmark(currentLine),
+                                    bookmark = Bookmark(currentUnitIndex),
                                     usePregenerated = usePregenerated
                                 )
                                 ProjectManager.save(context, project)
-                                bookmark = Bookmark(currentLine)
+                                bookmark = Bookmark(currentUnitIndex)
                             }
                         } else {
                             if (playerState == PlayerState.PAUSED) {
@@ -321,8 +322,8 @@ fun BookScreen(
                                 weights = weights,
                                 mode = interpolationMode,
                                 speed = speed,
-                                lines = lines,
-                                startLine = currentLine.coerceAtLeast(0),
+                                units = playableUnits,
+                                startUnit = currentUnitIndex.coerceAtLeast(0),
                                 bookUri = bookUri,
                                 context = context,
                                 engine = SettingsManager.getTtsEngine(context),
@@ -515,7 +516,7 @@ fun BookScreen(
                             if (selectedLines.contains(index)) {
                                 selectedLines.remove(index)
                             } else {
-                                bookViewModel.setCurrentLine(index)
+                                bookViewModel.setCurrentUnitIndex(index)
                                 bookViewModel.startPlayback(
                                     session = session,
                                     phonemeConverter = phonemeConverter,
@@ -524,8 +525,8 @@ fun BookScreen(
                                     weights = weights,
                                     mode = interpolationMode,
                                     speed = speed,
-                                    lines = lines,
-                                    startLine = index,
+                                    units = playableUnits,
+                                    startUnit = index,
                                     bookUri = bookUri,
                                     context = context,
                                     engine = SettingsManager.getTtsEngine(context),
@@ -548,7 +549,7 @@ fun BookScreen(
                     .background(
                         when {
                             selectedLines.contains(index) -> MaterialTheme.colorScheme.secondaryContainer
-                            index == currentLine -> MaterialTheme.colorScheme.primaryContainer
+                            index == currentUnitIndex -> MaterialTheme.colorScheme.primaryContainer
                             else -> Color.Transparent
                         }
                     )

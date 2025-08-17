@@ -6,17 +6,18 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ai.onnxruntime.OrtSession
+import com.example.nabu.data.PlayableUnit
 import com.example.nabu.utils.AudioPlayer
 import com.example.nabu.utils.AudioPlayerManager
-import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.ChunkFeeder
+import com.example.nabu.utils.DocumentReader
+import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.KittenAudioPlayer
 import com.example.nabu.utils.KokoroAudioPlayer
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PlaybackNotification
 import com.example.nabu.utils.StyleLoader
-import com.example.nabu.utils.DocumentReader
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.playBook
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -31,11 +33,11 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _bookUri = MutableStateFlow<Uri?>(null)
     val bookUri = _bookUri.asStateFlow()
 
-    private val _lines = MutableStateFlow<List<String>>(emptyList())
-    val lines = _lines.asStateFlow()
+    private val _playableUnits = MutableStateFlow<List<PlayableUnit>>(emptyList())
+    val playableUnits = _playableUnits.asStateFlow()
 
-    private val _currentLine = MutableStateFlow(-1)
-    val currentLine = _currentLine.asStateFlow()
+    private val _currentUnitIndex = MutableStateFlow(-1)
+    val currentUnitIndex = _currentUnitIndex.asStateFlow()
 
     private val _playerState = MutableStateFlow(PlayerState.IDLE)
     val playerState = _playerState.asStateFlow()
@@ -64,18 +66,17 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     fun loadBook(context: Context, uri: Uri) {
         _bookUri.value = uri
         viewModelScope.launch(Dispatchers.IO) {
-            val lines = DocumentReader
-                .asFlow(context, uri, byLine = true, lineLength = 120)
-                .chunks
+            val units = DocumentReader
+                .asPlayableUnits(context, uri)
                 .toList()
             withContext(Dispatchers.Main) {
-                _lines.value = lines
+                _playableUnits.value = units
             }
         }
     }
 
-    fun setCurrentLine(line: Int) {
-        _currentLine.value = line
+    fun setCurrentUnitIndex(index: Int) {
+        _currentUnitIndex.value = index
     }
 
     fun startPlayback(
@@ -86,8 +87,8 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         weights: Map<String, Float>,
         mode: InterpolationMode,
         speed: Float,
-        lines: List<String>,
-        startLine: Int,
+        units: List<PlayableUnit>,
+        startUnit: Int,
         bookUri: Uri?,
         context: Context,
         engine: TtsEngine,
@@ -108,12 +109,12 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
             weights = weights,
             mode = mode,
             speed = speed,
-            lines = lines,
-            startLine = startLine,
+            lines = units.map { it.text },
+            startLine = startUnit,
             bookUri = bookUri,
             audioPlayer = audioPlayer,
             context = context,
-            onLineChanged = { setCurrentLine(it) },
+            onLineChanged = { setCurrentUnitIndex(it) },
             onFinished = onFinished,
             usePregenerated = usePregenerated,
         )
@@ -128,8 +129,8 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun openDocument(uri: Uri) {
-        val result = DocumentReader.asFlow(app, uri, byLine = true, lineLength = 120)
-        ChunkFeeder.start(viewModelScope, result.chunks)
+        val flow = DocumentReader.asPlayableUnits(app, uri)
+        ChunkFeeder.start(viewModelScope, flow.map { it.text })
     }
 
     fun stopReading() {
