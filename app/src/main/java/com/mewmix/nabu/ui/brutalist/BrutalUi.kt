@@ -9,7 +9,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -21,6 +26,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -89,6 +95,52 @@ fun PanelBox(
             if (headerTrailing != null) Row(content = headerTrailing)
         }
         content()
+    }
+}
+
+/* ---------- Collapsible Section ---------- */
+@Composable
+fun BrutalSection(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .background(Brutal.panelHl, RoundedCornerShape(6.dp))
+            .border(1.dp, Brutal.panelStroke, RoundedCornerShape(6.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggle() },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                title,
+                color = Brutal.textBright,
+                style = MaterialTheme.typography.titleMedium,
+                fontFamily = Brutal.mono
+            )
+            Spacer(Modifier.weight(1f))
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = "Toggle $title",
+                tint = Brutal.textBright,
+                modifier = Modifier.graphicsLayer(rotationZ = if (expanded) 180f else 0f)
+            )
+        }
+        if (expanded) {
+            Divider(
+                color = Brutal.hairline,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+            content()
+        }
     }
 }
 
