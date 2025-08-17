@@ -28,4 +28,16 @@ object KittenPhonemizer {
         padded[padded.size - 1] = 0L
         return Pair(truncated, padded)
     }
+
+    fun encodeText(text: String): Pair<String, LongArray> {
+        val truncated = text.take(MAX_PHONEME_LENGTH)
+        val tokens = truncated.map { ch ->
+            VOCAB[ch] ?: throw IllegalArgumentException("Kitten TTS: Unknown symbol '$ch'")
+        }
+        val padded = LongArray(tokens.size + 2)
+        padded[0] = 0L
+        tokens.forEachIndexed { index, value -> padded[index + 1] = value.toLong() }
+        padded[padded.size - 1] = 0L
+        return Pair(truncated, padded)
+    }
 }
