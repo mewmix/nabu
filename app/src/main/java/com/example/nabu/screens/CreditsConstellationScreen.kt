@@ -44,6 +44,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import com.mewmix.nabu.ui.brutalist.PanelBox
 
 // Data classes representing credits hierarchy
 
@@ -114,36 +115,42 @@ fun CreditsConstellationScreen() {
 
     var expandedGroup by remember { mutableStateOf<CreditGroup?>(null) }
 
-    Box(
+    PanelBox(
+        title = "Credits",
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .pointerInput(expandedGroup) {
-                if (expandedGroup != null) {
-                    detectTapGestures { expandedGroup = null }
-                }
-            },
-        contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(expandedGroup) {
+                    if (expandedGroup != null) {
+                        detectTapGestures { expandedGroup = null }
+                    }
+                },
+            contentAlignment = Alignment.Center
         ) {
-            StarCluster(
-                group = legacyCredits,
-                expanded = expandedGroup == legacyCredits,
-                onToggle = {
-                    expandedGroup = if (expandedGroup == legacyCredits) null else legacyCredits
-                }
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-            StarCluster(
-                group = ourCredits,
-                expanded = expandedGroup == ourCredits,
-                onToggle = {
-                    expandedGroup = if (expandedGroup == ourCredits) null else ourCredits
-                }
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                StarCluster(
+                    group = legacyCredits,
+                    expanded = expandedGroup == legacyCredits,
+                    onToggle = {
+                        expandedGroup = if (expandedGroup == legacyCredits) null else legacyCredits
+                    }
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+                StarCluster(
+                    group = ourCredits,
+                    expanded = expandedGroup == ourCredits,
+                    onToggle = {
+                        expandedGroup = if (expandedGroup == ourCredits) null else ourCredits
+                    }
+                )
+            }
         }
     }
 }

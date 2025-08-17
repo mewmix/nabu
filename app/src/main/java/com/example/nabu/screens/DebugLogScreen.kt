@@ -10,16 +10,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.nabu.utils.DebugLogger
+import com.mewmix.nabu.ui.brutalist.PanelBox
 
 @Composable
 fun DebugLogScreen() {
     val logs = DebugLogger.getLogs().joinToString("\n")
-    Column(
+    PanelBox(
+        title = "Debug Log",
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Text(text = logs)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text(text = logs)
+        }
     }
 }
+

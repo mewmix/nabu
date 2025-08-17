@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -48,6 +47,7 @@ import com.example.nabu.utils.DebugLogger
 import java.io.File
 import kotlinx.coroutines.launch
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.PanelBox
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -143,66 +143,71 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
+        PanelBox(
+            title = "Models",
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(16.dp)
         ) {
-            item {
-                BrutalButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
-                    Text("Import Local Model")
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-            items(models) { model ->
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(text = model.name, style = MaterialTheme.typography.titleMedium)
-                    Text(text = model.description, style = MaterialTheme.typography.bodyMedium)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    BrutalButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                        Text("Import Local Model")
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
-                    val progress = progressMap[model.id]
-                    if (progress != null) {
-                        LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (model.isDownloaded) {
-                                Icon(
-                                    imageVector = Icons.Filled.CheckCircle,
-                                    contentDescription = "Downloaded",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                IconButton(onClick = {
-                                    DebugLogger.log("ModelsScreen: Deleting ${model.name}")
-                                    modelManager.deleteModel(model)
-                                }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete model")
-                                }
-                            } else {
-                                IconButton(onClick = {
-                                    if (model.gated) {
-                                        selectedModel = model
-                                        showDialog = true
-                                        DebugLogger.log("ModelsScreen: Prompting token for ${model.name}")
-                                    } else {
-                                        DebugLogger.log("ModelsScreen: Downloading ${model.name}")
-                                        modelDownloader.downloadModel(model)
-                                    }
-                                }) {
+                }
+                items(models) { model ->
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(text = model.name, style = MaterialTheme.typography.titleMedium)
+                        Text(text = model.description, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val progress = progressMap[model.id]
+                        if (progress != null) {
+                            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (model.isDownloaded) {
                                     Icon(
-                                        Icons.Filled.CloudDownload,
-                                        contentDescription = if (model.hasPartial) "Resume download" else "Download model"
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = "Downloaded",
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
-                                }
-                                if (model.hasPartial) {
-                                    IconButton(onClick = {
-                                        DebugLogger.log("ModelsScreen: Deleting partial ${model.name}")
+                                    BrutalButton(onClick = {
+                                        DebugLogger.log("ModelsScreen: Deleting ${model.name}")
                                         modelManager.deleteModel(model)
                                     }) {
-                                        Icon(Icons.Filled.Delete, contentDescription = "Delete partial model")
+                                        Icon(Icons.Filled.Delete, contentDescription = "Delete model")
+                                    }
+                                } else {
+                                    BrutalButton(onClick = {
+                                        if (model.gated) {
+                                            selectedModel = model
+                                            showDialog = true
+                                            DebugLogger.log("ModelsScreen: Prompting token for ${model.name}")
+                                        } else {
+                                            DebugLogger.log("ModelsScreen: Downloading ${model.name}")
+                                            modelDownloader.downloadModel(model)
+                                        }
+                                    }) {
+                                        Icon(
+                                            Icons.Filled.CloudDownload,
+                                            contentDescription = if (model.hasPartial) "Resume download" else "Download model",
+                                        )
+                                    }
+                                    if (model.hasPartial) {
+                                        BrutalButton(onClick = {
+                                            DebugLogger.log("ModelsScreen: Deleting partial ${model.name}")
+                                            modelManager.deleteModel(model)
+                                        }) {
+                                            Icon(Icons.Filled.Delete, contentDescription = "Delete partial model")
+                                        }
                                     }
                                 }
                             }

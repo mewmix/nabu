@@ -1,7 +1,6 @@
 package com.example.nabu.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +23,7 @@ import com.example.nabu.utils.playCreation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.PanelBox
 
 @Composable
 fun CreationsScreen() {
@@ -36,13 +36,16 @@ fun CreationsScreen() {
         creations = withContext(Dispatchers.IO) { loadCreations(context) }
     }
 
-    Column(
+    PanelBox(
+        title = "Creations",
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(16.dp)
     ) {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             items(creations) { creation ->
                 Row(
                     modifier = Modifier
