@@ -14,6 +14,11 @@ object PlaybackNotification {
     private const val NOTIFICATION_ID = 1001
 
     fun show(context: Context, playing: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                return
+            }
+        }
         createChannel(context)
         val notification = buildNotification(context, playing)
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)

@@ -31,6 +31,7 @@ import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalSlider
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -169,14 +170,13 @@ fun BookScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = Brutal.textBright
                 )
-                Slider(
+                BrutalSlider(
                     value = speed,
-                    onValueChange = {
-                        speed = it
-                        SettingsManager.setSpeed(context, it)
+                    onValueChange = { newSpeed ->
+                        speed = newSpeed
+                        SettingsManager.setSpeed(context, newSpeed)
                     },
-                    valueRange = 0.5f..2.0f,
-                    steps = 15,
+                    range = 0.5f..2.0f,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

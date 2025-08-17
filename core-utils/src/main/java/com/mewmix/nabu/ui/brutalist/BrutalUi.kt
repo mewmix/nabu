@@ -434,6 +434,52 @@ fun PanelRow(
     }
 }
 
+@Composable
+fun BrutalSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    range: ClosedFloatingPointRange<Float> = 0f..1f
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .pointerInput(interactionSource) {
+                detectDragGestures { change, _ ->
+                    // map x position to value in range
+                    val newValue = (change.position.x / size.width)
+                        .coerceIn(0f, 1f) * (range.endInclusive - range.start) + range.start
+                    onValueChange(newValue)
+                }
+            }
+    ) {
+        val trackY = center.y
+        // track
+        drawLine(
+            color = Brutal.panelBg,
+            start = Offset(0f, trackY),
+            end = Offset(size.width, trackY),
+            strokeWidth = 12f,
+            cap = StrokeCap.Round
+        )
+        // thumb
+        val thumbX = ((value - range.start) / (range.endInclusive - range.start)) * size.width
+        drawRect(
+            color = Brutal.steel,
+            topLeft = Offset(thumbX - 12f, trackY - 12f),
+            size = Size(24f, 24f)
+        )
+        drawRect(
+            color = Brutal.hairline,
+            topLeft = Offset(thumbX - 12f, trackY - 12f),
+            size = Size(24f, 24f),
+            style = Stroke(width = 2f)
+        )
+    }
+}
+
 /* ---------- Radial Oscilloscope (waveform polar plot) ---------- */
 @Composable
 fun RadialOscilloscope(

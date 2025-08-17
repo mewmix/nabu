@@ -58,6 +58,8 @@ import com.example.nabu.utils.createAudioFromStyleVector
 import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalSlider
+import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.example.nabu.utils.playAudio
 import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.SettingsManager
@@ -408,12 +410,10 @@ fun WeightSliders(
         Text("Style Weights:", style = MaterialTheme.typography.labelLarge)
 
         selectedStyles.forEach { style ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = style, modifier = Modifier.width(120.dp))
-                Slider(
+            PanelRow(name = style) {
+                BrutalSlider(
                     value = weights[style] ?: 0f,
                     onValueChange = { onWeightChanged(style, it) },
-                    valueRange = 0f..1f,
                     modifier = Modifier.weight(1f)
                 )
                 Text(text = "%.2f".format(weights[style] ?: 0f))
