@@ -108,7 +108,6 @@ fun MixerScreen(
     var interpolationMode by remember { mutableStateOf(initial.third) }
 
     PanelBox(
-        title = "Mixer · Styles",
         modifier = Modifier
             .padding(16.dp)
             .fillMaxSize()

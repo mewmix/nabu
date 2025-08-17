@@ -55,7 +55,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
-import androidx.compose.material3.CenterAlignedTopAppBar
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import androidx.compose.runtime.Composable
@@ -311,17 +310,17 @@ private fun screenFromString(name: String?): Screen = when (name) {
     else -> Screen.Basic
 }
 
-sealed class Screen(val title: String) {
-    object Basic : Screen("Basic TTS")
-    object Mixer : Screen("Mixer")
-    object Book : Screen("Audio Book")
-    object ChatTts : Screen("Chat TTS") // New screen state for ChatTtsActivity if needed for selection
-    object More : Screen("More")
-    object Creations : Screen("Creations")
-    object Settings : Screen("Settings")
-    object Models : Screen("Models")
-    object DebugLog : Screen("Debug Log")
-    object Credits : Screen("Credits")
+sealed class Screen {
+    object Basic : Screen()
+    object Mixer : Screen()
+    object Book : Screen()
+    object ChatTts : Screen() // New screen state for ChatTtsActivity if needed for selection
+    object More : Screen()
+    object Creations : Screen()
+    object Settings : Screen()
+    object Models : Screen()
+    object DebugLog : Screen()
+    object Credits : Screen()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -337,11 +336,6 @@ fun MainScreen(
     val context = LocalContext.current
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(currentScreen.title) }
-            )
-        },
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
@@ -448,7 +442,6 @@ fun BasicScreen(
     var engineExpanded by remember { mutableStateOf(false) }
 
     PanelBox(
-        title = "Basic · TTS",
         modifier = Modifier
             .padding(16.dp)
             .fillMaxSize()

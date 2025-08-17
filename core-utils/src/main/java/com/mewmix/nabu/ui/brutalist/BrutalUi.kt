@@ -64,7 +64,7 @@ private val BevelStroke = Stroke(width = 1.5f)
 /* ---------- Panel Box (container) ---------- */
 @Composable
 fun PanelBox(
-    title: String,
+    title: String? = null,
     modifier: Modifier = Modifier,
     inset: Dp = 8.dp,
     headerTrailing: (@Composable RowScope.() -> Unit)? = null,
@@ -77,22 +77,34 @@ fun PanelBox(
             .drawBehind {
                 // subtle panel ribs / gridlines:
                 val step = 12f
-                drawRect(Brush.linearGradient(listOf(Color.Transparent, Brutal.panelHl.copy(alpha = 0.08f))), blendMode = BlendMode.SrcOver)
+                drawRect(
+                    Brush.linearGradient(
+                        listOf(Color.Transparent, Brutal.panelHl.copy(alpha = 0.08f))
+                    ),
+                    blendMode = BlendMode.SrcOver
+                )
                 for (y in 0..(size.height / step).toInt()) {
-                    drawLine(Brutal.hairline.copy(alpha = 0.15f), Offset(0f, y * step), Offset(size.width, y * step), 1f)
+                    drawLine(
+                        Brutal.hairline.copy(alpha = 0.15f),
+                        Offset(0f, y * step),
+                        Offset(size.width, y * step),
+                        1f
+                    )
                 }
             }
             .padding(inset)
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LabelPlate(title)
-            Spacer(Modifier.weight(1f))
-            if (headerTrailing != null) Row(content = headerTrailing)
+        if (!title.isNullOrBlank()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LabelPlate(title)
+                Spacer(Modifier.weight(1f))
+                if (headerTrailing != null) Row(content = headerTrailing)
+            }
         }
         content()
     }

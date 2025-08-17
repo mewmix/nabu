@@ -82,7 +82,7 @@ class ChatTtsActivity : ComponentActivity() {
 
         setContent {
             NabuTheme {
-                ChatTtsScreen(viewModel = viewModel, modelName = model.name, onBackPressed = { finish() })
+                ChatTtsScreen(viewModel = viewModel)
                 if (SettingsManager.isBenchmark(this@ChatTtsActivity)) {
                     PerfHud.Overlay()
                 }

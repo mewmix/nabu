@@ -132,7 +132,6 @@ fun BookScreen(
     }
 
     PanelBox(
-        title = "Book · Reader",
         modifier = Modifier
             .fillMaxSize()
             .padding(dimensionResource(id = R.dimen.padding_large))

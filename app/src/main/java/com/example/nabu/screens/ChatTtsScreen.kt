@@ -15,23 +15,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,15 +49,12 @@ import com.example.nabu.ui.components.WaveformVisualizer
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatTtsScreen(
-    viewModel: ChatTtsViewModel,
-    modelName: String,
-    onBackPressed: () -> Unit
+    viewModel: ChatTtsViewModel
 ) {
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isSynthesizing by viewModel.isSynthesizing.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
-    val ttsEnabled by viewModel.ttsEnabled.collectAsState()
 
     LaunchedEffect(playerState) {
         PcmTap.enabled = playerState == PlayerState.PLAYING
@@ -84,27 +75,8 @@ fun ChatTtsScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("$modelName Chat & TTS") },
-                navigationIcon = {
-                    IconButton(onClick = onBackPressed) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { viewModel.toggleTtsEnabled() }) {
-                        val icon = if (ttsEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff
-                        val desc = if (ttsEnabled) "Disable TTS" else "Enable TTS"
-                        Icon(icon, contentDescription = desc)
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
+    Scaffold { paddingValues ->
         PanelBox(
-            title = "Chat · TTS",
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
