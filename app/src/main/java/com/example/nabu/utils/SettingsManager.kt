@@ -39,4 +39,11 @@ object SettingsManager {
         DatabaseManager.getSetting(context, "tts_engine")?.let {
             runCatching { TtsEngine.valueOf(it) }.getOrNull()
         } ?: default
+
+    fun setRawTextInput(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, "raw_text_input", if (enabled) "1" else "0")
+    }
+
+    fun isRawTextInput(context: Context): Boolean =
+        (DatabaseManager.getSetting(context, "raw_text_input") ?: "1") == "1"
 }

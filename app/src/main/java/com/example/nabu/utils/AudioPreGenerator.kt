@@ -29,8 +29,13 @@ suspend fun preGenerateBook(
         if (DatabaseManager.getAudioLine(context, project.uri, index) != null) continue
         DebugLogger.log("Generating line $index for ${project.uri}")
         val engine = SettingsManager.getTtsEngine(context)
+        val useRaw = SettingsManager.isRawTextInput(context)
         val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
-            val (_, tokens) = KittenPhonemizer.phonemize(line)
+            val (_, tokens) = if (useRaw) {
+                KittenPhonemizer.encodeText(line)
+            } else {
+                KittenPhonemizer.phonemize(line)
+            }
             createKittenAudioFromStyleVector(
                 tokens = tokens,
                 voice = mixed,
@@ -38,7 +43,11 @@ suspend fun preGenerateBook(
                 session = session,
             )
         } else {
-            val phonemes = phonemeConverter.phonemize(line)
+            val phonemes = if (useRaw) {
+                phonemeConverter.phonemize(line)
+            } else {
+                line
+            }
             createAudioFromStyleVector(
                 phonemes = phonemes,
                 voice = mixed,

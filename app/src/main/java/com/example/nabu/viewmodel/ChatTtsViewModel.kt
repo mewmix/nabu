@@ -195,9 +195,14 @@ class ChatTtsViewModel(
                         _interpolationMode.value
                     )
                     val engine = SettingsManager.getTtsEngine(context)
+                    val useRaw = SettingsManager.isRawTextInput(context)
                     val ttsStart = SystemClock.elapsedRealtime()
                     val (data, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                        val (_, tokens) = KittenPhonemizer.phonemize(text)
+                        val (_, tokens) = if (useRaw) {
+                            KittenPhonemizer.encodeText(text)
+                        } else {
+                            KittenPhonemizer.phonemize(text)
+                        }
                         createKittenAudioFromStyleVector(
                             tokens = tokens,
                             voice = mixedVector,
@@ -205,7 +210,11 @@ class ChatTtsViewModel(
                             session = ortSession
                         )
                     } else {
-                        val phonemes = phonemeConverter.phonemize(text)
+                        val phonemes = if (useRaw) {
+                            phonemeConverter.phonemize(text)
+                        } else {
+                            text
+                        }
                         createAudioFromStyleVector(
                             phonemes = phonemes,
                             voice = mixedVector,

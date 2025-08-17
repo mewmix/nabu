@@ -366,10 +366,15 @@ fun BookScreen(
                                 )
                                 val audioData = mutableListOf<Float>()
                                 val engine = SettingsManager.getTtsEngine(context)
+                                val useRaw = SettingsManager.isRawTextInput(context)
                                 val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
                                 for (line in lines) {
                                     val (audio, _) = if (engine == TtsEngine.KITTEN) {
-                                        val (_, tokens) = KittenPhonemizer.phonemize(line)
+                                        val (_, tokens) = if (useRaw) {
+                                            KittenPhonemizer.encodeText(line)
+                                        } else {
+                                            KittenPhonemizer.phonemize(line)
+                                        }
                                         createKittenAudioFromStyleVector(
                                             tokens = tokens,
                                             voice = mixedVector,
@@ -377,7 +382,11 @@ fun BookScreen(
                                             session = session
                                         )
                                     } else {
-                                        val phonemes = phonemeConverter.phonemize(line)
+                                        val phonemes = if (useRaw) {
+                                            phonemeConverter.phonemize(line)
+                                        } else {
+                                            line
+                                        }
                                         createAudioFromStyleVector(
                                             phonemes = phonemes,
                                             voice = mixedVector,
@@ -416,10 +425,16 @@ fun BookScreen(
                                     )
                                     val audioData = mutableListOf<Float>()
                                     val engine = SettingsManager.getTtsEngine(context)
+                                    val useRaw = SettingsManager.isRawTextInput(context)
                                     val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
                                     for (i in selectedLines.sorted()) {
+                                        val line = lines[i]
                                         val (audio, _) = if (engine == TtsEngine.KITTEN) {
-                                            val (_, tokens) = KittenPhonemizer.phonemize(lines[i])
+                                            val (_, tokens) = if (useRaw) {
+                                                KittenPhonemizer.encodeText(line)
+                                            } else {
+                                                KittenPhonemizer.phonemize(line)
+                                            }
                                             createKittenAudioFromStyleVector(
                                                 tokens = tokens,
                                                 voice = mixedVector,
@@ -427,7 +442,11 @@ fun BookScreen(
                                                 session = session
                                             )
                                         } else {
-                                            val phonemes = phonemeConverter.phonemize(lines[i])
+                                            val phonemes = if (useRaw) {
+                                                phonemeConverter.phonemize(line)
+                                            } else {
+                                                line
+                                            }
                                             createAudioFromStyleVector(
                                                 phonemes = phonemes,
                                                 voice = mixedVector,

@@ -256,8 +256,13 @@ private fun generateAudio(
     scope.launch(Dispatchers.IO) {
         try {
             val engine = SettingsManager.getTtsEngine(context)
+            val useRaw = SettingsManager.isRawTextInput(context)
             val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                val (_, tokens) = KittenPhonemizer.phonemize(text)
+                val (_, tokens) = if (useRaw) {
+                    KittenPhonemizer.encodeText(text)
+                } else {
+                    KittenPhonemizer.phonemize(text)
+                }
                 createKittenAudioFromStyleVector(
                     tokens = tokens,
                     voice = style,
@@ -265,7 +270,11 @@ private fun generateAudio(
                     session = session
                 )
             } else {
-                val phonemes = phonemeConverter.phonemize(text)
+                val phonemes = if (useRaw) {
+                    phonemeConverter.phonemize(text)
+                } else {
+                    text
+                }
                 createAudioFromStyleVector(
                     phonemes = phonemes,
                     voice = style,

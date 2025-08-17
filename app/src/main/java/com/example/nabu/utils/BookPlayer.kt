@@ -56,8 +56,13 @@ fun playBook(
                     }
                     val line = lines[index]
                     val engine = SettingsManager.getTtsEngine(context)
+                    val useRaw = SettingsManager.isRawTextInput(context)
                     if (engine == TtsEngine.KITTEN) {
-                        val (_, tokens) = KittenPhonemizer.phonemize(line)
+                        val (_, tokens) = if (useRaw) {
+                            KittenPhonemizer.encodeText(line)
+                        } else {
+                            KittenPhonemizer.phonemize(line)
+                        }
                         val (audio, _) = createKittenAudioFromStyleVector(
                             tokens = tokens,
                             voice = mixedVector,
@@ -66,7 +71,11 @@ fun playBook(
                         )
                         audioBuffer.send(Pair(audio, index))
                     } else {
-                        val phonemes = phonemeConverter.phonemize(line)
+                        val phonemes = if (useRaw) {
+                            phonemeConverter.phonemize(line)
+                        } else {
+                            line
+                        }
                         createAudioFlowFromStyleVector(
                             phonemes = phonemes,
                             voice = mixedVector,

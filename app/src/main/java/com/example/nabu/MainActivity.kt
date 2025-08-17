@@ -252,10 +252,15 @@ private fun generateAudio(
                     )
                 }
             } else {
-                val phonemes = phonemeConverter.phonemize(text)
-                DebugLogger.log("Phonemes: $phonemes")
+                val phonemes = if (useRaw) {
+                    phonemeConverter.phonemize(text)
+                } else {
+                    text
+                }
+                val logLabel = if (useRaw) "Phonemes" else "IPA"
+                DebugLogger.log("$logLabel: $phonemes")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "$logLabel: $phonemes", Toast.LENGTH_LONG).show()
                 }
                 PerfHud.record("ONNX synth") {
                     createAudio(
@@ -431,13 +436,14 @@ fun BasicScreen(
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
-    var useRawText by remember { mutableStateOf(false) }
+    var useRawText by remember { mutableStateOf(SettingsManager.isRawTextInput(context)) }
 
     LaunchedEffect(engine) {
         withContext(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
         }
         SettingsManager.setStyle(context, style)
+        useRawText = SettingsManager.isRawTextInput(context)
     }
 
     var expanded by remember { mutableStateOf(false) }
@@ -534,14 +540,20 @@ fun BasicScreen(
             }
         }
 
-        if (engine == TtsEngine.KITTEN) {
+        if (engine == TtsEngine.KITTEN || engine == TtsEngine.KOKORO) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Raw text input")
                 Spacer(modifier = Modifier.width(8.dp))
-                Switch(checked = useRawText, onCheckedChange = { useRawText = it })
+                Switch(
+                    checked = useRawText,
+                    onCheckedChange = {
+                        useRawText = it
+                        SettingsManager.setRawTextInput(context, it)
+                    }
+                )
             }
         }
 
