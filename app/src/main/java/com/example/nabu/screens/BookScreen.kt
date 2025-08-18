@@ -3,6 +3,7 @@ package com.example.nabu.screens
 import ai.onnxruntime.OrtSession
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -49,6 +50,11 @@ fun BookScreen(
     val engine by rememberUpdatedState(SettingsManager.getTtsEngine(context))
 
     LaunchedEffect(engine) {
+        Toast.makeText(
+            context,
+            "Initializing models, this may take a moment...",
+            Toast.LENGTH_LONG
+        ).show()
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
         }

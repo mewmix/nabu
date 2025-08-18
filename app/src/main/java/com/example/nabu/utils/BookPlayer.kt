@@ -6,10 +6,10 @@ import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.channels.Channel
 import java.io.File
 
 fun playBook(
@@ -33,80 +33,62 @@ fun playBook(
     return scope.launch(Dispatchers.IO) {
         DebugLogger.log("Starting playbook from line $startLine")
         var completed = true
-        val audioBuffer = Channel<Pair<FloatArray, Int>>(Channel.BUFFERED)
+        val mixedVector = mixStyles(
+            styleLoader = styleLoader,
+            styles = selectedStyles,
+            weights = weights,
+            mode = mode,
+        )
 
-        // Producer
-        val producerJob = launch {
-            try {
-                val mixedVector = mixStyles(
-                    styleLoader = styleLoader,
-                    styles = selectedStyles,
-                    weights = weights,
-                    mode = mode,
-                )
-                for (index in startLine until lines.size) {
-                    if (!isActive) break
-                    if (usePregenerated && bookUri != null) {
-                        val path = DatabaseManager.getAudioLine(context, bookUri.toString(), index)
-                        if (path != null) {
-                            val audio = loadAudioInternal(File(path))
-                            audioBuffer.send(Pair(audio, index))
-                            continue
-                        }
-                    }
-                    val line = lines[index]
-                    val engine = SettingsManager.getTtsEngine(context)
-                    if (engine == TtsEngine.KITTEN) {
-                        val (_, tokens) = KittenPhonemizer.phonemize(line)
-                        val (audio, _) = createKittenAudioFromStyleVector(
-                            tokens = tokens,
-                            voice = mixedVector,
-                            speed = speed,
-                            session = session,
-                        )
-                        audioBuffer.send(Pair(audio, index))
-                    } else {
-                        val phonemes = phonemeConverter.phonemize(line)
-                        createAudioFlowFromStyleVector(
-                            phonemes = phonemes,
-                            voice = mixedVector,
-                            speed = speed,
-                            session = session,
-                        ).collect { chunk ->
-                            audioBuffer.send(Pair(chunk, index))
-                        }
-                    }
+        suspend fun generateAudio(index: Int): Pair<FloatArray, Int> {
+            if (usePregenerated && bookUri != null) {
+                val path = DatabaseManager.getAudioLine(context, bookUri.toString(), index)
+                if (path != null) {
+                    val audio = loadAudioInternal(File(path))
+                    return Pair(audio, index)
                 }
-            } catch (e: Exception) {
-                DebugLogger.log("Audio generation failed: ${e.localizedMessage}")
-            } finally {
-                audioBuffer.close()
+            }
+            val line = lines[index]
+            val engine = SettingsManager.getTtsEngine(context)
+            return if (engine == TtsEngine.KITTEN) {
+                val (_, tokens) = KittenPhonemizer.phonemize(line)
+                val (audio, _) = createKittenAudioFromStyleVector(
+                    tokens = tokens,
+                    voice = mixedVector,
+                    speed = speed,
+                    session = session,
+                )
+                Pair(audio, index)
+            } else {
+                val phonemes = phonemeConverter.phonemize(line)
+                val (audio, _) = createAudioFromStyleVector(
+                    phonemes = phonemes,
+                    voice = mixedVector,
+                    speed = speed,
+                    session = session,
+                )
+                Pair(audio, index)
             }
         }
 
-        // Consumer
         try {
-            var lastIndex = -1
-            for ((audio, index) in audioBuffer) {
-                if (!isActive) {
-                    completed = false
-                    break
-                }
+            var currentIndex = startLine
+            var nextDeferred = async { generateAudio(currentIndex) }
 
-                if (index != lastIndex) {
-                    withContext(Dispatchers.Main) {
-                        onLineChanged(index)
-                    }
-                    DebugLogger.log("Playing line $index")
-                    lastIndex = index
+            while (isActive && currentIndex < lines.size) {
+                val (audio, index) = nextDeferred.await()
+                currentIndex++
+                if (currentIndex < lines.size) {
+                    nextDeferred = async { generateAudio(currentIndex) }
                 }
-
+                withContext(Dispatchers.Main) {
+                    onLineChanged(index)
+                }
+                DebugLogger.log("Playing line $index")
                 audioPlayer.prepare(audio, 0)
                 audioPlayer.playBlocking()
-
                 if (audioPlayer.getState() == PlayerState.PAUSED) {
                     completed = false
-                    producerJob.cancel()
                     break
                 }
             }
