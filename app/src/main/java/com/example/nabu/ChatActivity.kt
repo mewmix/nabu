@@ -12,15 +12,15 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.kokoro.chat.LlmInference
 import com.example.nabu.data.ModelManager
 import com.example.nabu.data.Model
-import com.example.nabu.screens.ChatTtsScreen
+import com.example.nabu.screens.ChatScreen
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.SettingsManager
 import com.example.kokoro.galleryport.PerfHud
-import com.example.nabu.viewmodel.ChatTtsViewModel
+import com.example.nabu.viewmodel.ChatViewModel
 import java.io.File
 
-class ChatTtsActivity : ComponentActivity() {
+class ChatActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
@@ -68,12 +68,12 @@ class ChatTtsActivity : ComponentActivity() {
         val modelFile = File(filesDir, "models/${model.id}.task")
         val llmInference = LlmInference(applicationContext, modelFile.absolutePath)
 
-        val viewModel: ChatTtsViewModel by viewModels {
+        val viewModel: ChatViewModel by viewModels {
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    if (modelClass.isAssignableFrom(ChatTtsViewModel::class.java)) {
+                    if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
                         @Suppress("UNCHECKED_CAST")
-                        return ChatTtsViewModel(applicationContext, session, llmInference) as T
+                        return ChatViewModel(applicationContext, session, llmInference) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class")
                 }
@@ -82,8 +82,8 @@ class ChatTtsActivity : ComponentActivity() {
 
         setContent {
             NabuTheme {
-                ChatTtsScreen(viewModel = viewModel)
-                if (SettingsManager.isBenchmark(this@ChatTtsActivity)) {
+                ChatScreen(viewModel = viewModel)
+                if (SettingsManager.isBenchmark(this@ChatActivity)) {
                     PerfHud.Overlay()
                 }
             }

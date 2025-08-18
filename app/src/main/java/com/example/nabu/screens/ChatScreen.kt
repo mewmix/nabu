@@ -1,5 +1,6 @@
 package com.example.nabu.screens
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,14 +19,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,16 +40,16 @@ import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.example.kokoro.chat.MessageBubble
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PcmTap
-import com.example.nabu.viewmodel.ChatTtsViewModel
+import com.example.nabu.viewmodel.ChatViewModel
 import com.example.nabu.ui.components.WaveformVisualizer
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatTtsScreen(
-    viewModel: ChatTtsViewModel
+fun ChatScreen(
+    viewModel: ChatViewModel
 ) {
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -111,11 +111,11 @@ fun ChatTtsScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
-                    Slider(
+                    BrutalSlider(
                         value = speed,
                         onValueChange = { viewModel.updateSpeed(it) },
                         valueRange = 0.5f..2.0f,
-                        steps = 15,
+                        steps = 15
                     )
                 }
             }
@@ -134,9 +134,19 @@ fun ChatTtsScreen(
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = statusText, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Brutal.textBright
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
-                    if(isLoading || isSynthesizing) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    if (isLoading || isSynthesizing) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Brutal.amber,
+                            trackColor = Brutal.panelStroke
+                        )
+                    }
                 }
             }
 
@@ -167,7 +177,7 @@ fun ChatTtsScreen(
                         .padding(8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = Brutal.amber)
                 }
             }
 
@@ -178,12 +188,26 @@ fun ChatTtsScreen(
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
+                TextField(
                     value = message,
                     onValueChange = { message = it },
-                    modifier = Modifier.weight(1f),
-                    label = { Text("Message") },
-                    shape = RoundedCornerShape(24.dp)
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(1.dp, Brutal.hairline, RoundedCornerShape(24.dp)),
+                    placeholder = { Text("Message", color = Brutal.textDim) },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Brutal.panelBg,
+                        unfocusedContainerColor = Brutal.panelBg,
+                        focusedIndicatorColor = Brutal.hairline,
+                        unfocusedIndicatorColor = Brutal.hairline,
+                        cursorColor = Brutal.amber,
+                        focusedTextColor = Brutal.textBright,
+                        unfocusedTextColor = Brutal.textBright,
+                        focusedPlaceholderColor = Brutal.textDim,
+                        unfocusedPlaceholderColor = Brutal.textDim
+                    ),
+                    textStyle = MaterialTheme.typography.bodyLarge
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 BrutalButton(
@@ -195,7 +219,7 @@ fun ChatTtsScreen(
                     },
                     enabled = message.isNotBlank() && !isLoading && !isSynthesizing && playerState == PlayerState.IDLE
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send")
+                    Icon(Icons.Default.Send, contentDescription = "Send", tint = Brutal.textBright)
                 }
             }
         }

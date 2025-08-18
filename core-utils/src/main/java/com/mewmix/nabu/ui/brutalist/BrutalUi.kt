@@ -545,7 +545,7 @@ fun RadialOscilloscope(
 /* ---------- Minimal usage examples ---------- */
 
 @Composable
-fun ChatTtsControls(
+fun ChatControls(
     isPlaying: Boolean,
     onTogglePlay: (Boolean) -> Unit,
     voices: List<String>,
@@ -556,7 +556,7 @@ fun ChatTtsControls(
     meter: Float,
     samples: List<Float>
 ) {
-    PanelBox(title = "Chat · TTS Controls") {
+    PanelBox(title = "Chat Controls") {
         PanelRow("Transport") {
             SwitchToggle(
                 checked = isPlaying,

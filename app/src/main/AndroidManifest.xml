@@ -35,7 +35,7 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".ChatTtsActivity"
+            android:name=".ChatActivity"
             android:exported="true"
             android:theme="@style/AppTheme"
             android:forceDarkAllowed="true"

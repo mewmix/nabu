@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.lang.StringBuilder
 
-class ChatTtsViewModel(
+class ChatViewModel(
     private val context: Context,
     private val ortSession: OrtSession,
     private val llmInference: LlmInference
@@ -113,7 +113,7 @@ class ChatTtsViewModel(
     }
 
     fun sendMessage(message: String) {
-        DebugLogger.log("ChatTtsViewModel sendMessage: $message")
+        DebugLogger.log("ChatViewModel sendMessage: $message")
         _chatMessages.value += ChatMessage(message, true)
         _isLoading.value = true
 
@@ -146,7 +146,7 @@ class ChatTtsViewModel(
                 } else {
                     viewModelScope.launch {
                         _isLoading.value = false
-                        DebugLogger.log("ChatTtsViewModel response complete")
+                        DebugLogger.log("ChatViewModel response complete")
                         processSentences(sentenceBuilder, true)
                     }
                 }

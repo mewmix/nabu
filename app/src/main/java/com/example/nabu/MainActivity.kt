@@ -294,7 +294,7 @@ private fun screenFromString(name: String?): Screen = when (name) {
     "Basic" -> Screen.Basic
     "Mixer" -> Screen.Mixer
     "Book" -> Screen.Book
-    "ChatTts" -> Screen.ChatTts
+    "Chat" -> Screen.Chat
     "More" -> Screen.More
     "Creations" -> Screen.Creations
     "Settings" -> Screen.Settings
@@ -307,7 +307,7 @@ sealed class Screen {
     object Basic : Screen()
     object Mixer : Screen()
     object Book : Screen()
-    object ChatTts : Screen() // New screen state for ChatTtsActivity if needed for selection
+    object Chat : Screen() // New screen state for ChatActivity if needed for selection
     object More : Screen()
     object Creations : Screen()
     object Settings : Screen()
@@ -354,10 +354,10 @@ fun MainScreen(
                 ) { Text("BOOK") }
                 BrutalButton(
                     onClick = {
-                        context.startActivity(Intent(context, ChatTtsActivity::class.java))
+                        context.startActivity(Intent(context, ChatActivity::class.java))
                     },
                     modifier = Modifier.weight(1f)
-                ) { Text("CHAT TTS") }
+                ) { Text("CHAT") }
                 BrutalButton(
                     onClick = { currentScreen = Screen.More },
                     modifier = Modifier.weight(1f),
@@ -377,8 +377,8 @@ fun MainScreen(
                     session = session,
                     phonemeConverter = phonemeConverter
                 )
-                Screen.ChatTts -> {
-                    // No-op, handled by onClick which starts ChatTtsActivity
+                Screen.Chat -> {
+                    // No-op, handled by onClick which starts ChatActivity
                     // This case is primarily for the 'selected' state of the NavigationBarItem
                 }
                 Screen.More -> MoreScreen { screen ->
