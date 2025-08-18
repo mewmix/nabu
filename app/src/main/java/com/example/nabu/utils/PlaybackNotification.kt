@@ -60,7 +60,7 @@ object PlaybackNotification {
                 )
             )
             .addAction(
-                android.R.drawable.ic_media_stop,
+                android.R.drawable.ic_menu_close_clear_cancel,
                 "Stop",
                 PendingIntent.getBroadcast(
                     context,
