@@ -83,7 +83,7 @@ fun MixerScreen(
         }
     }
 
-    var text by remember { mutableStateOf("This is her warm heart, her warmest kokoro, unwavering love and comfort.") }
+    var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }

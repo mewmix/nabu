@@ -411,7 +411,7 @@ fun BasicScreen(
     val styleLoader = remember(engine) { StyleLoader(context) }
     val names = styleLoader.names.sorted()
 
-    var text by remember { mutableStateOf("This is her warm heart, her warmest kokoro, unwavering love and comfort.") }
+    var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
     var style by remember(engine) {
         mutableStateOf(
             SettingsManager.getStyle(context).takeIf { it in names }
