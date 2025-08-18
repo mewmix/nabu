@@ -564,6 +564,11 @@ fun BookScreen(
                         }
                     )
                     .padding(dimensionResource(id = R.dimen.padding_small)),
+                color = when {
+                    selectedLines.contains(index) -> MaterialTheme.colorScheme.onSecondaryContainer
+                    index == currentUnitIndex -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
                 textAlign = TextAlign.Justify,
                 style = MaterialTheme.typography.bodyLarge
             )
