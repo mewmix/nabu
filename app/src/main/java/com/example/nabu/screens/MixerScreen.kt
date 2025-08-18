@@ -66,6 +66,9 @@ import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.buildStyleFileName
+import com.example.nabu.utils.PcmTap
+import com.example.nabu.ui.components.WaveformVisualizer
+import com.example.nabu.ui.components.RadialWaveformVisualizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,6 +95,8 @@ fun MixerScreen(
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { PcmTap.enabled = true }
 
     val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
     val initial = remember {
@@ -168,6 +173,23 @@ fun MixerScreen(
                 saveStyleConfig(context, selectedStyles, weights, interpolationMode)
             }
         )
+
+        val radial = SettingsManager.isRadialWaveform(context)
+        if (radial) {
+            RadialWaveformVisualizer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                visible = true
+            )
+        } else {
+            WaveformVisualizer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                visible = true
+            )
+        }
 
         Row(modifier = Modifier.fillMaxWidth()) {
             BrutalButton(

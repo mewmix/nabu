@@ -34,6 +34,7 @@ fun SettingsScreen() {
     val context = LocalContext.current
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
+    var radial by remember { mutableStateOf(SettingsManager.isRadialWaveform(context)) }
     var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
     var expanded by remember { mutableStateOf(false) }
 
@@ -66,6 +67,15 @@ fun SettingsScreen() {
                     SettingsManager.setBenchmark(context, it)
                 },
                 label = "Benchmark Mode"
+            )
+
+            SwitchToggle(
+                checked = radial,
+                onToggle = {
+                    radial = it
+                    SettingsManager.setRadialWaveform(context, it)
+                },
+                label = "Radial Waveform"
             )
 
             ExposedDropdownMenuBox(

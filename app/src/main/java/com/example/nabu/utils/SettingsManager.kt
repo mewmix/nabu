@@ -39,4 +39,11 @@ object SettingsManager {
         DatabaseManager.getSetting(context, "tts_engine")?.let {
             runCatching { TtsEngine.valueOf(it) }.getOrNull()
         } ?: default
+
+    fun setRadialWaveform(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, "radial_waveform", if (enabled) "1" else "0")
+    }
+
+    fun isRadialWaveform(context: Context): Boolean =
+        (DatabaseManager.getSetting(context, "radial_waveform") ?: "0") == "1"
 }

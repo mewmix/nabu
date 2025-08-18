@@ -26,6 +26,7 @@ import com.example.nabu.R
 import com.example.nabu.utils.*
 import com.example.nabu.ui.components.ProgressDialog
 import com.example.nabu.ui.components.RadialWaveformVisualizer
+import com.example.nabu.ui.components.WaveformVisualizer
 import com.example.nabu.viewmodel.BookViewModel
 import kotlinx.coroutines.launch
 import com.mewmix.nabu.ui.brutalist.PanelBox
@@ -498,12 +499,22 @@ fun BookScreen(
         }
 
         item {
-            RadialWaveformVisualizer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(150.dp),
-                visible = playerState == PlayerState.PLAYING
-            )
+            val radial = SettingsManager.isRadialWaveform(context)
+            if (radial) {
+                RadialWaveformVisualizer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp),
+                    visible = playerState == PlayerState.PLAYING
+                )
+            } else {
+                WaveformVisualizer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp),
+                    visible = playerState == PlayerState.PLAYING
+                )
+            }
         }
 
         itemsIndexed(lines) { index, line ->

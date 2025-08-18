@@ -45,6 +45,8 @@ import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PcmTap
 import com.example.nabu.viewmodel.ChatTtsViewModel
 import com.example.nabu.ui.components.WaveformVisualizer
+import com.example.nabu.ui.components.RadialWaveformVisualizer
+import com.example.nabu.utils.SettingsManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,6 +76,8 @@ fun ChatTtsScreen(
             listState.animateScrollToItem(chatMessages.size - 1)
         }
     }
+
+    val context = LocalContext.current
 
     Scaffold { paddingValues ->
         PanelBox(
@@ -140,12 +144,22 @@ fun ChatTtsScreen(
                 }
             }
 
-            WaveformVisualizer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(100.dp),
-                visible = playerState == PlayerState.PLAYING
-            )
+            val radial = SettingsManager.isRadialWaveform(context)
+            if (radial) {
+                RadialWaveformVisualizer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    visible = playerState == PlayerState.PLAYING
+                )
+            } else {
+                WaveformVisualizer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    visible = playerState == PlayerState.PLAYING
+                )
+            }
 
             // Chat Messages
             LazyColumn(

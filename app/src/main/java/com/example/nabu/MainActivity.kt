@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -89,6 +90,9 @@ import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
+import com.example.nabu.utils.PcmTap
+import com.example.nabu.ui.components.WaveformVisualizer
+import com.example.nabu.ui.components.RadialWaveformVisualizer
 import com.google.android.material.color.DynamicColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -432,6 +436,11 @@ fun BasicScreen(
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
     var useRawText by remember { mutableStateOf(false) }
+    var isPlaying by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        PcmTap.enabled = false
+    }
 
     LaunchedEffect(engine) {
         withContext(Dispatchers.IO) {
@@ -558,6 +567,23 @@ fun BasicScreen(
             Text("%.2f".format(speed))
         }
 
+        val radial = SettingsManager.isRadialWaveform(context)
+        if (radial) {
+            RadialWaveformVisualizer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                visible = isPlaying
+            )
+        } else {
+            WaveformVisualizer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                visible = isPlaying
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -567,8 +593,15 @@ fun BasicScreen(
                 onClick = {
                     shouldSaveFile = false
                     isProcessing = true
+                    isPlaying = true
+                    PcmTap.enabled = true
                     onGenerateAudio(text, style, speed, shouldSaveFile, useRawText) {
-                        isProcessing = false
+                        if (isProcessing) {
+                            isProcessing = false
+                        } else {
+                            isPlaying = false
+                            PcmTap.enabled = false
+                        }
                     }
                 },
                 modifier = Modifier
@@ -585,8 +618,15 @@ fun BasicScreen(
                 onClick = {
                     shouldSaveFile = true
                     isProcessing = true
+                    isPlaying = true
+                    PcmTap.enabled = true
                     onGenerateAudio(text, style, speed, shouldSaveFile, useRawText) {
-                        isProcessing = false
+                        if (isProcessing) {
+                            isProcessing = false
+                        } else {
+                            isPlaying = false
+                            PcmTap.enabled = false
+                        }
                     }
                 },
                 modifier = Modifier
