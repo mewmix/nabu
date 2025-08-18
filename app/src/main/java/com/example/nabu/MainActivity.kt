@@ -36,20 +36,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.RecordVoiceOver
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -339,40 +329,38 @@ fun MainScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Basic") },
-                    label = { Text("Basic") },
-                    selected = currentScreen == Screen.Basic,
-                    onClick = { currentScreen = Screen.Basic }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.VolumeUp, contentDescription = "Mixer") },
-                    label = { Text("Mixer") },
-                    selected = currentScreen == Screen.Mixer,
-                    onClick = { currentScreen = Screen.Mixer }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.MenuBook, contentDescription = "Book") },
-                    label = { Text("Book") },
-                    selected = currentScreen == Screen.Book,
-                    onClick = { currentScreen = Screen.Book }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.RecordVoiceOver, contentDescription = "Chat TTS") }, // Example new icon
-                    label = { Text("Chat TTS") },
-                    selected = currentScreen == Screen.ChatTts, // For selection state
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                BrutalButton(
+                    onClick = { currentScreen = Screen.Basic },
+                    modifier = Modifier.weight(1f),
+                    enabled = currentScreen != Screen.Basic
+                ) { Text("BASIC") }
+                BrutalButton(
+                    onClick = { currentScreen = Screen.Mixer },
+                    modifier = Modifier.weight(1f),
+                    enabled = currentScreen != Screen.Mixer
+                ) { Text("MIXER") }
+                BrutalButton(
+                    onClick = { currentScreen = Screen.Book },
+                    modifier = Modifier.weight(1f),
+                    enabled = currentScreen != Screen.Book
+                ) { Text("BOOK") }
+                BrutalButton(
                     onClick = {
                         context.startActivity(Intent(context, ChatTtsActivity::class.java))
-                        // currentScreen = Screen.ChatTts // If you want to try and reflect selection
-                    }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.MoreHoriz, contentDescription = "More") },
-                    label = { Text("More") },
-                    selected = currentScreen == Screen.More,
-                    onClick = { currentScreen = Screen.More }
-                )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("CHAT TTS") }
+                BrutalButton(
+                    onClick = { currentScreen = Screen.More },
+                    modifier = Modifier.weight(1f),
+                    enabled = currentScreen != Screen.More
+                ) { Text("MORE") }
             }
         }
     ) { innerPadding ->
@@ -454,7 +442,7 @@ fun BasicScreen(
             minLines = 3,
             maxLines = 12,
             onValueChange = { text = it },
-            label = { Text("Text to speak") },
+            label = { Text("TEXT TO SPEAK") },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions.Default.copy(
                 keyboardType = KeyboardType.Text
@@ -469,13 +457,13 @@ fun BasicScreen(
             TextField(
                 value = engine.name,
                 onValueChange = {},
-                label = { Text("TTS Engine") },
+                label = { Text("TTS ENGINE") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .menuAnchor(),
                 readOnly = true,
                 trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = engineExpanded)
+                    Text(if (engineExpanded) "▲" else "▼", color = Brutal.textBright)
                 }
             )
 
@@ -485,7 +473,7 @@ fun BasicScreen(
             ) {
                 TtsEngine.values().forEach { option ->
                     DropdownMenuItem(
-                        text = { Text(option.name) },
+                        text = { Text(option.name.uppercase()) },
                         onClick = {
                             engine = option
                             SettingsManager.setTtsEngine(context, option)
@@ -507,13 +495,13 @@ fun BasicScreen(
                     style = it
                     SettingsManager.setStyle(context, it)
                 },
-                label = { Text("Style") },
+                label = { Text("STYLE") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .menuAnchor(),
                 readOnly = true,
                 trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                    Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
                 }
             )
 
@@ -523,7 +511,7 @@ fun BasicScreen(
             ) {
                 names.forEach { name ->
                     DropdownMenuItem(
-                        text = { Text(name) },
+                        text = { Text(name.uppercase()) },
                         onClick = {
                             style = name
                             SettingsManager.setStyle(context, name)
@@ -539,7 +527,7 @@ fun BasicScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Raw text input")
+                Text("RAW TEXT INPUT")
                 Spacer(modifier = Modifier.width(8.dp))
                 Switch(checked = useRawText, onCheckedChange = { useRawText = it })
             }
@@ -576,7 +564,7 @@ fun BasicScreen(
                     .weight(1f),
                 enabled = !isProcessing
             ) {
-                Text(if (isProcessing) "GPU Processing..." else "Play")
+                Text(if (isProcessing) "GPU PROCESSING..." else "PLAY")
             }
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -594,7 +582,7 @@ fun BasicScreen(
                     .weight(1f),
                 enabled = !isProcessing
             ) {
-                Text(if (isProcessing) "GPU Processing..." else "Play & Save")
+                Text(if (isProcessing) "GPU PROCESSING..." else "PLAY & SAVE")
             }
         }
     }
