@@ -90,6 +90,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         units: List<PlayableUnit>,
         startUnit: Int,
         bookUri: Uri?,
+        projectName: String,
         context: Context,
         engine: TtsEngine,
         usePregenerated: Boolean,
@@ -99,7 +100,14 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         appContext = context.applicationContext
         initializeAudioPlayer(engine)
         AudioPlayerManager.player = audioPlayer
-        PlaybackNotification.show(appContext!!, true)
+        AudioPlayerManager.onStop = { stopPlayback() }
+        val target = if (projectName.isNotBlank()) {
+            projectName
+        } else {
+            bookUri?.lastPathSegment ?: "unknown"
+        }
+        val style = selectedStyles.joinToString("+") { it.uppercase() }
+        PlaybackNotification.show(appContext!!, true, target, style)
         playJob = playBook(
             scope = viewModelScope,
             session = session,
@@ -126,6 +134,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         _audioPlayer?.stop()
         appContext?.let { PlaybackNotification.cancel(it) }
         AudioPlayerManager.player = null
+        AudioPlayerManager.onStop = null
     }
 
     fun openDocument(uri: Uri) {

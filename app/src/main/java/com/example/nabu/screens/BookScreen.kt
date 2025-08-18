@@ -292,9 +292,39 @@ fun BookScreen(
                 BrutalButton(onClick = { launcher.launch(arrayOf("text/plain", "application/epub+zip")) }) {
                     Text("OPEN")
                 }
-                BrutalButton(
-                    onClick = {
-                        if (playerState == PlayerState.PLAYING) {
+                val startPlaybackAction = {
+                    if (playerState == PlayerState.PAUSED) {
+                        bookViewModel.audioPlayer.stop()
+                    }
+                    bookViewModel.startPlayback(
+                        session = session,
+                        phonemeConverter = phonemeConverter,
+                        styleLoader = styleLoader,
+                        selectedStyles = selectedStyles,
+                        weights = weights,
+                        mode = interpolationMode,
+                        speed = speed,
+                        units = playableUnits,
+                        startUnit = currentUnitIndex.coerceAtLeast(0),
+                        bookUri = bookUri,
+                        projectName = projectName,
+                        context = context,
+                        engine = SettingsManager.getTtsEngine(context),
+                        usePregenerated = usePregenerated,
+                        onFinished = {
+                            bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
+                            bookmark = null
+                        },
+                    )
+                }
+                when (playerState) {
+                    PlayerState.IDLE -> {
+                        BrutalButton(onClick = { startPlaybackAction() }, enabled = lines.isNotEmpty()) {
+                            Text("PLAY")
+                        }
+                    }
+                    PlayerState.PLAYING -> {
+                        BrutalButton(onClick = {
                             bookViewModel.audioPlayer.pause()
                             bookUri?.let {
                                 DebugLogger.log("Saving bookmark at line $currentUnitIndex")
@@ -312,48 +342,21 @@ fun BookScreen(
                                 ProjectManager.save(context, project)
                                 bookmark = Bookmark(currentUnitIndex)
                             }
-                        } else {
-                            if (playerState == PlayerState.PAUSED) {
-                                bookViewModel.audioPlayer.stop()
-                            }
-                            bookViewModel.startPlayback(
-                                session = session,
-                                phonemeConverter = phonemeConverter,
-                                styleLoader = styleLoader,
-                                selectedStyles = selectedStyles,
-                                weights = weights,
-                                mode = interpolationMode,
-                                speed = speed,
-                                units = playableUnits,
-                                startUnit = currentUnitIndex.coerceAtLeast(0),
-                                bookUri = bookUri,
-                                context = context,
-                                engine = SettingsManager.getTtsEngine(context),
-                                usePregenerated = usePregenerated,
-                                onFinished = {
-                                    bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
-                                    bookmark = null
-                                },
-                            )
+                        }) {
+                            Text("PAUSE")
                         }
-                    },
-                    enabled = lines.isNotEmpty()
-                ) {
-                    Text(
-                        when (playerState) {
-                            PlayerState.IDLE -> "PLAY"
-                            PlayerState.PLAYING -> "PAUSE"
-                            PlayerState.PAUSED -> "RESUME"
+                        BrutalButton(onClick = { bookViewModel.stopPlayback() }) {
+                            Text("STOP")
                         }
-                    )
-                }
-                BrutalButton(
-                    onClick = {
-                        bookViewModel.stopPlayback()
-                    },
-                    enabled = playerState != PlayerState.IDLE
-                ) {
-                    Text("STOP")
+                    }
+                    PlayerState.PAUSED -> {
+                        BrutalButton(onClick = { startPlaybackAction() }, enabled = lines.isNotEmpty()) {
+                            Text("PLAY")
+                        }
+                        BrutalButton(onClick = { bookViewModel.stopPlayback() }) {
+                            Text("STOP")
+                        }
+                    }
                 }
                 BrutalButton(
                     onClick = {
@@ -538,6 +541,7 @@ fun BookScreen(
                                     units = playableUnits,
                                     startUnit = index,
                                     bookUri = bookUri,
+                                    projectName = projectName,
                                     context = context,
                                     engine = SettingsManager.getTtsEngine(context),
                                     usePregenerated = usePregenerated,
