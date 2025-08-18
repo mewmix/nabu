@@ -114,8 +114,7 @@ fun ChatScreen(
                     BrutalSlider(
                         value = speed,
                         onValueChange = { viewModel.updateSpeed(it) },
-                        valueRange = 0.5f..2.0f,
-                        steps = 15
+                        range = 0.5f..2.0f
                     )
                 }
             }
