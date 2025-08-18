@@ -6,10 +6,11 @@ import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.toList
 import java.io.File
 
 fun playBook(
@@ -33,82 +34,86 @@ fun playBook(
     return scope.launch(Dispatchers.IO) {
         DebugLogger.log("Starting playbook from line $startLine")
         var completed = true
-        val audioBuffer = Channel<Pair<FloatArray, Int>>(Channel.BUFFERED)
-
-        // Producer
-        val producerJob = launch {
-            try {
-                val mixedVector = mixStyles(
-                    styleLoader = styleLoader,
-                    styles = selectedStyles,
-                    weights = weights,
-                    mode = mode,
-                )
-                for (index in startLine until lines.size) {
-                    if (!isActive) break
-                    if (usePregenerated && bookUri != null) {
-                        val path = DatabaseManager.getAudioLine(context, bookUri.toString(), index)
-                        if (path != null) {
-                            val audio = loadAudioInternal(File(path))
-                            audioBuffer.send(Pair(audio, index))
-                            continue
-                        }
-                    }
-                    val line = lines[index]
-                    val engine = SettingsManager.getTtsEngine(context)
-                    if (engine == TtsEngine.KITTEN) {
-                        val (_, tokens) = KittenPhonemizer.phonemize(line)
-                        val (audio, _) = createKittenAudioFromStyleVector(
-                            tokens = tokens,
-                            voice = mixedVector,
-                            speed = speed,
-                            session = session,
-                        )
-                        audioBuffer.send(Pair(audio, index))
-                    } else {
-                        val phonemes = phonemeConverter.phonemize(line)
-                        createAudioFlowFromStyleVector(
-                            phonemes = phonemes,
-                            voice = mixedVector,
-                            speed = speed,
-                            session = session,
-                        ).collect { chunk ->
-                            audioBuffer.send(Pair(chunk, index))
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                DebugLogger.log("Audio generation failed: ${e.localizedMessage}")
-            } finally {
-                audioBuffer.close()
-            }
-        }
-
-        // Consumer
         try {
-            var lastIndex = -1
-            for ((audio, index) in audioBuffer) {
-                if (!isActive) {
-                    completed = false
-                    break
+            val mixedVector = mixStyles(
+                styleLoader = styleLoader,
+                styles = selectedStyles,
+                weights = weights,
+                mode = mode,
+            )
+
+            suspend fun generateLine(index: Int): Pair<FloatArray, Int> {
+                if (usePregenerated && bookUri != null) {
+                    val path = DatabaseManager.getAudioLine(context, bookUri.toString(), index)
+                    if (path != null) {
+                        val audio = loadAudioInternal(File(path))
+                        return Pair(audio, index)
+                    }
                 }
 
-                if (index != lastIndex) {
-                    withContext(Dispatchers.Main) {
-                        onLineChanged(index)
+                val line = lines[index]
+                val engine = SettingsManager.getTtsEngine(context)
+                val audio = if (engine == TtsEngine.KITTEN) {
+                    val (_, tokens) = KittenPhonemizer.phonemize(line)
+                    val (a, _) = createKittenAudioFromStyleVector(
+                        tokens = tokens,
+                        voice = mixedVector,
+                        speed = speed,
+                        session = session,
+                    )
+                    a
+                } else {
+                    val phonemes = phonemeConverter.phonemize(line)
+                    val chunks = createAudioFlowFromStyleVector(
+                        phonemes = phonemes,
+                        voice = mixedVector,
+                        speed = speed,
+                        session = session,
+                    ).toList()
+                    val total = chunks.sumOf { it.size }
+                    val result = FloatArray(total)
+                    var pos = 0
+                    for (chunk in chunks) {
+                        chunk.copyInto(result, pos)
+                        pos += chunk.size
                     }
-                    DebugLogger.log("Playing line $index")
-                    lastIndex = index
+                    result
+                }
+                return Pair(audio, index)
+            }
+
+            var currentIndex = startLine
+            if (currentIndex >= lines.size) return@launch
+
+            var nextJob = async { generateLine(currentIndex) }
+            var (audio, index) = nextJob.await()
+
+            while (isActive) {
+                withContext(Dispatchers.Main) {
+                    onLineChanged(index)
+                }
+                DebugLogger.log("Playing line $index")
+
+                currentIndex = index + 1
+                nextJob = if (currentIndex < lines.size) {
+                    async { generateLine(currentIndex) }
+                } else {
+                    null
                 }
 
                 audioPlayer.prepare(audio, 0)
                 audioPlayer.playBlocking()
 
-                if (audioPlayer.getState() == PlayerState.PAUSED) {
+                if (audioPlayer.getState() == PlayerState.PAUSED || !isActive) {
                     completed = false
-                    producerJob.cancel()
+                    nextJob?.cancel()
                     break
                 }
+
+                if (nextJob == null) break
+                val result = nextJob.await()
+                audio = result.first
+                index = result.second
             }
         } catch (e: Exception) {
             completed = false
