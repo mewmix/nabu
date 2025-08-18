@@ -12,10 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Divider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ProvideTextStyle
@@ -29,7 +26,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,11 +134,9 @@ fun BrutalSection(
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.weight(1f))
-            Icon(
-                imageVector = Icons.Default.ArrowDropDown,
-                contentDescription = "Toggle $title",
-                tint = Brutal.textBright,
-                modifier = Modifier.graphicsLayer(rotationZ = if (expanded) 180f else 0f)
+            Text(
+                if (expanded) "▲" else "▼",
+                color = Brutal.textBright
             )
         }
         if (expanded) {

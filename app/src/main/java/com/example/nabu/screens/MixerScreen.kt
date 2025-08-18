@@ -22,16 +22,12 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -43,7 +39,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -120,7 +115,7 @@ fun MixerScreen(
             onValueChange = { text = it },
             minLines = 3,
             maxLines = 12,
-            label = { Text("Text to speak") },
+            label = { Text("TEXT TO SPEAK") },
             modifier = Modifier.fillMaxWidth()
             )
 
@@ -192,7 +187,7 @@ fun MixerScreen(
                 },
                 modifier = Modifier.weight(1f),
                 enabled = !isProcessing
-            ) { Text(if (isProcessing) "Mixing..." else "Play") }
+            ) { Text(if (isProcessing) "MIXING..." else "PLAY") }
 
             BrutalButton(
                 onClick = {
@@ -217,7 +212,7 @@ fun MixerScreen(
                 },
                 modifier = Modifier.weight(1f),
                 enabled = !isProcessing
-            ) { Text(if (isProcessing) "Mixing..." else "Play & Save") }
+            ) { Text(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
         }
 
         // Debug logs moved to dedicated screen
@@ -311,7 +306,7 @@ fun StyleSelector(
 
     Column {
         Text(
-            "Selected Styles:",
+            "SELECTED STYLES:",
             style = MaterialTheme.typography.labelLarge,
             color = Brutal.textBright
         )
@@ -323,14 +318,7 @@ fun StyleSelector(
             selectedStyles.forEach { style ->
                 SuggestionChip(
                     onClick = { onRemoveStyle(style) },
-                    label = { Text(style, color = Brutal.textBright) },
-                    icon = {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Remove",
-                            tint = Brutal.textBright
-                        )
-                    },
+                    label = { Text(style.uppercase(), color = Brutal.textBright) },
                     colors = SuggestionChipDefaults.suggestionChipColors(
                         containerColor = Brutal.panelBg,
                         iconContentColor = Brutal.textBright,
@@ -351,14 +339,9 @@ fun StyleSelector(
                 onValueChange = {},
                 readOnly = true,
                 trailingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        tint = Brutal.textBright,
-                        modifier = Modifier.graphicsLayer(rotationZ = if (expanded) 180f else 0f)
-                    )
+                    Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
                 },
-                placeholder = { Text("Add style...", color = Brutal.textDim) },
+                placeholder = { Text("ADD STYLE...", color = Brutal.textDim) },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Brutal.panelBg,
                     unfocusedContainerColor = Brutal.panelBg,
@@ -386,7 +369,7 @@ fun StyleSelector(
             ) {
                 styleNames.filter { it !in selectedStyles }.forEach { style ->
                     DropdownMenuItem(
-                        text = { Text(style, color = Brutal.textBright) },
+                        text = { Text(style.uppercase(), color = Brutal.textBright) },
                         onClick = {
                             onAddStyle(style)
                             expanded = false
@@ -406,7 +389,7 @@ fun WeightSliders(
     onWeightChanged: (String, Float) -> Unit
 ) {
     Column {
-        Text("Style Weights:", style = MaterialTheme.typography.labelLarge)
+        Text("STYLE WEIGHTS:", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
 
         selectedStyles.forEach { style ->
             PanelRow(name = style) {
@@ -427,7 +410,7 @@ fun InterpolationModeSelector(
     onModeSelected: (InterpolationMode) -> Unit
 ) {
     Column {
-        Text("Interpolation Mode:", style = MaterialTheme.typography.labelLarge)
+        Text("INTERPOLATION MODE:", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
 
         Row(horizontalArrangement = Arrangement.SpaceEvenly) {
             InterpolationMode.entries.forEach { mode ->
@@ -441,7 +424,7 @@ fun InterpolationModeSelector(
                         selected = currentMode == mode,
                         onClick = { onModeSelected(mode) }
                     )
-                    Text(mode.displayName)
+                    Text(mode.displayName.uppercase())
                 }
             }
         }
