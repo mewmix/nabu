@@ -13,8 +13,6 @@ import com.example.nabu.screens.CreditsConstellationScreen
 import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -72,7 +70,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nabu.data.UserPreferencesRepository
@@ -98,8 +95,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 const val EXTRA_START_SCREEN = "start_screen"
-private const val PLAYBACK_CHANNEL_ID = "playback_channel"
-private const val PLAYBACK_NOTIFICATION_ID = 1
 
 class MyApplication : Application() {
     override fun onCreate() {
@@ -108,35 +103,6 @@ class MyApplication : Application() {
     }
 }
 
-private fun showPlaybackNotification(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-        ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.POST_NOTIFICATIONS
-        ) != PackageManager.PERMISSION_GRANTED
-    ) {
-        return
-    }
-
-    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val channel = NotificationChannel(
-            PLAYBACK_CHANNEL_ID,
-            "Playback",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        manager.createNotificationChannel(channel)
-    }
-
-    val notification = NotificationCompat.Builder(context, PLAYBACK_CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_media_play)
-        .setContentTitle("Playback")
-        .setContentText("Audio playback in progress")
-        .setOngoing(true)
-        .build()
-
-    manager.notify(PLAYBACK_NOTIFICATION_ID, notification)
-}
 
 class MainActivity : ComponentActivity() {
     private lateinit var phonemeConverter: PhonemeConverter
@@ -144,11 +110,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var userPreferencesRepository: UserPreferencesRepository
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            showPlaybackNotification(this)
-        }
-    }
+    ) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -280,8 +242,6 @@ private fun generateAudio(
                 scope,
                 onComplete = onComplete
             )
-
-            showPlaybackNotification(context)
 
             if (shouldSave) {
                 saveAudio(audioData, context, style, sampleRate)

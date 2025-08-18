@@ -12,34 +12,37 @@ import androidx.core.app.NotificationManagerCompat
 object PlaybackNotification {
     private const val CHANNEL_ID = "book_playback_channel"
     private const val NOTIFICATION_ID = 1001
+    private var currentFile: String = ""
 
-    fun show(context: Context, playing: Boolean) {
+    fun show(context: Context, playing: Boolean, fileName: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 return
             }
         }
+        currentFile = fileName
         createChannel(context)
-        val notification = buildNotification(context, playing)
+        val notification = buildNotification(context, playing, fileName)
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
     }
 
     fun update(context: Context, state: PlayerState) {
         when (state) {
-            PlayerState.PLAYING -> show(context, true)
-            PlayerState.PAUSED -> show(context, false)
+            PlayerState.PLAYING -> show(context, true, currentFile)
+            PlayerState.PAUSED -> show(context, false, currentFile)
             PlayerState.IDLE -> cancel(context)
         }
     }
 
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+        currentFile = ""
     }
 
-    private fun buildNotification(context: Context, playing: Boolean) =
+    private fun buildNotification(context: Context, playing: Boolean, fileName: String) =
         NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("Book Playback")
+            .setContentTitle(fileName)
             .setContentText(if (playing) "Playing" else "Paused")
             .setOngoing(playing)
             .addAction(
@@ -49,6 +52,16 @@ object PlaybackNotification {
                     context,
                     0,
                     Intent(PlaybackReceiver.ACTION_TOGGLE),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+            .addAction(
+                android.R.drawable.ic_media_stop,
+                "Stop",
+                PendingIntent.getBroadcast(
+                    context,
+                    1,
+                    Intent(PlaybackReceiver.ACTION_STOP),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             )

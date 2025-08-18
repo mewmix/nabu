@@ -99,7 +99,8 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         appContext = context.applicationContext
         initializeAudioPlayer(engine)
         AudioPlayerManager.player = audioPlayer
-        PlaybackNotification.show(appContext!!, true)
+        val fileName = bookUri?.lastPathSegment ?: "Playback"
+        PlaybackNotification.show(appContext!!, true, fileName)
         playJob = playBook(
             scope = viewModelScope,
             session = session,
