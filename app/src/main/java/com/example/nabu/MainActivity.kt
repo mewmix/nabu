@@ -356,7 +356,17 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.MenuBook, contentDescription = "Book") },
                     label = { Text("Book") },
                     selected = currentScreen == Screen.Book,
-                    onClick = { currentScreen = Screen.Book }
+                    onClick = {
+                        if (SettingsManager.getTtsEngine(context) == TtsEngine.KITTEN) {
+                            Toast.makeText(
+                                context,
+                                "Book activity is disabled when using the Kitten TTS engine.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            currentScreen = Screen.Book
+                        }
+                    }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Filled.RecordVoiceOver, contentDescription = "Chat TTS") }, // Example new icon

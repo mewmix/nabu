@@ -3,6 +3,7 @@ package com.example.nabu.screens
 import ai.onnxruntime.OrtSession
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -47,6 +48,23 @@ fun BookScreen(
     val scope = rememberCoroutineScope()
 
     val engine by rememberUpdatedState(SettingsManager.getTtsEngine(context))
+
+    if (engine == TtsEngine.KITTEN) {
+        LaunchedEffect(Unit) {
+            Toast.makeText(
+                context,
+                "Book activity is disabled when using the Kitten TTS engine.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Book activity is disabled when using the Kitten TTS engine.")
+        }
+        return
+    }
 
     LaunchedEffect(engine) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
