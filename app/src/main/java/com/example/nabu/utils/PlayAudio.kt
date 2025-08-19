@@ -4,6 +4,7 @@ import android.media.AudioFormat
 import android.media.AudioFormat.CHANNEL_OUT_MONO
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -12,8 +13,16 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.min
 
-fun playAudio(audioData: FloatArray, sampleRate: Int, scope: CoroutineScope, onComplete: () -> Unit) {
+fun playAudio(
+    audioData: FloatArray,
+    sampleRate: Int,
+    context: Context,
+    scope: CoroutineScope,
+    onComplete: () -> Unit
+) {
     scope.launch(Dispatchers.IO) {
+        PlaybackNotificationManager.show(context)
+
         val channelConfig = CHANNEL_OUT_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
@@ -56,6 +65,8 @@ fun playAudio(audioData: FloatArray, sampleRate: Int, scope: CoroutineScope, onC
 
         audioTrack.stop()
         audioTrack.release()
+
+        PlaybackNotificationManager.hide(context)
 
         withContext(Dispatchers.Main) {
             onComplete()

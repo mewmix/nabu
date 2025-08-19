@@ -13,8 +13,6 @@ import com.example.nabu.screens.CreditsConstellationScreen
 import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -22,10 +20,10 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,7 +44,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialogDefaults
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
@@ -65,7 +63,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nabu.data.UserPreferencesRepository
@@ -91,8 +88,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 const val EXTRA_START_SCREEN = "start_screen"
-private const val PLAYBACK_CHANNEL_ID = "playback_channel"
-private const val PLAYBACK_NOTIFICATION_ID = 1
 
 class MyApplication : Application() {
     override fun onCreate() {
@@ -101,35 +96,6 @@ class MyApplication : Application() {
     }
 }
 
-private fun showPlaybackNotification(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-        ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.POST_NOTIFICATIONS
-        ) != PackageManager.PERMISSION_GRANTED
-    ) {
-        return
-    }
-
-    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val channel = NotificationChannel(
-            PLAYBACK_CHANNEL_ID,
-            "Playback",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        manager.createNotificationChannel(channel)
-    }
-
-    val notification = NotificationCompat.Builder(context, PLAYBACK_CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_media_play)
-        .setContentTitle("Playback")
-        .setContentText("Audio playback in progress")
-        .setOngoing(true)
-        .build()
-
-    manager.notify(PLAYBACK_NOTIFICATION_ID, notification)
-}
 
 class MainActivity : ComponentActivity() {
     private lateinit var phonemeConverter: PhonemeConverter
@@ -139,9 +105,7 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) {
-            showPlaybackNotification(this)
-        } else if (SettingsManager.shouldShowNotificationPrompt(this)) {
+        if (!isGranted && SettingsManager.shouldShowNotificationPrompt(this)) {
             showNotificationDialog = true
         }
     }
@@ -181,7 +145,8 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     userPreferencesRepository = userPreferencesRepository,
-                    initialScreen = startScreen
+                    initialScreen = startScreen,
+                    requestNotificationPermission = ::maybeRequestNotificationPermission
                 )
 
                 if (showNotificationDialog) {
@@ -190,21 +155,26 @@ class MainActivity : ComponentActivity() {
                         title = { Text("Enable notifications") },
                         text = { Text("Notifications allow control of playback outside the app window.") },
                         confirmButton = {
-                            TextButton(onClick = {
+                            BrutalButton(onClick = {
                                 showNotificationDialog = false
                                 requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                             }) {
-                                Text("Allow")
+                                Text("ALLOW")
                             }
                         },
                         dismissButton = {
-                            TextButton(onClick = {
+                            BrutalButton(onClick = {
                                 SettingsManager.setShowNotificationPrompt(this@MainActivity, false)
                                 showNotificationDialog = false
                             }) {
-                                Text("Don't show again")
+                                Text("DON'T SHOW AGAIN")
                             }
-                        }
+                        },
+                        colors = AlertDialogDefaults.dialogColors(
+                            containerColor = Brutal.panelBg,
+                            titleContentColor = Brutal.textBright,
+                            textContentColor = Brutal.textBright
+                        )
                     )
                 }
 
@@ -297,11 +267,9 @@ private fun generateAudio(
             playAudio(
                 audioData,
                 sampleRate,
-                scope,
-                onComplete = onComplete
-            )
-
-            showPlaybackNotification(context)
+                context,
+                scope
+            ) {}
 
             if (shouldSave) {
                 saveAudio(audioData, context, style, sampleRate)
@@ -352,7 +320,8 @@ fun MainScreen(
     phonemeConverter: PhonemeConverter,
     onGenerateAudio: (String, String, Float, Boolean, Boolean, () -> Unit) -> Unit,
     userPreferencesRepository: UserPreferencesRepository,
-    initialScreen: Screen = Screen.Basic
+    initialScreen: Screen = Screen.Basic,
+    requestNotificationPermission: () -> Unit
 ) {
     var currentScreen by remember { mutableStateOf(initialScreen) }
     val context = LocalContext.current
@@ -400,7 +369,8 @@ fun MainScreen(
                 Screen.Basic -> BasicScreen(onGenerateAudio = onGenerateAudio)
                 Screen.Mixer -> MixerScreen(
                     phonemeConverter = phonemeConverter,
-                    styleLoader = StyleLoader(context)
+                    styleLoader = StyleLoader(context),
+                    requestNotificationPermission = requestNotificationPermission
                 )
                 Screen.Book -> BookScreen(
                     session = session,

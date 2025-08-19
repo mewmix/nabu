@@ -70,6 +70,7 @@ import kotlinx.coroutines.withContext
 fun MixerScreen(
     phonemeConverter: PhonemeConverter,
     styleLoader: StyleLoader,
+    requestNotificationPermission: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -167,6 +168,7 @@ fun MixerScreen(
         Row(modifier = Modifier.fillMaxWidth()) {
             BrutalButton(
                 onClick = {
+                    requestNotificationPermission()
                     shouldSaveFile = false
                     isProcessing = true
                     scope.launch {
@@ -191,6 +193,7 @@ fun MixerScreen(
 
             BrutalButton(
                 onClick = {
+                    requestNotificationPermission()
                     shouldSaveFile = true
                     isProcessing = true
                     scope.launch {
@@ -271,7 +274,7 @@ private fun generateAudio(
             if (shouldSaveFile && fileName != null) {
                 saveAudio(audio, context, fileName, sampleRate)
             }
-            playAudio(audio, sampleRate, scope) {}
+            playAudio(audio, sampleRate, context, scope) {}
         } catch (e: Exception) {
             DebugLogger.log("Mixer error: ${e.message}")
         } finally {
