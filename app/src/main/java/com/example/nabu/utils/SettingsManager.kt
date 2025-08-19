@@ -39,4 +39,11 @@ object SettingsManager {
         DatabaseManager.getSetting(context, "tts_engine")?.let {
             runCatching { TtsEngine.valueOf(it) }.getOrNull()
         } ?: default
+
+    fun setShowNotificationPrompt(context: Context, show: Boolean) {
+        DatabaseManager.setSetting(context, "show_notification_prompt", if (show) "1" else "0")
+    }
+
+    fun shouldShowNotificationPrompt(context: Context): Boolean =
+        (DatabaseManager.getSetting(context, "show_notification_prompt") ?: "1") == "1"
 }

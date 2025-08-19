@@ -45,6 +45,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
@@ -133,11 +135,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var phonemeConverter: PhonemeConverter
     private val scope = MainScope()
     private lateinit var userPreferencesRepository: UserPreferencesRepository
+    private var showNotificationDialog by mutableStateOf(false)
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
             showPlaybackNotification(this)
+        } else if (SettingsManager.shouldShowNotificationPrompt(this)) {
+            showNotificationDialog = true
         }
     }
 
@@ -178,6 +183,30 @@ class MainActivity : ComponentActivity() {
                     userPreferencesRepository = userPreferencesRepository,
                     initialScreen = startScreen
                 )
+
+                if (showNotificationDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showNotificationDialog = false },
+                        title = { Text("Enable notifications") },
+                        text = { Text("Notifications allow control of playback outside the app window.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showNotificationDialog = false
+                                requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            }) {
+                                Text("Allow")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                SettingsManager.setShowNotificationPrompt(this@MainActivity, false)
+                                showNotificationDialog = false
+                            }) {
+                                Text("Don't show again")
+                            }
+                        }
+                    )
+                }
 
                 if (SettingsManager.isBenchmark(this@MainActivity)) {
                     PerfHud.Overlay()
