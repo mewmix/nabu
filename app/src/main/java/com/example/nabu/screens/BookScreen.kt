@@ -72,6 +72,7 @@ fun BookScreen(
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var debugMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
+    var isPlayProcessing by remember { mutableStateOf(false) }
     var isPregenerating by remember { mutableStateOf(false) }
     var preGenProgress by remember { mutableFloatStateOf(0f) }
 
@@ -83,6 +84,12 @@ fun BookScreen(
     var projects by remember { mutableStateOf(listOf<Project>()) }
     val selectedLines = remember { mutableStateListOf<Int>() }
     var followText by remember { mutableStateOf(true) }
+
+    LaunchedEffect(playerState) {
+        if (playerState != PlayerState.IDLE) {
+            isPlayProcessing = false
+        }
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -316,6 +323,9 @@ fun BookScreen(
                             if (playerState == PlayerState.PAUSED) {
                                 bookViewModel.audioPlayer.stop()
                             }
+                            if (playerState == PlayerState.IDLE) {
+                                isPlayProcessing = true
+                            }
                             bookViewModel.startPlayback(
                                 session = session,
                                 phonemeConverter = phonemeConverter,
@@ -333,17 +343,20 @@ fun BookScreen(
                                 onFinished = {
                                     bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
                                     bookmark = null
+                                    isPlayProcessing = false
                                 },
                             )
                         }
                     },
-                    enabled = lines.isNotEmpty()
+                    enabled = lines.isNotEmpty() && !isPlayProcessing
                 ) {
                     Text(
-                        when (playerState) {
-                            PlayerState.IDLE -> "PLAY"
-                            PlayerState.PLAYING -> "PAUSE"
-                            PlayerState.PAUSED -> "RESUME"
+                        when {
+                            isPlayProcessing -> "GPU PROCESSING..."
+                            playerState == PlayerState.IDLE -> "PLAY"
+                            playerState == PlayerState.PLAYING -> "PAUSE"
+                            playerState == PlayerState.PAUSED -> "RESUME"
+                            else -> "PLAY"
                         }
                     )
                 }
