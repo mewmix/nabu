@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.nabu.MainActivity
+import com.example.nabu.R
 
 object PlaybackNotification {
     private const val CHANNEL_ID = "book_playback_channel"
@@ -43,7 +44,7 @@ object PlaybackNotification {
 
     private fun buildNotification(context: Context, playing: Boolean) =
         NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(if (playing) R.drawable.ic_media_stop else R.drawable.ic_media_play)
             .setContentTitle("Nabu")
             .setContentText(
                 (if (playing) "Nabu is playing" else "Nabu paused") +
@@ -59,7 +60,7 @@ object PlaybackNotification {
                 )
             )
             .addAction(
-                if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                if (playing) R.drawable.ic_media_pause else R.drawable.ic_media_play,
                 if (playing) "Pause" else "Play",
                 PendingIntent.getBroadcast(
                     context,
@@ -69,7 +70,7 @@ object PlaybackNotification {
                 )
             )
             .addAction(
-                android.R.drawable.ic_media_stop,
+                R.drawable.ic_media_stop,
                 "Stop",
                 PendingIntent.getBroadcast(
                     context,
