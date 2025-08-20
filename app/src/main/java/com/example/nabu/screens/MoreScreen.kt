@@ -43,6 +43,12 @@ fun MoreScreen(onNavigate: (String) -> Unit) {
                 Text("MODELS")
             }
             BrutalButton(
+                onClick = { onNavigate("Donate") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("DONATE")
+            }
+            BrutalButton(
                 onClick = { onNavigate("Credits") },
                 modifier = Modifier.fillMaxWidth()
             ) {

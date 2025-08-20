@@ -10,6 +10,7 @@ import com.example.nabu.screens.MoreScreen
 import com.example.nabu.screens.ModelsScreen
 import com.example.nabu.screens.DebugLogScreen
 import com.example.nabu.screens.CreditsConstellationScreen
+import com.example.nabu.screens.DonateScreen
 import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
@@ -299,6 +300,7 @@ private fun screenFromString(name: String?): Screen = when (name) {
     "Creations" -> Screen.Creations
     "Settings" -> Screen.Settings
     "Models" -> Screen.Models
+    "Donate" -> Screen.Donate
     "DebugLog" -> Screen.DebugLog
     else -> Screen.Basic
 }
@@ -312,6 +314,7 @@ sealed class Screen {
     object Creations : Screen()
     object Settings : Screen()
     object Models : Screen()
+    object Donate : Screen()
     object DebugLog : Screen()
     object Credits : Screen()
 }
@@ -386,6 +389,7 @@ fun MainScreen(
                         "Creations" -> Screen.Creations
                         "Settings" -> Screen.Settings
                         "Models" -> Screen.Models
+                        "Donate" -> Screen.Donate
                         "Credits" -> Screen.Credits
                         "DebugLog" -> Screen.DebugLog
                         else -> currentScreen
@@ -394,6 +398,7 @@ fun MainScreen(
                 Screen.Creations -> CreationsScreen()
                 Screen.Settings -> SettingsScreen()
                 Screen.Models -> ModelsScreen(userPreferencesRepository)
+                Screen.Donate -> DonateScreen()
                 Screen.Credits -> CreditsConstellationScreen()
                 Screen.DebugLog -> DebugLogScreen()
             }
