@@ -86,15 +86,14 @@ class ChatActivity : ComponentActivity() {
 
         setContent {
             NabuTheme {
-                ChatScreen(viewModel = viewModel)
+                ChatScreen(
+                    viewModel = viewModel,
+                    initialMessage = initialPrompt.orEmpty()
+                )
                 if (SettingsManager.isBenchmark(this@ChatActivity)) {
                     PerfHud.Overlay()
                 }
             }
-        }
-
-        if (!initialPrompt.isNullOrBlank()) {
-            viewModel.sendMessage(initialPrompt)
         }
     }
 }

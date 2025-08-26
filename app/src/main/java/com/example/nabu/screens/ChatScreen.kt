@@ -49,7 +49,8 @@ import com.example.nabu.ui.components.WaveformVisualizer
 
 @Composable
 fun ChatScreen(
-    viewModel: ChatViewModel
+    viewModel: ChatViewModel,
+    initialMessage: String = ""
 ) {
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -65,7 +66,7 @@ fun ChatScreen(
     val interpolationMode by viewModel.interpolationMode.collectAsState()
     val speed by viewModel.speed.collectAsState()
 
-    var message by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf(initialMessage) }
     val listState = rememberLazyListState()
     var showMixerSettings by remember { mutableStateOf(false) }
 

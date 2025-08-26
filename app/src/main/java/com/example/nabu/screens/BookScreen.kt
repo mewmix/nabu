@@ -3,6 +3,7 @@ package com.example.nabu.screens
 import ai.onnxruntime.OrtSession
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -473,7 +474,7 @@ fun BookScreen(
                     BrutalButton(
                         onClick = {
                             val selectedText = selectedLines.sorted().joinToString("\n") { lines[it] }
-                            val title = bookUri?.lastPathSegment?.substringBeforeLast('.') ?: "unknown"
+                            val title = bookUri?.let { getDisplayName(context, it).substringBeforeLast('.') } ?: "unknown"
                             val prompt = "Tell me a little bit more about this passage from: $title\n\n$selectedText"
                             val intent = Intent(context, ChatActivity::class.java).apply {
                                 putExtra(ChatActivity.EXTRA_INITIAL_PROMPT, prompt)
@@ -625,6 +626,13 @@ fun BookScreen(
             progress = preGenProgress
         )
     }
+}
+
+private fun getDisplayName(context: android.content.Context, uri: Uri): String {
+    return context.contentResolver
+        .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else uri.lastPathSegment ?: "document" }
+        ?: uri.lastPathSegment ?: "document"
 }
 
 
