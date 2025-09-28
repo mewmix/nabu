@@ -9,7 +9,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.example.kokoro.chat.LlmInference
 import com.example.nabu.data.ModelManager
 import com.example.nabu.data.Model
 import com.example.nabu.screens.ChatScreen
@@ -18,7 +17,6 @@ import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.SettingsManager
 import com.example.kokoro.galleryport.PerfHud
 import com.example.nabu.viewmodel.ChatViewModel
-import java.io.File
 
 class ChatActivity : ComponentActivity() {
     companion object {
@@ -69,15 +67,12 @@ class ChatActivity : ComponentActivity() {
     }
 
     private fun startChat(model: Model, session: ai.onnxruntime.OrtSession, initialPrompt: String?) {
-        val modelFile = File(filesDir, "models/${model.id}.task")
-        val llmInference = LlmInference(applicationContext, modelFile.absolutePath)
-
         val viewModel: ChatViewModel by viewModels {
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
                         @Suppress("UNCHECKED_CAST")
-                        return ChatViewModel(applicationContext, session, llmInference) as T
+                        return ChatViewModel(applicationContext, session, model.id) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class")
                 }

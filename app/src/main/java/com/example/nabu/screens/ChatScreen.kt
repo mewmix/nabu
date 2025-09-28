@@ -1,6 +1,7 @@
 package com.example.nabu.screens
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -36,26 +40,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mewmix.nabu.ui.brutalist.PanelBox
-import com.mewmix.nabu.ui.brutalist.BrutalSection
+import com.example.kokoro.chat.MessageBubble
+import com.example.nabu.ui.components.WaveformVisualizer
+import com.example.nabu.utils.PcmTap
+import com.example.nabu.utils.PlayerState
+import com.example.nabu.viewmodel.ChatViewModel
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
-import com.example.kokoro.chat.MessageBubble
-import com.example.nabu.utils.PlayerState
-import com.example.nabu.utils.PcmTap
-import com.example.nabu.viewmodel.ChatViewModel
-import com.example.nabu.ui.components.WaveformVisualizer
+import com.mewmix.nabu.ui.brutalist.PanelBox
 
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
-    initialMessage: String = ""
+    initialMessage: String = "",
 ) {
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isSynthesizing by viewModel.isSynthesizing.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
+    val conversationSummaries by viewModel.conversationSummaries.collectAsState()
+    val activeConversationId by viewModel.activeConversationId.collectAsState()
+    val availableModels by viewModel.availableModels.collectAsState()
+    val activeModel by viewModel.activeModel.collectAsState()
 
     LaunchedEffect(playerState) {
         PcmTap.enabled = playerState == PlayerState.PLAYING
@@ -69,10 +77,30 @@ fun ChatScreen(
     var message by remember { mutableStateOf(initialMessage) }
     val listState = rememberLazyListState()
     var showMixerSettings by remember { mutableStateOf(false) }
+    var showConversationSettings by remember { mutableStateOf(true) }
+    var conversationMenuExpanded by remember { mutableStateOf(false) }
+    var modelMenuExpanded by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<Long?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<Long?>(null) }
+    val activeConversation = conversationSummaries.firstOrNull { it.id == activeConversationId }
 
     LaunchedEffect(chatMessages.size) {
         if (chatMessages.isNotEmpty()) {
             listState.animateScrollToItem(chatMessages.size - 1)
+        }
+    }
+
+    LaunchedEffect(conversationSummaries) {
+        renameTarget?.let { target ->
+            if (conversationSummaries.none { it.id == target }) {
+                renameTarget = null
+            }
+        }
+        deleteTarget?.let { target ->
+            if (conversationSummaries.none { it.id == target }) {
+                deleteTarget = null
+            }
         }
     }
 
@@ -82,6 +110,129 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+
+            BrutalSection(
+                title = "Conversation Settings",
+                expanded = showConversationSettings,
+                onToggle = { showConversationSettings = !showConversationSettings },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "Conversation",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Brutal.textBright
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        BrutalButton(
+                            onClick = { conversationMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = conversationSummaries.isNotEmpty()
+                        ) {
+                            Text(
+                                text = activeConversation?.title ?: "No conversations",
+                                color = Brutal.textBright
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = conversationMenuExpanded,
+                            onDismissRequest = { conversationMenuExpanded = false }
+                        ) {
+                            if (conversationSummaries.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("No conversations available") },
+                                    onClick = {},
+                                    enabled = false
+                                )
+                            } else {
+                                conversationSummaries.forEach { summary ->
+                                    DropdownMenuItem(
+                                        text = { Text(summary.title) },
+                                        onClick = {
+                                            conversationMenuExpanded = false
+                                            viewModel.selectConversation(summary.id)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        BrutalButton(onClick = { viewModel.createConversation() }) {
+                            Text("New", color = Brutal.textBright)
+                        }
+                        BrutalButton(
+                            onClick = {
+                                if (activeConversationId != null) {
+                                    renameText = activeConversation?.title.orEmpty()
+                                    renameTarget = activeConversationId
+                                }
+                            },
+                            enabled = activeConversationId != null
+                        ) {
+                            Text("Rename", color = Brutal.textBright)
+                        }
+                        BrutalButton(
+                            onClick = {
+                                if (activeConversationId != null) {
+                                    deleteTarget = activeConversationId
+                                }
+                            },
+                            enabled = activeConversationId != null
+                        ) {
+                            Text("Delete", color = Brutal.red)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Model",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Brutal.textBright
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        BrutalButton(
+                            onClick = { modelMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = availableModels.isNotEmpty()
+                        ) {
+                            Text(
+                                text = activeModel?.name ?: "Select model",
+                                color = Brutal.textBright
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = modelMenuExpanded,
+                            onDismissRequest = { modelMenuExpanded = false }
+                        ) {
+                            if (availableModels.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("No models available") },
+                                    onClick = {},
+                                    enabled = false
+                                )
+                            } else {
+                                availableModels.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = { Text(model.name) },
+                                        onClick = {
+                                            modelMenuExpanded = false
+                                            viewModel.selectModel(model.id)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             BrutalSection(
                 title = "Voice Mixer Settings",
@@ -120,7 +271,6 @@ fun ChatScreen(
                 }
             }
 
-            // Status Indicators
             if (isLoading || isSynthesizing || playerState == PlayerState.PLAYING) {
                 val statusText = when {
                     isLoading -> "Assistant is thinking..."
@@ -157,7 +307,6 @@ fun ChatScreen(
                 visible = playerState == PlayerState.PLAYING
             )
 
-            // Chat Messages
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -181,12 +330,11 @@ fun ChatScreen(
                 }
             }
 
-            // Message Input
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextField(
                     value = message,
@@ -223,5 +371,57 @@ fun ChatScreen(
                 }
             }
         }
+    }
+
+    if (renameTarget != null) {
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("Rename Conversation") },
+            text = {
+                TextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                BrutalButton(
+                    onClick = {
+                        renameTarget?.let { viewModel.renameConversation(it, renameText) }
+                        renameTarget = null
+                    },
+                    enabled = renameText.isNotBlank()
+                ) {
+                    Text("Save", color = Brutal.textBright)
+                }
+            },
+            dismissButton = {
+                BrutalButton(onClick = { renameTarget = null }) {
+                    Text("Cancel", color = Brutal.textBright)
+                }
+            }
+        )
+    }
+
+    if (deleteTarget != null) {
+        val targetTitle = conversationSummaries.firstOrNull { it.id == deleteTarget }?.title ?: "this conversation"
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete Conversation") },
+            text = { Text("Are you sure you want to delete \"$targetTitle\"? This action cannot be undone.") },
+            confirmButton = {
+                BrutalButton(onClick = {
+                    deleteTarget?.let { viewModel.deleteConversation(it) }
+                    deleteTarget = null
+                }) {
+                    Text("Delete", color = Brutal.red)
+                }
+            },
+            dismissButton = {
+                BrutalButton(onClick = { deleteTarget = null }) {
+                    Text("Cancel", color = Brutal.textBright)
+                }
+            }
+        )
     }
 }
