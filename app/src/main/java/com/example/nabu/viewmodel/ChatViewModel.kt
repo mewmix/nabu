@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import ai.onnxruntime.OrtSession
 import com.example.kokoro.chat.ChatMessage
 import com.example.kokoro.chat.LlmInference
+import com.example.kokoro.chat.LlmMessage
 import com.example.nabu.data.Conversation
 import com.example.nabu.data.ConversationRepository
 import com.example.nabu.data.ConversationRole
@@ -47,6 +48,11 @@ class ChatViewModel(
     private val ortSession: OrtSession,
     initialModelId: String
 ) : ViewModel() {
+
+    companion object {
+        private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
+        private val TOKEN_REGEX = Regex("\\S+")
+    }
 
     // Dependencies
     private val phonemeConverter = PhonemeConverter(context)
@@ -221,8 +227,10 @@ class ChatViewModel(
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
+        val conversationForModel = prepareConversationForModel(DEFAULT_MAX_CONTEXT_TOKENS)
+
         viewModelScope.launch(Dispatchers.IO) {
-            inference.sendMessage(trimmed) { partial, done ->
+            inference.sendMessage(conversationForModel) { partial, done ->
                 if (benchmarkEnabled) {
                     if (!done) {
                         BenchmarkManager.recordPartial(partial)
@@ -403,6 +411,60 @@ class ChatViewModel(
     private fun generateConversationTitle(): String {
         val formatter = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
         return "Conversation ${formatter.format(Date())}"
+    }
+
+    private fun prepareConversationForModel(maxTokens: Int): List<LlmMessage> {
+        val trimmedConversation = trimConversationToTokenLimit(conversationHistory, maxTokens)
+        val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) }
+        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns (~${totalTokens} tokens) for inference")
+        return trimmedConversation.map { turn ->
+            val role = when (turn.role) {
+                ConversationRole.USER -> "user"
+                ConversationRole.AGENT -> "agent"
+            }
+            LlmMessage(role = role, content = turn.content)
+        }
+    }
+
+    private fun trimConversationToTokenLimit(
+        conversation: List<ConversationTurn>,
+        maxTokens: Int
+    ): List<ConversationTurn> {
+        if (conversation.isEmpty() || maxTokens <= 0) {
+            return emptyList()
+        }
+        var remainingTokens = maxTokens
+        val trimmed = ArrayDeque<ConversationTurn>()
+        for (turn in conversation.asReversed()) {
+            if (remainingTokens <= 0) break
+            val tokenCount = estimateTokenCount(turn.content)
+            if (tokenCount <= remainingTokens) {
+                trimmed.addFirst(turn)
+                remainingTokens -= tokenCount
+            } else {
+                val truncatedContent = takeLastTokens(turn.content, remainingTokens)
+                if (truncatedContent.isNotBlank()) {
+                    trimmed.addFirst(turn.copy(content = truncatedContent))
+                }
+                break
+            }
+        }
+        return trimmed.toList()
+    }
+
+    private fun estimateTokenCount(text: String): Int {
+        if (text.isBlank()) return 0
+        return TOKEN_REGEX.findAll(text).count()
+    }
+
+    private fun takeLastTokens(text: String, tokenLimit: Int): String {
+        if (tokenLimit <= 0) return ""
+        val tokens = TOKEN_REGEX.findAll(text).map { it.value }.toList()
+        if (tokens.isEmpty()) return ""
+        if (tokens.size <= tokenLimit) {
+            return text.trim()
+        }
+        return tokens.takeLast(tokenLimit).joinToString(" ")
     }
 
     private fun processSentences(builder: StringBuilder, done: Boolean) {
