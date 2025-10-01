@@ -39,4 +39,13 @@ object SettingsManager {
         DatabaseManager.getSetting(context, "tts_engine")?.let {
             runCatching { TtsEngine.valueOf(it) }.getOrNull()
         } ?: default
+
+    fun setTtsEnabled(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, "tts_enabled", if (enabled) "1" else "0")
+    }
+
+    fun isTtsEnabled(context: Context, default: Boolean = true): Boolean {
+        val fallback = if (default) "1" else "0"
+        return (DatabaseManager.getSetting(context, "tts_enabled") ?: fallback) == "1"
+    }
 }

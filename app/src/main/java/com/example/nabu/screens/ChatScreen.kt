@@ -19,6 +19,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -60,6 +63,7 @@ fun ChatScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isSynthesizing by viewModel.isSynthesizing.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
+    val ttsEnabled by viewModel.ttsEnabled.collectAsState()
     val conversationSummaries by viewModel.conversationSummaries.collectAsState()
     val activeConversationId by viewModel.activeConversationId.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
@@ -188,6 +192,41 @@ fun ChatScreen(
                             enabled = activeConversationId != null
                         ) {
                             Text("Delete", color = Brutal.red)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val voiceColor = if (ttsEnabled) Brutal.textBright else Brutal.textDim
+                        BrutalButton(
+                            onClick = { viewModel.toggleTtsEnabled() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = if (ttsEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                                contentDescription = if (ttsEnabled) "Disable voice playback" else "Enable voice playback",
+                                tint = voiceColor
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (ttsEnabled) "Voice On" else "Voice Off",
+                                color = voiceColor
+                            )
+                        }
+                        BrutalButton(
+                            onClick = { viewModel.stopPlayback() },
+                            enabled = playerState == PlayerState.PLAYING || isSynthesizing
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Stop,
+                                contentDescription = "Stop voice playback",
+                                tint = Brutal.red
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Stop", color = Brutal.red)
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))

@@ -32,6 +32,7 @@ import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.tryReceive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -97,7 +98,7 @@ class ChatViewModel(
     private val _playerState = MutableStateFlow(PlayerState.IDLE)
     val playerState = _playerState.asStateFlow()
 
-    private val _ttsEnabled = MutableStateFlow(true)
+    private val _ttsEnabled = MutableStateFlow(SettingsManager.isTtsEnabled(context))
     val ttsEnabled = _ttsEnabled.asStateFlow()
 
     // Mixer State
@@ -114,24 +115,29 @@ class ChatViewModel(
     val speed = _speed.asStateFlow()
 
     private val audioQueue = Channel<Pair<Int, FloatArray>>(Channel.UNLIMITED)
+    private val pendingAudio = mutableMapOf<Int, FloatArray>()
+    private var nextPlaybackIndex = 0
+    private var dropQueuedAudio = false
     private var lineIndex = 0
 
     init {
         // Launch a coroutine to play queued audio in the order they were generated
         viewModelScope.launch {
-            val pending = mutableMapOf<Int, FloatArray>()
-            var nextIndex = 0
             for ((index, audio) in audioQueue) {
-                pending[index] = audio
-                while (pending.containsKey(nextIndex)) {
-                    val data = pending.remove(nextIndex)!!
+                pendingAudio[index] = audio
+                while (pendingAudio.containsKey(nextPlaybackIndex)) {
+                    val data = pendingAudio.remove(nextPlaybackIndex)!!
+                    if (!_ttsEnabled.value || dropQueuedAudio) {
+                        nextPlaybackIndex++
+                        continue
+                    }
                     try {
                         audioPlayer.prepare(data)
                         audioPlayer.playBlocking()
                     } catch (e: Exception) {
                         DebugLogger.log("Audio playback error: ${e.localizedMessage}")
                     }
-                    nextIndex++
+                    nextPlaybackIndex++
                 }
             }
         }
@@ -147,9 +153,21 @@ class ChatViewModel(
     fun toggleTtsEnabled() {
         val enabled = !_ttsEnabled.value
         _ttsEnabled.value = enabled
+        SettingsManager.setTtsEnabled(context, enabled)
         if (!enabled) {
-            audioPlayer.stop()
+            stopPlayback()
+        } else {
+            dropQueuedAudio = false
         }
+    }
+
+    fun stopPlayback() {
+        dropQueuedAudio = true
+        pendingAudio.clear()
+        drainAudioQueue()
+        audioPlayer.stop()
+        _playerState.value = PlayerState.IDLE
+        _isSynthesizing.value = false
     }
 
     fun selectConversation(conversationId: Long) {
@@ -211,6 +229,7 @@ class ChatViewModel(
             return
         }
 
+        dropQueuedAudio = false
         DebugLogger.log("ChatViewModel sendMessage: $trimmed")
         _chatMessages.value += ChatMessage(trimmed, true)
         conversationHistory.add(ConversationTurn(ConversationRole.USER, trimmed))
@@ -354,8 +373,10 @@ class ChatViewModel(
 
     private fun clearPendingAudio() {
         lineIndex = 0
-        // Note: Draining the Channel without coroutines channel helpers available.
-        // We skip explicit draining to avoid unresolved reference issues during build.
+        nextPlaybackIndex = 0
+        pendingAudio.clear()
+        dropQueuedAudio = false
+        drainAudioQueue()
         audioPlayer.stop()
         _playerState.value = PlayerState.IDLE
         _isSynthesizing.value = false
@@ -484,10 +505,13 @@ class ChatViewModel(
             builder.clear()
             synthesizeAndQueue(cleanText(sentence))
         }
+        if (done) {
+            dropQueuedAudio = false
+        }
     }
 
     private fun synthesizeAndQueue(text: String) {
-        if (!_ttsEnabled.value) return
+        if (!_ttsEnabled.value || dropQueuedAudio) return
         val currentIndex = lineIndex++
         viewModelScope.launch {
             _isSynthesizing.value = true
@@ -531,12 +555,21 @@ class ChatViewModel(
                     }
                     data
                 }
-                audioQueue.send(currentIndex to audioData)
+                if (!dropQueuedAudio) {
+                    audioQueue.send(currentIndex to audioData)
+                }
             } catch (e: Exception) {
                 DebugLogger.log("Error synthesizing sentence: ${e.localizedMessage}")
             } finally {
                 _isSynthesizing.value = false
             }
+        }
+    }
+
+    private fun drainAudioQueue() {
+        while (true) {
+            val result = audioQueue.tryReceive()
+            if (result.isFailure) break
         }
     }
 
