@@ -10,10 +10,30 @@ This project is a fork of the excellent [Kokoro-82M-Android](https://github.com/
 ## Screenshots
 
 <p align="center">
+   
+<!-- 1 — mixer -->
+<img src="https://github.com/user-attachments/assets/fa7e8816-41f4-48eb-83c3-29aac0f98251"
+     alt="Mixer"
+     loading="lazy"
+     style="max-width:auto;height:auto;" />
 
-<img src="https://github.com/user-attachments/assets/03859019-6dea-4652-93ad-bc5a825d6aa9" alt="Models" style="width:20%;height:auto;" loading="lazy">
-<img src="https://github.com/user-attachments/assets/151d9cf5-f367-4f7b-8e5a-b766a7507445" alt="Style Mixer" style="width:20%;height:auto;" loading="lazy">
+<!-- 2 — conversation settings -->
+<img src="https://github.com/user-attachments/assets/882237cc-1c0f-40d7-bdb0-2a528846ae32"
+     alt="Conversation Settings"
+     loading="lazy"
+     style="max-width:auto;height:auto;" />
 
+<!-- 3 — settings -->
+<img src="https://github.com/user-attachments/assets/a34eda22-09a9-4d29-9e26-9ab9208eb3eb"
+     alt="Settings"
+     loading="lazy"
+     style="max-width:auto;height:auto;" />
+
+<!-- 4 — basic screen -->
+<img src="https://github.com/user-attachments/assets/da19d300-2a05-4f2b-9b49-0cc0547aa79f"
+     alt="Basic Screen"
+     loading="lazy"
+     style="max-width:auto;height:auto;" />
 
 </p>
 
