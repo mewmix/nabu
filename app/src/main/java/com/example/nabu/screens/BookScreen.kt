@@ -62,6 +62,7 @@ fun BookScreen(
     val playerState by bookViewModel.playerState.collectAsState()
 
     val bookUri by bookViewModel.bookUri.collectAsState()
+    val bookDisplayName by bookViewModel.bookDisplayName.collectAsState()
     var bookmark by remember { mutableStateOf<Bookmark?>(null) }
 
     val listState = rememberLazyListState()
@@ -86,6 +87,14 @@ fun BookScreen(
     var projects by remember { mutableStateOf(listOf<Project>()) }
     val selectedLines = remember { mutableStateListOf<Int>() }
     var followText by remember { mutableStateOf(true) }
+    var showEditorSection by remember { mutableStateOf(false) }
+    var isEditMode by remember { mutableStateOf(false) }
+    var editingLineIndex by remember { mutableStateOf<Int?>(null) }
+    var editorText by remember { mutableStateOf("") }
+    var editedFileName by remember { mutableStateOf("edited_book.epub") }
+    var isSavingEdited by remember { mutableStateOf(false) }
+    var saveMessage by remember { mutableStateOf<String?>(null) }
+    var saveSuccessful by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -125,11 +134,32 @@ fun BookScreen(
             }
             projects = ProjectManager.list(context)
         }
+        editingLineIndex = null
+        editorText = ""
+        isEditMode = false
+        saveMessage = null
+        isSavingEdited = false
+        saveSuccessful = false
     }
 
     LaunchedEffect(currentUnitIndex, followText) {
         if (followText && currentUnitIndex >= 0) {
             listState.animateScrollToItem(currentUnitIndex)
+        }
+    }
+
+    LaunchedEffect(bookDisplayName) {
+        val suggestion = bookDisplayName
+            ?.substringBeforeLast('.', bookDisplayName)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "${it}_edited.epub" }
+            ?: "edited_book.epub"
+        editedFileName = suggestion
+    }
+
+    LaunchedEffect(editingLineIndex, lines) {
+        editingLineIndex?.let { index ->
+            editorText = lines.getOrNull(index) ?: ""
         }
     }
 
@@ -265,6 +295,109 @@ fun BookScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        item {
+            BrutalSection(
+                title = "Ebook Editor",
+                expanded = showEditorSection,
+                onToggle = { showEditorSection = !showEditorSection }
+            ) {
+                SwitchToggle(
+                    checked = isEditMode,
+                    onToggle = {
+                        isEditMode = it
+                        if (!it) {
+                            editingLineIndex = null
+                            editorText = ""
+                        }
+                    },
+                    label = "Editing Mode"
+                )
+                if (isEditMode) {
+                    Text(
+                        text = if (editingLineIndex != null) {
+                            "Editing line ${editingLineIndex!! + 1}"
+                        } else {
+                            "Tap a line below to load it into the editor"
+                        },
+                        color = Brutal.textBright,
+                        modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                    )
+                    if (editingLineIndex != null) {
+                        OutlinedTextField(
+                            value = editorText,
+                            onValueChange = { editorText = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 160.dp)
+                                .padding(top = dimensionResource(id = R.dimen.padding_small)),
+                            label = { Text("Line Text") },
+                            supportingText = { Text("Changes apply only when you tap Apply Change") }
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small)),
+                            modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                        ) {
+                            BrutalButton(onClick = {
+                                editingLineIndex?.let { index ->
+                                    bookViewModel.updatePlayableUnitText(index, editorText)
+                                    saveMessage = "Updated line ${index + 1}"
+                                    saveSuccessful = true
+                                }
+                            }) { Text("Apply Change") }
+                            BrutalButton(onClick = {
+                                editingLineIndex?.let { index ->
+                                    editorText = lines.getOrNull(index) ?: ""
+                                }
+                            }) { Text("Reset") }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = editedFileName,
+                    onValueChange = { editedFileName = it },
+                    label = { Text("Edited File Name") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = dimensionResource(id = R.dimen.padding_small))
+                )
+                BrutalButton(
+                    onClick = {
+                        isSavingEdited = true
+                        saveMessage = null
+                        saveSuccessful = false
+                        scope.launch {
+                            try {
+                                val uri = bookViewModel.saveEditedCopy(context, editedFileName)
+                                if (uri != null) {
+                                    saveMessage = "Saved edited copy"
+                                    saveSuccessful = true
+                                } else {
+                                    saveMessage = "Unable to save edited copy"
+                                    saveSuccessful = false
+                                }
+                            } catch (e: Exception) {
+                                saveMessage = e.localizedMessage ?: "Failed to save edited copy"
+                                saveSuccessful = false
+                            } finally {
+                                isSavingEdited = false
+                            }
+                        }
+                    },
+                    enabled = !isSavingEdited && lines.isNotEmpty(),
+                    modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                ) {
+                    Text(if (isSavingEdited) "SAVING..." else "SAVE EDITED COPY")
+                }
+                saveMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = if (saveSuccessful) Brutal.textBright else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                    )
                 }
             }
         }
@@ -554,30 +687,34 @@ fun BookScreen(
                     .fillMaxWidth()
                     .combinedClickable(
                         onClick = {
-                            if (selectedLines.contains(index)) {
-                                selectedLines.remove(index)
+                            if (isEditMode) {
+                                editingLineIndex = index
                             } else {
-                                bookViewModel.setCurrentUnitIndex(index)
-                                bookViewModel.startPlayback(
-                                    session = session,
-                                    phonemeConverter = phonemeConverter,
-                                    styleLoader = styleLoader,
-                                    selectedStyles = selectedStyles,
-                                    weights = weights,
-                                    mode = interpolationMode,
-                                    speed = speed,
-                                    units = playableUnits,
-                                    startUnit = index,
-                                    bookUri = bookUri,
-                                    projectName = projectName,
-                                    context = context,
-                                    engine = SettingsManager.getTtsEngine(context),
-                                    usePregenerated = usePregenerated,
-                                    onFinished = {
-                                        bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
-                                        bookmark = null
-                                    },
-                                )
+                                if (selectedLines.contains(index)) {
+                                    selectedLines.remove(index)
+                                } else {
+                                    bookViewModel.setCurrentUnitIndex(index)
+                                    bookViewModel.startPlayback(
+                                        session = session,
+                                        phonemeConverter = phonemeConverter,
+                                        styleLoader = styleLoader,
+                                        selectedStyles = selectedStyles,
+                                        weights = weights,
+                                        mode = interpolationMode,
+                                        speed = speed,
+                                        units = playableUnits,
+                                        startUnit = index,
+                                        bookUri = bookUri,
+                                        projectName = projectName,
+                                        context = context,
+                                        engine = SettingsManager.getTtsEngine(context),
+                                        usePregenerated = usePregenerated,
+                                        onFinished = {
+                                            bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
+                                            bookmark = null
+                                        },
+                                    )
+                                }
                             }
                         },
                         onLongClick = {
