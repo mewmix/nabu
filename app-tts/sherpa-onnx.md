@@ -10,7 +10,7 @@ building the app:
    ```bash
    mkdir -p app-tts/libs
    curl -L -o app-tts/libs/sherpa-onnx.aar \
-     https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.14/sherpa-onnx.aar
+     https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.14/sherpa-onnx-1.12.14.aar
    ```
 
 2. Download a voice package (for example, `vits-ljs`) and unpack it into
