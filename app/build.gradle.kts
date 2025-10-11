@@ -41,6 +41,11 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        jniLibs {
+            pickFirsts += setOf("**/libonnxruntime.so", "**/libonnxruntime4j_jni.so")
+        }
+    }
 }
 
 dependencies {
