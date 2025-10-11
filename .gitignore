@@ -36,3 +36,7 @@ app/release/output-metadata.json
 
 # Build output
 build/
+
+# sherpa-onnx integration artifacts (downloaded locally)
+app-tts/libs/
+app-tts/src/main/assets/sherpa_tts/
