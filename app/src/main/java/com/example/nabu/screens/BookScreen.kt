@@ -37,11 +37,12 @@ import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import androidx.compose.ui.unit.dp
 import com.example.nabu.ChatActivity
+import com.example.nabu.tts.sherpa.SherpaTtsEngine
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun BookScreen(
-    session: OrtSession,
+    session: OrtSession?,
     phonemeConverter: PhonemeConverter,
     bookViewModel: BookViewModel = viewModel()
 ) {
@@ -66,8 +67,23 @@ fun BookScreen(
 
     val listState = rememberLazyListState()
 
-    val styleLoader = remember { StyleLoader(context) }
-    val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
+    val styleLoader = remember(engine) {
+        if (engine == TtsEngine.SHERPA) null else StyleLoader(context)
+    }
+    val voiceOptions = remember(engine) {
+        val options = if (engine == TtsEngine.SHERPA) {
+            SherpaManager.listVoices(context)
+        } else {
+            styleLoader?.names ?: emptyList()
+        }
+        if (options.isEmpty() && engine == TtsEngine.SHERPA) {
+            listOf(SherpaTtsEngine.DEFAULT_VOICE_NAME)
+        } else {
+            options
+        }
+    }
+    val defaultVoice = voiceOptions.firstOrNull() ?: "af_sky"
+    val supportsStyleMixing = engine != TtsEngine.SHERPA
     var selectedStyles by remember { mutableStateOf(listOf(defaultVoice)) }
     var weights by remember { mutableStateOf(mapOf(defaultVoice to 1f)) }
     var interpolationMode by remember { mutableStateOf(InterpolationMode.LINEAR) }
@@ -86,6 +102,17 @@ fun BookScreen(
     var projects by remember { mutableStateOf(listOf<Project>()) }
     val selectedLines = remember { mutableStateListOf<Int>() }
     var followText by remember { mutableStateOf(true) }
+
+    LaunchedEffect(engine, voiceOptions) {
+        if (!supportsStyleMixing) {
+            val voice = selectedStyles.firstOrNull()?.takeIf { it in voiceOptions } ?: defaultVoice
+            selectedStyles = listOf(voice)
+            weights = mapOf(voice to 1f)
+        } else if (selectedStyles.any { it !in voiceOptions }) {
+            selectedStyles = selectedStyles.filter { it in voiceOptions }.ifEmpty { listOf(defaultVoice) }
+            weights = weights.filterKeys { it in voiceOptions }.ifEmpty { mapOf(defaultVoice to 1f) }
+        }
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -156,29 +183,64 @@ fun BookScreen(
                 expanded = showSettings,
                 onToggle = { showSettings = !showSettings }
             ) {
-                StyleSelector(
-                    styleNames = styleLoader.names,
-                    selectedStyles = selectedStyles,
-                    onAddStyle = { style ->
-                        selectedStyles = selectedStyles + style
-                        weights = weights + (style to 1f)
-                    },
-                    onRemoveStyle = { style ->
-                        selectedStyles = selectedStyles - style
-                        weights = weights - style
+                if (supportsStyleMixing) {
+                    StyleSelector(
+                        styleNames = voiceOptions,
+                        selectedStyles = selectedStyles,
+                        onAddStyle = { style ->
+                            selectedStyles = selectedStyles + style
+                            weights = weights + (style to 1f)
+                        },
+                        onRemoveStyle = { style ->
+                            selectedStyles = selectedStyles - style
+                            weights = weights - style
+                        }
+                    )
+                    WeightSliders(
+                        selectedStyles = selectedStyles,
+                        weights = weights,
+                        onWeightChanged = { style, value ->
+                            weights = weights.toMutableMap().apply { put(style, value) }
+                        }
+                    )
+                    InterpolationModeSelector(
+                        currentMode = interpolationMode,
+                        onModeSelected = { interpolationMode = it }
+                    )
+                } else {
+                    var voiceMenuExpanded by remember { mutableStateOf(false) }
+                    val currentVoice = selectedStyles.firstOrNull().orEmpty()
+                    Text(
+                        text = "Voice",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Brutal.textBright
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    BrutalButton(
+                        onClick = { voiceMenuExpanded = !voiceMenuExpanded },
+                        enabled = voiceOptions.isNotEmpty()
+                    ) {
+                        Text(
+                            text = if (currentVoice.isEmpty()) "SELECT VOICE" else currentVoice.uppercase(),
+                            color = Brutal.textBright
+                        )
                     }
-                )
-                WeightSliders(
-                    selectedStyles = selectedStyles,
-                    weights = weights,
-                    onWeightChanged = { style, value ->
-                        weights = weights.toMutableMap().apply { put(style, value) }
+                    DropdownMenu(
+                        expanded = voiceMenuExpanded,
+                        onDismissRequest = { voiceMenuExpanded = false }
+                    ) {
+                        voiceOptions.forEach { voice ->
+                            DropdownMenuItem(
+                                text = { Text(voice.uppercase()) },
+                                onClick = {
+                                    voiceMenuExpanded = false
+                                    selectedStyles = listOf(voice)
+                                    weights = mapOf(voice to 1f)
+                                }
+                            )
+                        }
                     }
-                )
-                InterpolationModeSelector(
-                    currentMode = interpolationMode,
-                    onModeSelected = { interpolationMode = it }
-                )
+                }
                 Text(
                     "Speed: ${ "%.2f".format(speed)}",
                     style = MaterialTheme.typography.bodyMedium,
@@ -377,34 +439,52 @@ fun BookScreen(
                         scope.launch {
                             try {
                                 debugMessage = null
-                                val mixedVector = mixStyles(
-                                    styleLoader = styleLoader,
-                                    styles = selectedStyles,
-                                    weights = weights,
-                                    mode = interpolationMode
-                                )
                                 val audioData = mutableListOf<Float>()
                                 val engine = SettingsManager.getTtsEngine(context)
-                                val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
-                                for (line in lines) {
-                                    val (audio, _) = if (engine == TtsEngine.KITTEN) {
-                                        val (_, tokens) = KittenPhonemizer.phonemize(line)
-                                        createKittenAudioFromStyleVector(
-                                            tokens = tokens,
-                                            voice = mixedVector,
-                                            speed = speed,
-                                            session = session
+                                val sampleRate: Int
+                                if (engine == TtsEngine.SHERPA) {
+                                    val voice = selectedStyles.firstOrNull() ?: defaultVoice
+                                    sampleRate = SherpaManager.getSampleRate(context)
+                                    for (line in lines) {
+                                        val (audio, _) = SherpaManager.synthesize(
+                                            context = context,
+                                            text = line,
+                                            voice = voice,
+                                            speed = speed
                                         )
-                                    } else {
-                                        val phonemes = phonemeConverter.phonemize(line)
-                                        createAudioFromStyleVector(
-                                            phonemes = phonemes,
-                                            voice = mixedVector,
-                                            speed = speed,
-                                            session = session
-                                        )
+                                        audioData.addAll(audio.toList())
                                     }
-                                    audioData.addAll(audio.toList())
+                                } else {
+                                    val loader = styleLoader ?: StyleLoader(context)
+                                    val mixedVector = mixStyles(
+                                        styleLoader = loader,
+                                        styles = selectedStyles,
+                                        weights = weights,
+                                        mode = interpolationMode
+                                    )
+                                    val actualSession = session
+                                        ?: throw IllegalStateException("ONNX session required for ${engine.name}")
+                                    sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
+                                    for (line in lines) {
+                                        val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                                            val (_, tokens) = KittenPhonemizer.phonemize(line)
+                                            createKittenAudioFromStyleVector(
+                                                tokens = tokens,
+                                                voice = mixedVector,
+                                                speed = speed,
+                                                session = actualSession
+                                            )
+                                        } else {
+                                            val phonemes = phonemeConverter.phonemize(line)
+                                            createAudioFromStyleVector(
+                                                phonemes = phonemes,
+                                                voice = mixedVector,
+                                                speed = speed,
+                                                session = actualSession
+                                            )
+                                        }
+                                        audioData.addAll(audio.toList())
+                                    }
                                 }
                                 val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
                                 val uri = saveAudio(audioData.toFloatArray(), context, fileName, sampleRate)
@@ -427,34 +507,52 @@ fun BookScreen(
                             scope.launch {
                                 try {
                                     debugMessage = null
-                                    val mixedVector = mixStyles(
-                                        styleLoader = styleLoader,
-                                        styles = selectedStyles,
-                                        weights = weights,
-                                        mode = interpolationMode
-                                    )
                                     val audioData = mutableListOf<Float>()
                                     val engine = SettingsManager.getTtsEngine(context)
-                                    val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
-                                    for (i in selectedLines.sorted()) {
-                                        val (audio, _) = if (engine == TtsEngine.KITTEN) {
-                                            val (_, tokens) = KittenPhonemizer.phonemize(lines[i])
-                                            createKittenAudioFromStyleVector(
-                                                tokens = tokens,
-                                                voice = mixedVector,
-                                                speed = speed,
-                                                session = session
+                                    val sampleRate: Int
+                                    if (engine == TtsEngine.SHERPA) {
+                                        val voice = selectedStyles.firstOrNull() ?: defaultVoice
+                                        sampleRate = SherpaManager.getSampleRate(context)
+                                        for (i in selectedLines.sorted()) {
+                                            val (audio, _) = SherpaManager.synthesize(
+                                                context = context,
+                                                text = lines[i],
+                                                voice = voice,
+                                                speed = speed
                                             )
-                                        } else {
-                                            val phonemes = phonemeConverter.phonemize(lines[i])
-                                            createAudioFromStyleVector(
-                                                phonemes = phonemes,
-                                                voice = mixedVector,
-                                                speed = speed,
-                                                session = session
-                                            )
+                                            audioData.addAll(audio.toList())
                                         }
-                                        audioData.addAll(audio.toList())
+                                    } else {
+                                        val loader = styleLoader ?: StyleLoader(context)
+                                        val mixedVector = mixStyles(
+                                            styleLoader = loader,
+                                            styles = selectedStyles,
+                                            weights = weights,
+                                            mode = interpolationMode
+                                        )
+                                        val actualSession = session
+                                            ?: throw IllegalStateException("ONNX session required for ${engine.name}")
+                                        sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
+                                        for (i in selectedLines.sorted()) {
+                                            val (audio, _) = if (engine == TtsEngine.KITTEN) {
+                                                val (_, tokens) = KittenPhonemizer.phonemize(lines[i])
+                                                createKittenAudioFromStyleVector(
+                                                    tokens = tokens,
+                                                    voice = mixedVector,
+                                                    speed = speed,
+                                                    session = actualSession
+                                                )
+                                            } else {
+                                                val phonemes = phonemeConverter.phonemize(lines[i])
+                                                createAudioFromStyleVector(
+                                                    phonemes = phonemes,
+                                                    voice = mixedVector,
+                                                    speed = speed,
+                                                    session = actualSession
+                                                )
+                                            }
+                                            audioData.addAll(audio.toList())
+                                        }
                                     }
                                     val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode) + "_clip"
                                     val uri = saveAudio(audioData.toFloatArray(), context, fileName, sampleRate)
@@ -634,5 +732,3 @@ private fun getDisplayName(context: android.content.Context, uri: Uri): String {
         ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else uri.lastPathSegment ?: "document" }
         ?: uri.lastPathSegment ?: "document"
 }
-
-

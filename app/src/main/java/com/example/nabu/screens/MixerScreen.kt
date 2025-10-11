@@ -78,9 +78,36 @@ fun MixerScreen(
     val engine by rememberUpdatedState(SettingsManager.getTtsEngine(context))
 
     LaunchedEffect(engine) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        if (engine != TtsEngine.SHERPA) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
         }
+    }
+
+    if (engine == TtsEngine.SHERPA) {
+        PanelBox(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxSize()
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Sherpa engine does not support style mixing.",
+                    color = Brutal.textBright
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Switch to Kokoro or Kitten to use the mixer.",
+                    color = Brutal.textDim
+                )
+            }
+        }
+        return
     }
 
     var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }

@@ -39,8 +39,10 @@ fun SettingsScreen() {
     var expanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(engine) {
-        withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        if (engine != TtsEngine.SHERPA) {
+            withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
         }
     }
 

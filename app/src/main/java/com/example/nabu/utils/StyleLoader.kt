@@ -13,11 +13,13 @@ class StyleLoader(private val context: Context) {
     val names: List<String> = when (engine) {
         TtsEngine.KOKORO -> context.assets.list("kokoro/voices")?.map { it.removeSuffix(".npy") } ?: emptyList()
         TtsEngine.KITTEN -> loadKittenVoiceNames()
+        TtsEngine.SHERPA -> SherpaManager.listVoices(context)
     }
 
     fun getStyleArray(name: String, index: Int = 0): Array<FloatArray> = when (engine) {
         TtsEngine.KOKORO -> loadKokoroStyle(name, index)
         TtsEngine.KITTEN -> loadKittenStyle(name)
+        TtsEngine.SHERPA -> throw UnsupportedOperationException("Sherpa engine does not expose style vectors")
     }
 
     private fun loadKokoroStyle(name: String, index: Int): Array<FloatArray> {
@@ -94,4 +96,3 @@ class StyleLoader(private val context: Context) {
         throw IllegalArgumentException("Voice $name not found in kitten voices")
     }
 }
-

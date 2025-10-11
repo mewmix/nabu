@@ -48,4 +48,21 @@ object SettingsManager {
         val fallback = if (default) "1" else "0"
         return (DatabaseManager.getSetting(context, "tts_enabled") ?: fallback) == "1"
     }
+
+    fun setSherpaUseLexicon(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, "sherpa_use_lexicon", if (enabled) "1" else "0")
+    }
+
+    fun isSherpaLexiconEnabled(context: Context, default: Boolean = true): Boolean {
+        val fallback = if (default) "1" else "0"
+        return (DatabaseManager.getSetting(context, "sherpa_use_lexicon") ?: fallback) == "1"
+    }
+
+    fun setSherpaThreadCount(context: Context, threads: Int) {
+        DatabaseManager.setSetting(context, "sherpa_threads", threads.toString())
+    }
+
+    fun getSherpaThreadCount(context: Context, default: Int = 2): Int =
+        DatabaseManager.getSetting(context, "sherpa_threads")?.toIntOrNull()?.coerceIn(1, 4)
+            ?: default.coerceIn(1, 4)
 }

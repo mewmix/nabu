@@ -283,23 +283,62 @@ fun ChatScreen(
             ) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    StyleSelector(
-                        styleNames = viewModel.styleLoader.names,
-                        selectedStyles = selectedStyles,
-                        onAddStyle = viewModel::addStyle,
-                        onRemoveStyle = viewModel::removeStyle,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    WeightSliders(
-                        selectedStyles = selectedStyles,
-                        weights = weights,
-                        onWeightChanged = viewModel::updateWeight,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    InterpolationModeSelector(
-                        currentMode = interpolationMode,
-                        onModeSelected = viewModel::updateInterpolationMode,
-                    )
+                    if (viewModel.supportsStyleMixing) {
+                        StyleSelector(
+                            styleNames = viewModel.voiceOptions,
+                            selectedStyles = selectedStyles,
+                            onAddStyle = viewModel::addStyle,
+                            onRemoveStyle = viewModel::removeStyle,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        WeightSliders(
+                            selectedStyles = selectedStyles,
+                            weights = weights,
+                            onWeightChanged = viewModel::updateWeight,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        InterpolationModeSelector(
+                            currentMode = interpolationMode,
+                            onModeSelected = viewModel::updateInterpolationMode,
+                        )
+                    } else {
+                        var voiceMenuExpanded by remember { mutableStateOf(false) }
+                        val currentVoice = selectedStyles.firstOrNull().orEmpty()
+                        Text("VOICE", color = Brutal.textBright)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        BrutalButton(
+                            onClick = { voiceMenuExpanded = !voiceMenuExpanded },
+                            enabled = viewModel.voiceOptions.isNotEmpty()
+                        ) {
+                            Text(
+                                text = if (currentVoice.isEmpty()) "SELECT VOICE" else currentVoice.uppercase(),
+                                color = Brutal.textBright
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = voiceMenuExpanded,
+                            onDismissRequest = { voiceMenuExpanded = false }
+                        ) {
+                            if (viewModel.voiceOptions.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("No voices available") },
+                                    onClick = {},
+                                    enabled = false
+                                )
+                            } else {
+                                viewModel.voiceOptions.forEach { voice ->
+                                    DropdownMenuItem(
+                                        text = { Text(voice.uppercase()) },
+                                        onClick = {
+                                            voiceMenuExpanded = false
+                                            viewModel.addStyle(voice)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
                     BrutalSlider(

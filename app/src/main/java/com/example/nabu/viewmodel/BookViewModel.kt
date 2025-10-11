@@ -20,6 +20,8 @@ import com.example.nabu.utils.PlaybackNotification
 import com.example.nabu.utils.StyleLoader
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.playBook
+import com.example.nabu.utils.SherpaAudioPlayer
+import com.example.nabu.utils.playBookSherpa
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,6 +60,10 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
                 _playerState.value = state
                 appContext?.let { PlaybackNotification.update(it, state) }
             }
+            TtsEngine.SHERPA -> SherpaAudioPlayer(app.applicationContext, viewModelScope) { state ->
+                _playerState.value = state
+                appContext?.let { PlaybackNotification.update(it, state) }
+            }
         }
     }
 
@@ -80,9 +86,9 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun startPlayback(
-        session: OrtSession,
+        session: OrtSession?,
         phonemeConverter: PhonemeConverter,
-        styleLoader: StyleLoader,
+        styleLoader: StyleLoader?,
         selectedStyles: List<String>,
         weights: Map<String, Float>,
         mode: InterpolationMode,
@@ -108,24 +114,43 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         val style = selectedStyles.joinToString("+") { it.uppercase() }
         PlaybackNotification.show(appContext!!, true, target, style)
-        playJob = playBook(
-            scope = viewModelScope,
-            session = session,
-            phonemeConverter = phonemeConverter,
-            styleLoader = styleLoader,
-            selectedStyles = selectedStyles,
-            weights = weights,
-            mode = mode,
-            speed = speed,
-            lines = units.map { it.text },
-            startLine = startUnit,
-            bookUri = bookUri,
-            audioPlayer = audioPlayer,
-            context = context,
-            onLineChanged = { setCurrentUnitIndex(it) },
-            onFinished = onFinished,
-            usePregenerated = usePregenerated,
-        )
+        playJob = if (engine == TtsEngine.SHERPA) {
+            playBookSherpa(
+                scope = viewModelScope,
+                selectedStyles = selectedStyles,
+                speed = speed,
+                lines = units.map { it.text },
+                startLine = startUnit,
+                bookUri = bookUri,
+                audioPlayer = audioPlayer,
+                context = context,
+                onLineChanged = { setCurrentUnitIndex(it) },
+                onFinished = onFinished,
+                usePregenerated = usePregenerated,
+            )
+        } else {
+            val actualSession = session
+                ?: throw IllegalStateException("ONNX session required for $engine playback")
+            val loader = styleLoader ?: StyleLoader(context)
+            playBook(
+                scope = viewModelScope,
+                session = actualSession,
+                phonemeConverter = phonemeConverter,
+                styleLoader = loader,
+                selectedStyles = selectedStyles,
+                weights = weights,
+                mode = mode,
+                speed = speed,
+                lines = units.map { it.text },
+                startLine = startUnit,
+                bookUri = bookUri,
+                audioPlayer = audioPlayer,
+                context = context,
+                onLineChanged = { setCurrentUnitIndex(it) },
+                onFinished = onFinished,
+                usePregenerated = usePregenerated,
+            )
+        }
     }
 
     fun stopPlayback() {

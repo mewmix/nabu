@@ -12,6 +12,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.example.nabu.tts.sherpa.SherpaTtsEngine
 
 fun playBook(
     scope: CoroutineScope,
@@ -135,3 +136,91 @@ fun playBook(
     }
 }
 
+fun playBookSherpa(
+    scope: CoroutineScope,
+    selectedStyles: List<String>,
+    speed: Float,
+    lines: List<String>,
+    startLine: Int,
+    bookUri: Uri?,
+    audioPlayer: AudioPlayer,
+    context: Context,
+    onLineChanged: (Int) -> Unit,
+    onFinished: () -> Unit,
+    usePregenerated: Boolean,
+): Job {
+    return scope.launch(Dispatchers.IO) {
+        DebugLogger.log("Starting Sherpa playbook from line $startLine")
+        var completed = true
+
+        val voice = selectedStyles.firstOrNull() ?: SherpaTtsEngine.DEFAULT_VOICE_NAME
+
+        suspend fun generateLine(index: Int): FloatArray {
+            if (usePregenerated && bookUri != null) {
+                val path = DatabaseManager.getAudioLine(context, bookUri.toString(), index)
+                if (path != null) {
+                    return loadAudioInternal(File(path))
+                }
+            }
+            val line = lines[index]
+            val (audio, _) = SherpaManager.synthesize(
+                context = context,
+                text = line,
+                voice = voice,
+                speed = speed,
+            )
+            return audio
+        }
+
+        try {
+            var index = startLine
+            var currentDeferred: Deferred<FloatArray>? = null
+            var nextDeferred: Deferred<FloatArray>? = null
+
+            if (index < lines.size) {
+                currentDeferred = async { generateLine(index) }
+            }
+            if (index + 1 < lines.size) {
+                nextDeferred = async { generateLine(index + 1) }
+            }
+
+            while (isActive && currentDeferred != null) {
+                val audio = currentDeferred.await()
+                withContext(Dispatchers.Main) {
+                    onLineChanged(index)
+                }
+                DebugLogger.log("Playing line $index (Sherpa)")
+
+                audioPlayer.prepare(audio, 0)
+                audioPlayer.playBlocking()
+
+                if (audioPlayer.getState() == PlayerState.PAUSED) {
+                    completed = false
+                    nextDeferred?.cancel()
+                    break
+                }
+
+                index++
+                currentDeferred = nextDeferred
+                nextDeferred = if (index + 1 < lines.size) {
+                    async { generateLine(index + 1) }
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            completed = false
+            DebugLogger.log("playBookSherpa failed: ${e.localizedMessage}")
+        } finally {
+            withContext(Dispatchers.Main) {
+                if (audioPlayer.getState() != PlayerState.PAUSED) {
+                    onLineChanged(-1)
+                    if (completed) {
+                        onFinished()
+                    }
+                    audioPlayer.stop()
+                }
+            }
+        }
+    }
+}

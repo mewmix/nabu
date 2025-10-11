@@ -17,7 +17,7 @@ class MainViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    fun getSession() = OnnxRuntimeManager.getSession()
+    fun getSession(): OrtSession? = OnnxRuntimeManager.getSessionOrNull()
 
     fun reinitializeSession(modelPath: String) {
         viewModelScope.launch {
@@ -55,7 +55,7 @@ object OnnxRuntimeManager {
         }
     }
 
-    private fun createSession(context: Context): OrtSession {
+    private fun createSession(context: Context): OrtSession? {
         val options = SessionOptions().apply {
             addConfigEntry("nnapi.flags", "USE_FP16")
             addConfigEntry("nnapi.use_gpu", "true")
@@ -69,6 +69,7 @@ object OnnxRuntimeManager {
             TtsEngine.KITTEN -> context.assets.open("kitten_tts/kitten_tts_nano_v0_1.onnx").use { stream ->
                 environment!!.createSession(stream.readBytes(), options)
             }
+            TtsEngine.SHERPA -> null
         }
     }
 
@@ -83,11 +84,12 @@ object OnnxRuntimeManager {
     }
 
 
-    fun getSession() = requireNotNull(session) { "ONNX Session not initialized" }
+    fun getSession(): OrtSession = requireNotNull(session) { "ONNX Session not initialized" }
+
+    fun getSessionOrNull(): OrtSession? = session
 
     fun close() {
         session?.close()
         environment?.close()
     }
 }
-

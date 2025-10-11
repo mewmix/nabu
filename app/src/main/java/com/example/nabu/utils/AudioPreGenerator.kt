@@ -5,12 +5,13 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.example.nabu.tts.sherpa.SherpaTtsEngine
 
 suspend fun preGenerateBook(
     context: Context,
-    session: OrtSession,
+    session: OrtSession?,
     phonemeConverter: PhonemeConverter,
-    styleLoader: StyleLoader,
+    styleLoader: StyleLoader?,
     project: Project,
     lines: List<String>,
     onProgress: (Float) -> Unit = {}
@@ -23,28 +24,49 @@ suspend fun preGenerateBook(
         DatabaseManager.setProject(context, project.copy(audioPath = baseDir.absolutePath))
     }
 
-    val mixed = mixStyles(styleLoader, project.styles, project.weights, project.mode)
+    val engine = SettingsManager.getTtsEngine(context)
+    val mixed = if (engine == TtsEngine.SHERPA) {
+        null
+    } else {
+        val loader = styleLoader ?: StyleLoader(context)
+        mixStyles(loader, project.styles, project.weights, project.mode)
+    }
 
     for ((index, line) in lines.withIndex()) {
         if (DatabaseManager.getAudioLine(context, project.uri, index) != null) continue
         DebugLogger.log("Generating line $index for ${project.uri}")
-        val engine = SettingsManager.getTtsEngine(context)
-        val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
-            val (_, tokens) = KittenPhonemizer.phonemize(line)
-            createKittenAudioFromStyleVector(
-                tokens = tokens,
-                voice = mixed,
-                speed = project.speed,
-                session = session,
-            )
-        } else {
-            val phonemes = phonemeConverter.phonemize(line)
-            createAudioFromStyleVector(
-                phonemes = phonemes,
-                voice = mixed,
-                speed = project.speed,
-                session = session,
-            )
+        val (audio, sampleRate) = when (engine) {
+            TtsEngine.KITTEN -> {
+                val (_, tokens) = KittenPhonemizer.phonemize(line)
+                val actualSession = session
+                    ?: throw IllegalStateException("ONNX session required for Kitten pre-generation")
+                createKittenAudioFromStyleVector(
+                    tokens = tokens,
+                    voice = requireNotNull(mixed) { "Missing mixed vector for Kitten engine" },
+                    speed = project.speed,
+                    session = actualSession,
+                )
+            }
+            TtsEngine.KOKORO -> {
+                val actualSession = session
+                    ?: throw IllegalStateException("ONNX session required for Kokoro pre-generation")
+                val phonemes = phonemeConverter.phonemize(line)
+                createAudioFromStyleVector(
+                    phonemes = phonemes,
+                    voice = requireNotNull(mixed) { "Missing mixed vector for Kokoro engine" },
+                    speed = project.speed,
+                    session = actualSession,
+                )
+            }
+            TtsEngine.SHERPA -> {
+                val voice = project.styles.firstOrNull() ?: SherpaTtsEngine.DEFAULT_VOICE_NAME
+                SherpaManager.synthesize(
+                    context = context,
+                    text = line,
+                    voice = voice,
+                    speed = project.speed
+                )
+            }
         }
         val file = File(baseDir, "$index.wav")
         saveAudioInternal(audio, file, sampleRate)

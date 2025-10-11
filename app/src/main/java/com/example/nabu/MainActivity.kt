@@ -54,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -80,6 +81,7 @@ import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
+import com.example.nabu.utils.SherpaManager
 import com.google.android.material.color.DynamicColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +89,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 const val EXTRA_START_SCREEN = "start_screen"
 private const val PLAYBACK_CHANNEL_ID = "playback_channel"
@@ -216,46 +219,63 @@ private fun generateAudio(
     useRaw: Boolean,
     onComplete: () -> Unit
 ) {
-    val session = OnnxRuntimeManager.getSession()
     scope.launch(Dispatchers.IO) {
         try {
             val engine = SettingsManager.getTtsEngine(context)
             val ttsStart = SystemClock.elapsedRealtime()
-            val (audioData, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                val (displayStr, tokens) = if (useRaw) {
-                    KittenPhonemizer.encodeText(text)
-                } else {
-                    KittenPhonemizer.phonemize(text)
+            val (audioData, sampleRate) = when (engine) {
+                TtsEngine.KITTEN -> {
+                    val session = OnnxRuntimeManager.getSession()
+                    val (displayStr, tokens) = if (useRaw) {
+                        KittenPhonemizer.encodeText(text)
+                    } else {
+                        KittenPhonemizer.phonemize(text)
+                    }
+                    val logLabel = if (useRaw) "Raw text" else "Phonemes"
+                    DebugLogger.log("$logLabel: $displayStr")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "$logLabel: $displayStr", Toast.LENGTH_LONG).show()
+                    }
+                    val loader = StyleLoader(context)
+                    val voiceArray = loader.getStyleArray(style)
+                    PerfHud.record("ONNX synth") {
+                        createKittenAudioFromStyleVector(
+                            tokens = tokens,
+                            voice = voiceArray,
+                            speed = speed,
+                            session = session
+                        )
+                    }
                 }
-                val logLabel = if (useRaw) "Raw text" else "Phonemes"
-                DebugLogger.log("$logLabel: $displayStr")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "$logLabel: $displayStr", Toast.LENGTH_LONG).show()
+                TtsEngine.KOKORO -> {
+                    val session = OnnxRuntimeManager.getSession()
+                    val phonemes = phonemeConverter.phonemize(text)
+                    DebugLogger.log("Phonemes: $phonemes")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
+                    }
+                    PerfHud.record("ONNX synth") {
+                        createAudio(
+                            voice = style,
+                            phonemes = phonemes,
+                            speed = speed,
+                            context = context,
+                            session = session
+                        )
+                    }
                 }
-                val loader = StyleLoader(context)
-                val voiceArray = loader.getStyleArray(style)
-                PerfHud.record("ONNX synth") {
-                    createKittenAudioFromStyleVector(
-                        tokens = tokens,
-                        voice = voiceArray,
-                        speed = speed,
-                        session = session
-                    )
-                }
-            } else {
-                val phonemes = phonemeConverter.phonemize(text)
-                DebugLogger.log("Phonemes: $phonemes")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
-                }
-                PerfHud.record("ONNX synth") {
-                    createAudio(
-                        voice = style,
-                        phonemes = phonemes,
-                        speed = speed,
-                        context = context,
-                        session = session
-                    )
+                TtsEngine.SHERPA -> {
+                    val voice = style.ifBlank {
+                        SherpaManager.listVoices(context).firstOrNull() ?: "default"
+                    }
+                    PerfHud.record("Sherpa synth") {
+                        SherpaManager.synthesize(
+                            context = context,
+                            text = text,
+                            voice = voice,
+                            speed = speed,
+                        )
+                    }
                 }
             }
             val genMs = SystemClock.elapsedRealtime() - ttsStart
@@ -319,7 +339,7 @@ sealed class Screen {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    session: OrtSession,
+    session: OrtSession?,
     phonemeConverter: PhonemeConverter,
     onGenerateAudio: (String, String, Float, Boolean, Boolean, () -> Unit) -> Unit,
     userPreferencesRepository: UserPreferencesRepository,
@@ -408,26 +428,41 @@ fun BasicScreen(
 ) {
     val context = LocalContext.current
     var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
-    val styleLoader = remember(engine) { StyleLoader(context) }
-    val names = styleLoader.names.sorted()
-
     var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
-    var style by remember(engine) {
-        mutableStateOf(
-            SettingsManager.getStyle(context).takeIf { it in names }
-                ?: names.firstOrNull().orEmpty()
-        )
-    }
+    var style by remember { mutableStateOf("") }
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
     var useRawText by remember { mutableStateOf(false) }
 
+    val styleLoader = remember(engine) {
+        if (engine == TtsEngine.SHERPA) null else StyleLoader(context)
+    }
+    val names = when (engine) {
+        TtsEngine.SHERPA -> SherpaManager.listVoices(context)
+        else -> styleLoader?.names ?: emptyList()
+    }.sorted()
+
     LaunchedEffect(engine) {
-        withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        if (engine != TtsEngine.SHERPA) {
+            withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
         }
-        SettingsManager.setStyle(context, style)
+        if (engine != TtsEngine.KITTEN) {
+            useRawText = false
+        }
+    }
+
+    LaunchedEffect(engine, names) {
+        val stored = SettingsManager.getStyle(context)
+        val resolved = stored.takeIf { it in names } ?: names.firstOrNull().orEmpty()
+        if (resolved != style) {
+            style = resolved
+        }
+        if (resolved.isNotEmpty()) {
+            SettingsManager.setStyle(context, resolved)
+        }
     }
 
     var expanded by remember { mutableStateOf(false) }
@@ -479,6 +514,7 @@ fun BasicScreen(
                         onClick = {
                             engine = option
                             SettingsManager.setTtsEngine(context, option)
+                            SherpaManager.invalidate()
                             engineExpanded = false
                         }
                     )
@@ -497,11 +533,12 @@ fun BasicScreen(
                     style = it
                     SettingsManager.setStyle(context, it)
                 },
-                label = { Text("STYLE") },
+                label = { Text(if (engine == TtsEngine.SHERPA) "VOICE" else "STYLE") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .menuAnchor(),
                 readOnly = true,
+                enabled = names.isNotEmpty(),
                 trailingIcon = {
                     Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
                 }
@@ -533,6 +570,10 @@ fun BasicScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Switch(checked = useRawText, onCheckedChange = { useRawText = it })
             }
+        } else if (engine == TtsEngine.SHERPA) {
+            SherpaEngineOptions(
+                onConfigChanged = { SherpaManager.invalidate() }
+            )
         }
 
         PanelRow(name = "SPEED") {
@@ -586,6 +627,54 @@ fun BasicScreen(
             ) {
                 Text(if (isProcessing) "GPU PROCESSING..." else "PLAY & SAVE")
             }
+        }
+    }
+}
+
+@Composable
+private fun SherpaEngineOptions(
+    onConfigChanged: () -> Unit,
+) {
+    val context = LocalContext.current
+    var useLexicon by remember {
+        mutableStateOf(SettingsManager.isSherpaLexiconEnabled(context))
+    }
+    var threadCount by remember {
+        mutableIntStateOf(SettingsManager.getSherpaThreadCount(context))
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("USE LEXICON")
+            Spacer(modifier = Modifier.width(8.dp))
+            Switch(
+                checked = useLexicon,
+                onCheckedChange = {
+                    useLexicon = it
+                    SettingsManager.setSherpaUseLexicon(context, it)
+                    onConfigChanged()
+                }
+            )
+        }
+
+        PanelRow(name = "THREADS") {
+            BrutalSlider(
+                value = threadCount.toFloat(),
+                onValueChange = {
+                    val newValue = it.roundToInt().coerceIn(1, 4)
+                    if (newValue != threadCount) {
+                        threadCount = newValue
+                        SettingsManager.setSherpaThreadCount(context, newValue)
+                        onConfigChanged()
+                    }
+                },
+                range = 1f..4f,
+                modifier = Modifier.weight(1f)
+            )
+            Text(threadCount.toString())
         }
     }
 }

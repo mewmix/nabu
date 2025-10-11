@@ -26,10 +26,13 @@ import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.StyleLoader
+import com.example.nabu.utils.SherpaAudioPlayer
+import com.example.nabu.utils.SherpaManager
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.createAudioFromStyleVector
 import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
+import com.example.nabu.tts.sherpa.SherpaTtsEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,7 +46,7 @@ import java.util.Locale
 
 class ChatViewModel(
     private val context: Context,
-    private val ortSession: OrtSession,
+    private val ortSession: OrtSession?,
     initialModelId: String
 ) : ViewModel() {
 
@@ -54,13 +57,25 @@ class ChatViewModel(
 
     // Dependencies
     private val phonemeConverter = PhonemeConverter(context)
-    val styleLoader = StyleLoader(context)
-    private val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
-    private val audioPlayer: AudioPlayer = when (SettingsManager.getTtsEngine(context)) {
+    private val engine = SettingsManager.getTtsEngine(context)
+    val styleLoader: StyleLoader? = if (engine == TtsEngine.SHERPA) null else StyleLoader(context)
+    private val rawVoiceOptions: List<String> = when (engine) {
+        TtsEngine.SHERPA -> SherpaManager.listVoices(context)
+        else -> styleLoader?.names ?: emptyList()
+    }
+    val supportsStyleMixing: Boolean = engine != TtsEngine.SHERPA
+    private val defaultVoice = rawVoiceOptions.firstOrNull()
+        ?: if (engine == TtsEngine.SHERPA) SherpaTtsEngine.DEFAULT_VOICE_NAME else "af_sky"
+    val voiceOptions: List<String> =
+        if (rawVoiceOptions.isEmpty()) listOf(defaultVoice) else rawVoiceOptions
+    private val audioPlayer: AudioPlayer = when (engine) {
         TtsEngine.KOKORO -> KokoroAudioPlayer(viewModelScope) { newState ->
             _playerState.value = newState
         }
         TtsEngine.KITTEN -> KittenAudioPlayer(viewModelScope) { newState ->
+            _playerState.value = newState
+        }
+        TtsEngine.SHERPA -> SherpaAudioPlayer(context, viewModelScope) { newState ->
             _playerState.value = newState
         }
     }
@@ -520,30 +535,54 @@ class ChatViewModel(
                 }
                 DebugLogger.log("Synthesizing: ${text}")
                 val audioData = withContext(Dispatchers.IO) {
-                    val mixedVector = mixStyles(
-                        styleLoader,
-                        _selectedStyles.value,
-                        _weights.value,
-                        _interpolationMode.value
-                    )
                     val engine = SettingsManager.getTtsEngine(context)
                     val ttsStart = SystemClock.elapsedRealtime()
-                    val (data, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                        val (_, tokens) = KittenPhonemizer.phonemize(text)
-                        createKittenAudioFromStyleVector(
-                            tokens = tokens,
-                            voice = mixedVector,
-                            speed = _speed.value,
-                            session = ortSession
-                        )
-                    } else {
-                        val phonemes = phonemeConverter.phonemize(text)
-                        createAudioFromStyleVector(
-                            phonemes = phonemes,
-                            voice = mixedVector,
-                            speed = _speed.value,
-                            session = ortSession
-                        )
+                    val (data, sampleRate) = when (engine) {
+                        TtsEngine.KITTEN -> {
+                            val loader = styleLoader ?: StyleLoader(context)
+                            val mixedVector = mixStyles(
+                                loader,
+                                _selectedStyles.value,
+                                _weights.value,
+                                _interpolationMode.value
+                            )
+                            val actualSession = ortSession
+                                ?: throw IllegalStateException("ONNX session required for Kitten synthesis")
+                            val (_, tokens) = KittenPhonemizer.phonemize(text)
+                            createKittenAudioFromStyleVector(
+                                tokens = tokens,
+                                voice = mixedVector,
+                                speed = _speed.value,
+                                session = actualSession
+                            )
+                        }
+                        TtsEngine.KOKORO -> {
+                            val loader = styleLoader ?: StyleLoader(context)
+                            val mixedVector = mixStyles(
+                                loader,
+                                _selectedStyles.value,
+                                _weights.value,
+                                _interpolationMode.value
+                            )
+                            val actualSession = ortSession
+                                ?: throw IllegalStateException("ONNX session required for Kokoro synthesis")
+                            val phonemes = phonemeConverter.phonemize(text)
+                            createAudioFromStyleVector(
+                                phonemes = phonemes,
+                                voice = mixedVector,
+                                speed = _speed.value,
+                                session = actualSession
+                            )
+                        }
+                        TtsEngine.SHERPA -> {
+                            val voice = _selectedStyles.value.firstOrNull() ?: defaultVoice
+                            SherpaManager.synthesize(
+                                context = context,
+                                text = text,
+                                voice = voice,
+                                speed = _speed.value,
+                            )
+                        }
                     }
                     val genMs = SystemClock.elapsedRealtime() - ttsStart
                     if (benchmark) {
@@ -579,6 +618,11 @@ class ChatViewModel(
 
     // --- Mixer State Updaters ---
     fun addStyle(style: String) {
+        if (!supportsStyleMixing) {
+            _selectedStyles.value = listOf(style)
+            _weights.value = mapOf(style to 1f)
+            return
+        }
         if (style !in _selectedStyles.value) {
             _selectedStyles.value += style
             _weights.value += (style to 1f)
@@ -586,6 +630,11 @@ class ChatViewModel(
     }
 
     fun removeStyle(style: String) {
+        if (!supportsStyleMixing) {
+            _selectedStyles.value = listOf(defaultVoice)
+            _weights.value = mapOf(defaultVoice to 1f)
+            return
+        }
         _selectedStyles.value -= style
         _weights.value -= style
         if (_selectedStyles.value.isEmpty()) {
@@ -594,10 +643,12 @@ class ChatViewModel(
     }
 
     fun updateWeight(style: String, value: Float) {
+        if (!supportsStyleMixing) return
         _weights.value = _weights.value.toMutableMap().apply { this[style] = value }
     }
 
     fun updateInterpolationMode(mode: InterpolationMode) {
+        if (!supportsStyleMixing) return
         _interpolationMode.value = mode
     }
 

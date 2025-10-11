@@ -16,7 +16,7 @@ class SherpaTtsEngine(
     private val context: Context,
     private val assetModelDir: String = DEFAULT_MODEL_DIR,
     private val modelFileName: String = DEFAULT_MODEL_FILE,
-    private val lexiconFileName: String = DEFAULT_LEXICON_FILE,
+    private val lexiconFileName: String? = DEFAULT_LEXICON_FILE,
     private val voiceToSpeakerId: Map<String, Int> = mapOf(DEFAULT_VOICE_NAME to 0),
     private val maxThreads: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 4),
 ) : TtsEngine {
@@ -65,7 +65,7 @@ class SherpaTtsEngine(
                     acousticModelName = "",
                     vocoder = "",
                     voices = "",
-                    lexicon = lexiconFileName,
+                    lexicon = lexiconFileName.orEmpty(),
                     dataDir = "",
                     dictDir = "",
                     ruleFsts = "",
@@ -79,11 +79,12 @@ class SherpaTtsEngine(
         }
     }
 
-    private companion object {
-        private const val DEFAULT_MODEL_DIR = "sherpa_tts/vits-ljs"
-        private const val DEFAULT_MODEL_FILE = "vits-ljs.onnx"
-        private const val DEFAULT_LEXICON_FILE = "lexicon.txt"
-        private const val DEFAULT_VOICE_NAME = "default"
+    companion object {
+        const val DEFAULT_MODEL_DIR = "sherpa_tts/vits-ljs"
+        const val DEFAULT_MODEL_FILE = "vits-ljs.onnx"
+        const val DEFAULT_LEXICON_FILE = "lexicon.txt"
+        const val DEFAULT_VOICE_NAME = "default"
+
         private const val MIN_SPEED = 0.2f
         private const val MAX_SPEED = 3.0f
     }
