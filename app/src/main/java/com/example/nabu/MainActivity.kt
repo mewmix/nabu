@@ -421,6 +421,48 @@ fun MainScreen(
     }
 }
 
+@Composable
+private fun SherpaEngineOptions(onConfigChanged: () -> Unit) {
+    val context = LocalContext.current
+    var useLexicon by remember { mutableStateOf(SettingsManager.isSherpaLexiconEnabled(context)) }
+    var threadCount by remember { mutableIntStateOf(SettingsManager.getSherpaThreadCount(context)) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("USE LEXICON")
+            Spacer(modifier = Modifier.width(8.dp))
+            Switch(
+                checked = useLexicon,
+                onCheckedChange = {
+                    useLexicon = it
+                    SettingsManager.setSherpaUseLexicon(context, it)
+                    onConfigChanged()
+                }
+            )
+        }
+
+        PanelRow(name = "THREADS") {
+            BrutalSlider(
+                value = threadCount.toFloat(),
+                onValueChange = {
+                    val newValue = it.roundToInt().coerceIn(1, 4)
+                    if (newValue != threadCount) {
+                        threadCount = newValue
+                        SettingsManager.setSherpaThreadCount(context, newValue)
+                        onConfigChanged()
+                    }
+                },
+                range = 1f..4f,
+                modifier = Modifier.weight(1f)
+            )
+            Text(threadCount.toString())
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BasicScreen(
@@ -627,54 +669,6 @@ fun BasicScreen(
             ) {
                 Text(if (isProcessing) "GPU PROCESSING..." else "PLAY & SAVE")
             }
-        }
-    }
-}
-
-@Composable
-private fun SherpaEngineOptions(
-    onConfigChanged: () -> Unit,
-) {
-    val context = LocalContext.current
-    var useLexicon by remember {
-        mutableStateOf(SettingsManager.isSherpaLexiconEnabled(context))
-    }
-    var threadCount by remember {
-        mutableIntStateOf(SettingsManager.getSherpaThreadCount(context))
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("USE LEXICON")
-            Spacer(modifier = Modifier.width(8.dp))
-            Switch(
-                checked = useLexicon,
-                onCheckedChange = {
-                    useLexicon = it
-                    SettingsManager.setSherpaUseLexicon(context, it)
-                    onConfigChanged()
-                }
-            )
-        }
-
-        PanelRow(name = "THREADS") {
-            BrutalSlider(
-                value = threadCount.toFloat(),
-                onValueChange = {
-                    val newValue = it.roundToInt().coerceIn(1, 4)
-                    if (newValue != threadCount) {
-                        threadCount = newValue
-                        SettingsManager.setSherpaThreadCount(context, newValue)
-                        onConfigChanged()
-                    }
-                },
-                range = 1f..4f,
-                modifier = Modifier.weight(1f)
-            )
-            Text(threadCount.toString())
         }
     }
 }
