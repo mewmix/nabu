@@ -48,4 +48,31 @@ object SettingsManager {
         val fallback = if (default) "1" else "0"
         return (DatabaseManager.getSetting(context, "tts_enabled") ?: fallback) == "1"
     }
+
+    fun setChatterboxExaggeration(context: Context, value: Float) {
+        DatabaseManager.setSetting(context, "chatterbox_exaggeration", value.toString())
+    }
+
+    fun getChatterboxExaggeration(context: Context, default: Float = 0.5f): Float =
+        DatabaseManager.getSetting(context, "chatterbox_exaggeration")?.toFloatOrNull() ?: default
+
+    fun setChatterboxReferenceVoice(context: Context, path: String?) {
+        if (path == null) {
+            DatabaseManager.setSetting(context, "chatterbox_reference_voice", "")
+        } else {
+            DatabaseManager.setSetting(context, "chatterbox_reference_voice", path)
+        }
+    }
+
+    fun getChatterboxReferenceVoice(context: Context): String? =
+        DatabaseManager.getSetting(context, "chatterbox_reference_voice")?.takeIf { it.isNotBlank() }
+
+    fun setChatterboxNnapi(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, "chatterbox_nnapi", if (enabled) "1" else "0")
+    }
+
+    fun isChatterboxNnapi(context: Context, default: Boolean = false): Boolean {
+        val fallback = if (default) "1" else "0"
+        return (DatabaseManager.getSetting(context, "chatterbox_nnapi") ?: fallback) == "1"
+    }
 }

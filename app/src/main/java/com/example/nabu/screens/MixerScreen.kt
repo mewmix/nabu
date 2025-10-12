@@ -1,5 +1,7 @@
 package com.example.nabu.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.PanelBox
+import com.example.nabu.tts.NabuPaths
+import com.example.nabu.tts.chatterbox.ChatterboxConfig
+import com.example.nabu.tts.chatterbox.ChatterboxRuntime
 import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.KittenPhonemizer
@@ -64,6 +69,8 @@ import com.example.nabu.utils.buildStyleFileName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.net.Uri
+import java.io.File
 
 /** Simplified mixer screen showing a static style configuration. */
 @Composable
@@ -76,10 +83,26 @@ fun MixerScreen(
     val scrollState = rememberScrollState()
 
     val engine by rememberUpdatedState(SettingsManager.getTtsEngine(context))
+    var chatterboxExaggeration by remember { mutableFloatStateOf(SettingsManager.getChatterboxExaggeration(context)) }
+    var chatterboxReference by remember { mutableStateOf(SettingsManager.getChatterboxReferenceVoice(context)) }
+
+    val pickVoiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            copyChatterboxReferenceVoice(context, uri)?.let { path ->
+                chatterboxReference = path
+                SettingsManager.setChatterboxReferenceVoice(context, path)
+            }
+        }
+    }
 
     LaunchedEffect(engine) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        if (engine == TtsEngine.CHATTERBOX) {
+            chatterboxExaggeration = SettingsManager.getChatterboxExaggeration(context)
+            chatterboxReference = SettingsManager.getChatterboxReferenceVoice(context)
+        } else {
+            withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
         }
     }
 
@@ -132,37 +155,56 @@ fun MixerScreen(
             Text("%.2f".format(speed))
         }
 
-        StyleSelector(
-            styleNames = styleLoader.names,
-            selectedStyles = selectedStyles,
-            onAddStyle = {
-                selectedStyles = selectedStyles + it
-                weights = weights + (it to 1f)
-                saveStyleConfig(context, selectedStyles, weights, interpolationMode)
-            },
-            onRemoveStyle = {
-                selectedStyles = selectedStyles - it
-                weights = weights - it
-                saveStyleConfig(context, selectedStyles, weights, interpolationMode)
-            }
-        )
+        if (engine == TtsEngine.CHATTERBOX) {
+            ChatterboxControls(
+                exaggeration = chatterboxExaggeration,
+                onExaggerationChanged = { value ->
+                    val clamped = value.coerceIn(0f, 1f)
+                    chatterboxExaggeration = clamped
+                    SettingsManager.setChatterboxExaggeration(context, clamped)
+                },
+                referencePath = chatterboxReference,
+                onPickReference = {
+                    pickVoiceLauncher.launch(arrayOf("audio/wav", "audio/x-wav"))
+                },
+                onClearReference = {
+                    chatterboxReference = null
+                    SettingsManager.setChatterboxReferenceVoice(context, null)
+                }
+            )
+        } else {
+            StyleSelector(
+                styleNames = styleLoader.names,
+                selectedStyles = selectedStyles,
+                onAddStyle = {
+                    selectedStyles = selectedStyles + it
+                    weights = weights + (it to 1f)
+                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                },
+                onRemoveStyle = {
+                    selectedStyles = selectedStyles - it
+                    weights = weights - it
+                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                }
+            )
 
-        WeightSliders(
-            selectedStyles = selectedStyles,
-            weights = weights,
-            onWeightChanged = { style, value ->
-                weights = weights.toMutableMap().apply { put(style, value) }
-                saveStyleConfig(context, selectedStyles, weights, interpolationMode)
-            }
-        )
+            WeightSliders(
+                selectedStyles = selectedStyles,
+                weights = weights,
+                onWeightChanged = { style, value ->
+                    weights = weights.toMutableMap().apply { put(style, value) }
+                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                }
+            )
 
-        InterpolationModeSelector(
-            currentMode = interpolationMode,
-            onModeSelected = {
-                interpolationMode = it
-                saveStyleConfig(context, selectedStyles, weights, interpolationMode)
-            }
-        )
+            InterpolationModeSelector(
+                currentMode = interpolationMode,
+                onModeSelected = {
+                    interpolationMode = it
+                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                }
+            )
+        }
 
         Row(modifier = Modifier.fillMaxWidth()) {
             BrutalButton(
@@ -170,49 +212,71 @@ fun MixerScreen(
                     shouldSaveFile = false
                     isProcessing = true
                     scope.launch {
-                        val mixed = mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
-                        generateAudio(
-                            text,
-                            mixed,
-                            speed,
-                            shouldSaveFile,
-                            null,
-                            phonemeConverter,
-                            scope,
-                            context
-                        ) {
-                            isProcessing = false
-                        }
+                    val currentEngine = engine
+                    val styleVector = if (currentEngine == TtsEngine.CHATTERBOX) null else mixStyles(
+                        styleLoader,
+                        selectedStyles,
+                        weights,
+                        interpolationMode
+                    )
+                    generateAudio(
+                        text = text,
+                        styleVector = styleVector,
+                        speed = speed,
+                        shouldSaveFile = shouldSaveFile,
+                        fileName = null,
+                        phonemeConverter = phonemeConverter,
+                        scope = scope,
+                        context = context,
+                        engine = currentEngine,
+                        chatterboxConfig = ChatterboxConfig(
+                            exaggeration = chatterboxExaggeration,
+                            referenceVoicePath = chatterboxReference
+                        )
+                    ) {
+                        isProcessing = false
                     }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = !isProcessing
-            ) { Text(if (isProcessing) "MIXING..." else "PLAY") }
+                }
+            },
+            modifier = Modifier.weight(1f),
+            enabled = !isProcessing
+        ) { Text(if (isProcessing) "MIXING..." else "PLAY") }
 
             BrutalButton(
                 onClick = {
                     shouldSaveFile = true
                     isProcessing = true
                     scope.launch {
-                        val mixed = mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
-                        val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
-                        generateAudio(
-                            text,
-                            mixed,
-                            speed,
-                            shouldSaveFile,
-                            fileName,
-                            phonemeConverter,
-                            scope,
-                            context
-                        ) {
-                            isProcessing = false
-                        }
+                    val currentEngine = engine
+                    val styleVector = if (currentEngine == TtsEngine.CHATTERBOX) null else mixStyles(
+                        styleLoader,
+                        selectedStyles,
+                        weights,
+                        interpolationMode
+                    )
+                    val fileName = if (currentEngine == TtsEngine.CHATTERBOX) "chatterbox" else buildStyleFileName(selectedStyles, weights, interpolationMode)
+                    generateAudio(
+                        text = text,
+                        styleVector = styleVector,
+                        speed = speed,
+                        shouldSaveFile = shouldSaveFile,
+                        fileName = fileName,
+                        phonemeConverter = phonemeConverter,
+                        scope = scope,
+                        context = context,
+                        engine = currentEngine,
+                        chatterboxConfig = ChatterboxConfig(
+                            exaggeration = chatterboxExaggeration,
+                            referenceVoicePath = chatterboxReference
+                        )
+                    ) {
+                        isProcessing = false
                     }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = !isProcessing
-            ) { Text(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
+                }
+            },
+            modifier = Modifier.weight(1f),
+            enabled = !isProcessing
+        ) { Text(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
         }
 
         // Debug logs moved to dedicated screen
@@ -238,35 +302,48 @@ private fun loadStyleConfig(context: android.content.Context): Triple<List<Strin
 
 private fun generateAudio(
     text: String,
-    style: Array<FloatArray>,
+    styleVector: Array<FloatArray>?,
     speed: Float,
     shouldSaveFile: Boolean,
     fileName: String?,
     phonemeConverter: PhonemeConverter,
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
+    engine: TtsEngine,
+    chatterboxConfig: ChatterboxConfig,
     onComplete: () -> Unit
 ) {
-    val session = OnnxRuntimeManager.getSession()
+    val session = if (engine == TtsEngine.CHATTERBOX) null else OnnxRuntimeManager.getSession()
     scope.launch(Dispatchers.IO) {
         try {
-            val engine = SettingsManager.getTtsEngine(context)
-            val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                val (_, tokens) = KittenPhonemizer.phonemize(text)
-                createKittenAudioFromStyleVector(
-                    tokens = tokens,
-                    voice = style,
-                    speed = speed,
-                    session = session
-                )
-            } else {
-                val phonemes = phonemeConverter.phonemize(text)
-                createAudioFromStyleVector(
-                    phonemes = phonemes,
-                    voice = style,
-                    speed = speed,
-                    session = session
-                )
+            val (audio, sampleRate) = when (engine) {
+                TtsEngine.KITTEN -> {
+                    val vector = requireNotNull(styleVector) { "Kitten voice vector missing" }
+                    val sessionNonNull = requireNotNull(session) { "Kitten ONNX session not initialized" }
+                    val (_, tokens) = KittenPhonemizer.phonemize(text)
+                    createKittenAudioFromStyleVector(
+                        tokens = tokens,
+                        voice = vector,
+                        speed = speed,
+                        session = sessionNonNull
+                    )
+                }
+                TtsEngine.KOKORO -> {
+                    val vector = requireNotNull(styleVector) { "Kokoro voice vector missing" }
+                    val sessionNonNull = requireNotNull(session) { "Kokoro ONNX session not initialized" }
+                    val phonemes = phonemeConverter.phonemize(text)
+                    createAudioFromStyleVector(
+                        phonemes = phonemes,
+                        voice = vector,
+                        speed = speed,
+                        session = sessionNonNull
+                    )
+                }
+                TtsEngine.CHATTERBOX -> {
+                    val chatterbox = ChatterboxRuntime.getOrLoad(context)
+                    val audio = chatterbox.synthesize(text, chatterboxConfig)
+                    audio to chatterbox.sampleRate()
+                }
             }
             if (shouldSaveFile && fileName != null) {
                 saveAudio(audio, context, fileName, sampleRate)
@@ -428,5 +505,69 @@ fun InterpolationModeSelector(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ChatterboxControls(
+    exaggeration: Float,
+    onExaggerationChanged: (Float) -> Unit,
+    referencePath: String?,
+    onPickReference: () -> Unit,
+    onClearReference: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("CHATTERBOX CONTROLS:", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+        PanelRow(name = "Exaggeration") {
+            BrutalSlider(
+                value = exaggeration,
+                onValueChange = onExaggerationChanged,
+                modifier = Modifier.weight(1f)
+            )
+            Text(text = "%.2f".format(exaggeration), color = Brutal.textBright)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "Reference Voice:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Brutal.textBright
+            )
+            referencePath?.let {
+                Text(
+                    text = File(it).name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Brutal.textDim
+                )
+            } ?: Text(
+                text = "Using bundled default voice",
+                style = MaterialTheme.typography.bodySmall,
+                color = Brutal.textDim
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BrutalButton(onClick = onPickReference) {
+                    Text("Choose WAV")
+                }
+                BrutalButton(onClick = onClearReference, enabled = referencePath != null) {
+                    Text("Use Default")
+                }
+            }
+        }
+    }
+}
+
+private fun copyChatterboxReferenceVoice(context: android.content.Context, uri: Uri): String? {
+    return try {
+        val dir = NabuPaths.chatterboxModelDir(context)
+        if (!dir.exists()) dir.mkdirs()
+        val target = File(dir, "user_reference.wav")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        } ?: return null
+        target.absolutePath
+    } catch (e: Exception) {
+        DebugLogger.log("Failed to copy Chatterbox reference voice: ${e.message}")
+        null
     }
 }

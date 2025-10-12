@@ -77,6 +77,8 @@ import com.example.nabu.utils.KittenPhonemizer
 import com.example.nabu.utils.playAudio
 import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.SettingsManager
+import com.example.nabu.tts.chatterbox.ChatterboxConfig
+import com.example.nabu.tts.chatterbox.ChatterboxRuntime
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
@@ -216,46 +218,62 @@ private fun generateAudio(
     useRaw: Boolean,
     onComplete: () -> Unit
 ) {
-    val session = OnnxRuntimeManager.getSession()
+    val engine = SettingsManager.getTtsEngine(context)
+    val session = if (engine == TtsEngine.CHATTERBOX) null else OnnxRuntimeManager.getSession()
     scope.launch(Dispatchers.IO) {
         try {
-            val engine = SettingsManager.getTtsEngine(context)
             val ttsStart = SystemClock.elapsedRealtime()
-            val (audioData, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                val (displayStr, tokens) = if (useRaw) {
-                    KittenPhonemizer.encodeText(text)
-                } else {
-                    KittenPhonemizer.phonemize(text)
+            val (audioData, sampleRate) = when (engine) {
+                TtsEngine.KITTEN -> {
+                    val sessionNonNull = requireNotNull(session) { "Kitten ONNX session not initialized" }
+                    val (displayStr, tokens) = if (useRaw) {
+                        KittenPhonemizer.encodeText(text)
+                    } else {
+                        KittenPhonemizer.phonemize(text)
+                    }
+                    val logLabel = if (useRaw) "Raw text" else "Phonemes"
+                    DebugLogger.log("$logLabel: $displayStr")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "$logLabel: $displayStr", Toast.LENGTH_LONG).show()
+                    }
+                    val loader = StyleLoader(context)
+                    val voiceArray = loader.getStyleArray(style)
+                    PerfHud.record("ONNX synth") {
+                        createKittenAudioFromStyleVector(
+                            tokens = tokens,
+                            voice = voiceArray,
+                            speed = speed,
+                            session = sessionNonNull
+                        )
+                    }
                 }
-                val logLabel = if (useRaw) "Raw text" else "Phonemes"
-                DebugLogger.log("$logLabel: $displayStr")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "$logLabel: $displayStr", Toast.LENGTH_LONG).show()
+                TtsEngine.KOKORO -> {
+                    val sessionNonNull = requireNotNull(session) { "Kokoro ONNX session not initialized" }
+                    val phonemes = phonemeConverter.phonemize(text)
+                    DebugLogger.log("Phonemes: $phonemes")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
+                    }
+                    PerfHud.record("ONNX synth") {
+                        createAudio(
+                            voice = style,
+                            phonemes = phonemes,
+                            speed = speed,
+                            context = context,
+                            session = sessionNonNull
+                        )
+                    }
                 }
-                val loader = StyleLoader(context)
-                val voiceArray = loader.getStyleArray(style)
-                PerfHud.record("ONNX synth") {
-                    createKittenAudioFromStyleVector(
-                        tokens = tokens,
-                        voice = voiceArray,
-                        speed = speed,
-                        session = session
+                TtsEngine.CHATTERBOX -> {
+                    val chatterbox = ChatterboxRuntime.getOrLoad(context)
+                    val audio = chatterbox.synthesize(
+                        text,
+                        ChatterboxConfig(
+                            exaggeration = SettingsManager.getChatterboxExaggeration(context),
+                            referenceVoicePath = SettingsManager.getChatterboxReferenceVoice(context)
+                        )
                     )
-                }
-            } else {
-                val phonemes = phonemeConverter.phonemize(text)
-                DebugLogger.log("Phonemes: $phonemes")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
-                }
-                PerfHud.record("ONNX synth") {
-                    createAudio(
-                        voice = style,
-                        phonemes = phonemes,
-                        speed = speed,
-                        context = context,
-                        session = session
-                    )
+                    audio to chatterbox.sampleRate()
                 }
             }
             val genMs = SystemClock.elapsedRealtime() - ttsStart
@@ -319,7 +337,7 @@ sealed class Screen {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    session: OrtSession,
+    session: OrtSession?,
     phonemeConverter: PhonemeConverter,
     onGenerateAudio: (String, String, Float, Boolean, Boolean, () -> Unit) -> Unit,
     userPreferencesRepository: UserPreferencesRepository,

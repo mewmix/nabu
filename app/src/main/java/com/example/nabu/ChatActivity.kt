@@ -15,6 +15,7 @@ import com.example.nabu.screens.ChatScreen
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.SettingsManager
+import com.example.nabu.utils.TtsEngine
 import com.example.kokoro.galleryport.PerfHud
 import com.example.nabu.viewmodel.ChatViewModel
 
@@ -26,7 +27,8 @@ class ChatActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
 
-        val ortSession = OnnxRuntimeManager.getSession()
+        val engine = SettingsManager.getTtsEngine(this)
+        val ortSession = if (engine == TtsEngine.CHATTERBOX) null else OnnxRuntimeManager.getSession()
         val modelManager = ModelManager(applicationContext)
         val downloaded = modelManager.models.filter { it.isDownloaded }
         val initialPrompt = intent.getStringExtra(EXTRA_INITIAL_PROMPT)
@@ -55,7 +57,7 @@ class ChatActivity : ComponentActivity() {
         // Chat will start in startChat or selectModel
     }
 
-    private fun selectModel(models: List<Model>, session: ai.onnxruntime.OrtSession, initialPrompt: String?) {
+    private fun selectModel(models: List<Model>, session: ai.onnxruntime.OrtSession?, initialPrompt: String?) {
         val names = models.map { it.name }.toTypedArray()
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Select Chat Model")
@@ -66,7 +68,7 @@ class ChatActivity : ComponentActivity() {
             .show()
     }
 
-    private fun startChat(model: Model, session: ai.onnxruntime.OrtSession, initialPrompt: String?) {
+    private fun startChat(model: Model, session: ai.onnxruntime.OrtSession?, initialPrompt: String?) {
         val viewModel: ChatViewModel by viewModels {
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {

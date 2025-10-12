@@ -2,13 +2,15 @@ package com.example.nabu.utils
 
 import ai.onnxruntime.OrtSession
 import android.content.Context
+import com.example.nabu.tts.chatterbox.ChatterboxConfig
+import com.example.nabu.tts.chatterbox.ChatterboxRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
 suspend fun preGenerateBook(
     context: Context,
-    session: OrtSession,
+    session: OrtSession?,
     phonemeConverter: PhonemeConverter,
     styleLoader: StyleLoader,
     project: Project,
@@ -23,28 +25,46 @@ suspend fun preGenerateBook(
         DatabaseManager.setProject(context, project.copy(audioPath = baseDir.absolutePath))
     }
 
-    val mixed = mixStyles(styleLoader, project.styles, project.weights, project.mode)
+    val engine = SettingsManager.getTtsEngine(context)
+    val mixed = if (engine == TtsEngine.CHATTERBOX) null else mixStyles(styleLoader, project.styles, project.weights, project.mode)
 
     for ((index, line) in lines.withIndex()) {
         if (DatabaseManager.getAudioLine(context, project.uri, index) != null) continue
         DebugLogger.log("Generating line $index for ${project.uri}")
-        val engine = SettingsManager.getTtsEngine(context)
-        val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
-            val (_, tokens) = KittenPhonemizer.phonemize(line)
-            createKittenAudioFromStyleVector(
-                tokens = tokens,
-                voice = mixed,
-                speed = project.speed,
-                session = session,
-            )
-        } else {
-            val phonemes = phonemeConverter.phonemize(line)
-            createAudioFromStyleVector(
-                phonemes = phonemes,
-                voice = mixed,
-                speed = project.speed,
-                session = session,
-            )
+        val (audio, sampleRate) = when (engine) {
+            TtsEngine.KITTEN -> {
+                val sessionNonNull = requireNotNull(session) { "Kitten ONNX session not initialized" }
+                val vector = requireNotNull(mixed) { "Kitten voice vector missing" }
+                val (_, tokens) = KittenPhonemizer.phonemize(line)
+                createKittenAudioFromStyleVector(
+                    tokens = tokens,
+                    voice = vector,
+                    speed = project.speed,
+                    session = sessionNonNull,
+                )
+            }
+            TtsEngine.KOKORO -> {
+                val sessionNonNull = requireNotNull(session) { "Kokoro ONNX session not initialized" }
+                val vector = requireNotNull(mixed) { "Kokoro voice vector missing" }
+                val phonemes = phonemeConverter.phonemize(line)
+                createAudioFromStyleVector(
+                    phonemes = phonemes,
+                    voice = vector,
+                    speed = project.speed,
+                    session = sessionNonNull,
+                )
+            }
+            TtsEngine.CHATTERBOX -> {
+                val chatterbox = ChatterboxRuntime.getOrLoad(context)
+                val audio = chatterbox.synthesize(
+                    line,
+                    ChatterboxConfig(
+                        exaggeration = SettingsManager.getChatterboxExaggeration(context),
+                        referenceVoicePath = SettingsManager.getChatterboxReferenceVoice(context)
+                    )
+                )
+                audio to chatterbox.sampleRate()
+            }
         }
         val file = File(baseDir, "$index.wav")
         saveAudioInternal(audio, file, sampleRate)

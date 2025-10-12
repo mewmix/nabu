@@ -10,15 +10,19 @@ import java.util.zip.ZipInputStream
 class StyleLoader(private val context: Context) {
     private val engine = SettingsManager.getTtsEngine(context)
 
-    val names: List<String> = when (engine) {
-        TtsEngine.KOKORO -> context.assets.list("kokoro/voices")?.map { it.removeSuffix(".npy") } ?: emptyList()
-        TtsEngine.KITTEN -> loadKittenVoiceNames()
-    }
+    val names: List<String> =
+        when (engine) {
+            TtsEngine.KOKORO -> context.assets.list("kokoro/voices")?.map { it.removeSuffix(".npy") } ?: emptyList()
+            TtsEngine.KITTEN -> loadKittenVoiceNames()
+            TtsEngine.CHATTERBOX -> listOf("default_voice")
+        }
 
-    fun getStyleArray(name: String, index: Int = 0): Array<FloatArray> = when (engine) {
-        TtsEngine.KOKORO -> loadKokoroStyle(name, index)
-        TtsEngine.KITTEN -> loadKittenStyle(name)
-    }
+    fun getStyleArray(name: String, index: Int = 0): Array<FloatArray> =
+        when (engine) {
+            TtsEngine.KOKORO -> loadKokoroStyle(name, index)
+            TtsEngine.KITTEN -> loadKittenStyle(name)
+            TtsEngine.CHATTERBOX -> loadChatterboxStyle(name)
+        }
 
     private fun loadKokoroStyle(name: String, index: Int): Array<FloatArray> {
         val inputStream = context.assets.open("kokoro/voices/$name.npy")
@@ -93,5 +97,9 @@ class StyleLoader(private val context: Context) {
         }
         throw IllegalArgumentException("Voice $name not found in kitten voices")
     }
-}
 
+    private fun loadChatterboxStyle(name: String): Array<FloatArray> {
+        // Chatterbox voice embeddings are computed dynamically; provide a zeroed placeholder to satisfy callers.
+        return Array(1) { FloatArray(256) }
+    }
+}

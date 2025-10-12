@@ -22,6 +22,20 @@ class ModelManager(private val context: Context) {
 
     init {
         _models.addAll(loadModels())
+        if (_models.none { it.id == "chatterbox-en" }) {
+            _models.add(
+                Model(
+                    id = "chatterbox-en",
+                    name = "Chatterbox (English, ONNX)",
+                    description = "English Chatterbox-ONNX speech synthesis pack",
+                    repo = "onnx-community/chatterbox-onnx",
+                    downloadUrl = "https://huggingface.co/onnx-community/chatterbox-onnx",
+                    gated = false,
+                    isDownloaded = com.example.nabu.tts.chatterbox.ChatterboxInstaller.isInstalled(context),
+                    hasPartial = false,
+                )
+            )
+        }
     }
 
     /**
@@ -45,11 +59,16 @@ class ModelManager(private val context: Context) {
                 downloadUrl = modelJson.getString("downloadUrl"),
                 gated = modelJson.optBoolean("gated", false),
             )
-            val modelDir = File(context.filesDir, "models")
-            val modelFile = File(modelDir, "${model.id}.task")
-            val partialFile = File(modelDir, "${model.id}.task.part")
-            model.isDownloaded = modelFile.exists()
-            model.hasPartial = !model.isDownloaded && partialFile.exists()
+            if (model.id == "chatterbox-en") {
+                model.isDownloaded = com.example.nabu.tts.chatterbox.ChatterboxInstaller.isInstalled(context)
+                model.hasPartial = false
+            } else {
+                val modelDir = File(context.filesDir, "models")
+                val modelFile = File(modelDir, "${model.id}.task")
+                val partialFile = File(modelDir, "${model.id}.task.part")
+                model.isDownloaded = modelFile.exists()
+                model.hasPartial = !model.isDownloaded && partialFile.exists()
+            }
             modelList.add(model)
         }
 
@@ -85,6 +104,18 @@ class ModelManager(private val context: Context) {
     }
 
     fun deleteModel(model: Model) {
+        if (model.id == "chatterbox-en") {
+            val dir = com.example.nabu.tts.NabuPaths.chatterboxModelDir(context)
+            if (dir.exists()) {
+                dir.walkBottomUp().forEach { file ->
+                    if (file != dir) file.delete()
+                }
+                dir.delete()
+            }
+            model.isDownloaded = false
+            model.hasPartial = false
+            return
+        }
         val modelDir = File(context.filesDir, "models")
         File(modelDir, "${model.id}.task").delete()
         File(modelDir, "${model.id}.task.part").delete()
@@ -96,4 +127,3 @@ class ModelManager(private val context: Context) {
         }
     }
 }
-

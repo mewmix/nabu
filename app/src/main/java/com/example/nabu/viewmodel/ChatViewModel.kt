@@ -30,6 +30,8 @@ import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.createAudioFromStyleVector
 import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
+import com.example.nabu.tts.chatterbox.ChatterboxConfig
+import com.example.nabu.tts.chatterbox.ChatterboxRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,7 +45,7 @@ import java.util.Locale
 
 class ChatViewModel(
     private val context: Context,
-    private val ortSession: OrtSession,
+    private val ortSession: OrtSession?,
     initialModelId: String
 ) : ViewModel() {
 
@@ -56,14 +58,15 @@ class ChatViewModel(
     private val phonemeConverter = PhonemeConverter(context)
     val styleLoader = StyleLoader(context)
     private val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
-    private val audioPlayer: AudioPlayer = when (SettingsManager.getTtsEngine(context)) {
-        TtsEngine.KOKORO -> KokoroAudioPlayer(viewModelScope) { newState ->
-            _playerState.value = newState
+    private val audioPlayer: AudioPlayer =
+        when (SettingsManager.getTtsEngine(context)) {
+            TtsEngine.KOKORO -> KokoroAudioPlayer(viewModelScope) { newState ->
+                _playerState.value = newState
+            }
+            TtsEngine.KITTEN, TtsEngine.CHATTERBOX -> KittenAudioPlayer(viewModelScope) { newState ->
+                _playerState.value = newState
+            }
         }
-        TtsEngine.KITTEN -> KittenAudioPlayer(viewModelScope) { newState ->
-            _playerState.value = newState
-        }
-    }
 
     private val modelManager = ModelManager(context)
     private var llmInference: LlmInference? = null
@@ -528,22 +531,38 @@ class ChatViewModel(
                     )
                     val engine = SettingsManager.getTtsEngine(context)
                     val ttsStart = SystemClock.elapsedRealtime()
-                    val (data, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                        val (_, tokens) = KittenPhonemizer.phonemize(text)
-                        createKittenAudioFromStyleVector(
-                            tokens = tokens,
-                            voice = mixedVector,
-                            speed = _speed.value,
-                            session = ortSession
-                        )
-                    } else {
-                        val phonemes = phonemeConverter.phonemize(text)
-                        createAudioFromStyleVector(
-                            phonemes = phonemes,
-                            voice = mixedVector,
-                            speed = _speed.value,
-                            session = ortSession
-                        )
+                    val (data, sampleRate) = when (engine) {
+                        TtsEngine.KITTEN -> {
+                            val session = requireNotNull(ortSession) { "Kitten ONNX session not initialized" }
+                            val (_, tokens) = KittenPhonemizer.phonemize(text)
+                            createKittenAudioFromStyleVector(
+                                tokens = tokens,
+                                voice = mixedVector,
+                                speed = _speed.value,
+                                session = session
+                            )
+                        }
+                        TtsEngine.KOKORO -> {
+                            val session = requireNotNull(ortSession) { "Kokoro ONNX session not initialized" }
+                            val phonemes = phonemeConverter.phonemize(text)
+                            createAudioFromStyleVector(
+                                phonemes = phonemes,
+                                voice = mixedVector,
+                                speed = _speed.value,
+                                session = session
+                            )
+                        }
+                        TtsEngine.CHATTERBOX -> {
+                            val chatterbox = ChatterboxRuntime.getOrLoad(context)
+                            val audio = chatterbox.synthesize(
+                                text,
+                                ChatterboxConfig(
+                                    exaggeration = SettingsManager.getChatterboxExaggeration(context),
+                                    referenceVoicePath = SettingsManager.getChatterboxReferenceVoice(context)
+                                )
+                            )
+                            audio to chatterbox.sampleRate()
+                        }
                     }
                     val genMs = SystemClock.elapsedRealtime() - ttsStart
                     if (benchmark) {

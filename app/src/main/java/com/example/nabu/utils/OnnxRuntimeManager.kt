@@ -13,11 +13,13 @@ import java.io.File
 class MainViewModel(private val context: Context) : ViewModel() {
     init {
         viewModelScope.launch {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+            if (SettingsManager.getTtsEngine(context.applicationContext) != TtsEngine.CHATTERBOX) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
         }
     }
 
-    fun getSession() = OnnxRuntimeManager.getSession()
+    fun getSession(): OrtSession? = OnnxRuntimeManager.getSessionOrNull()
 
     fun reinitializeSession(modelPath: String) {
         viewModelScope.launch {
@@ -43,7 +45,10 @@ object OnnxRuntimeManager {
         session = if (modelPath != null) {
             createSession(modelPath)
         } else {
-            createSession(context)
+            when (SettingsManager.getTtsEngine(context)) {
+                TtsEngine.CHATTERBOX -> null
+                else -> createSession(context)
+            }
         }
     }
 
@@ -69,6 +74,7 @@ object OnnxRuntimeManager {
             TtsEngine.KITTEN -> context.assets.open("kitten_tts/kitten_tts_nano_v0_1.onnx").use { stream ->
                 environment!!.createSession(stream.readBytes(), options)
             }
+            TtsEngine.CHATTERBOX -> throw UnsupportedOperationException("Chatterbox uses dedicated runtime initialization")
         }
     }
 
@@ -83,11 +89,12 @@ object OnnxRuntimeManager {
     }
 
 
-    fun getSession() = requireNotNull(session) { "ONNX Session not initialized" }
+    fun getSession(): OrtSession = requireNotNull(session) { "ONNX Session not initialized" }
+
+    fun getSessionOrNull(): OrtSession? = session
 
     fun close() {
         session?.close()
         environment?.close()
     }
 }
-

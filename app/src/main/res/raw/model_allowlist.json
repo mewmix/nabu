@@ -26,5 +26,12 @@
     "repo": "litert-community/Qwen2.5-1.5B-Instruct",
     "downloadUrl": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
     "gated": false
+  },
+  "chatterbox-en": {
+    "name": "Chatterbox (English, ONNX)",
+    "description": "English Chatterbox-ONNX speech synthesis pack",
+    "repo": "onnx-community/chatterbox-onnx",
+    "downloadUrl": "https://huggingface.co/onnx-community/chatterbox-onnx",
+    "gated": false
   }
 }

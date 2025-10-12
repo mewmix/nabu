@@ -54,7 +54,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
                 _playerState.value = state
                 appContext?.let { PlaybackNotification.update(it, state) }
             }
-            TtsEngine.KITTEN -> KittenAudioPlayer(viewModelScope) { state ->
+            TtsEngine.KITTEN, TtsEngine.CHATTERBOX -> KittenAudioPlayer(viewModelScope) { state ->
                 _playerState.value = state
                 appContext?.let { PlaybackNotification.update(it, state) }
             }
@@ -80,7 +80,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun startPlayback(
-        session: OrtSession,
+        session: OrtSession?,
         phonemeConverter: PhonemeConverter,
         styleLoader: StyleLoader,
         selectedStyles: List<String>,
@@ -106,7 +106,11 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         } else {
             bookUri?.lastPathSegment ?: "unknown"
         }
-        val style = selectedStyles.joinToString("+") { it.uppercase() }
+        val style = if (engine == TtsEngine.CHATTERBOX) {
+            "Chatterbox"
+        } else {
+            selectedStyles.joinToString("+") { it.uppercase() }
+        }
         PlaybackNotification.show(appContext!!, true, target, style)
         playJob = playBook(
             scope = viewModelScope,

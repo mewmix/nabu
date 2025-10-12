@@ -3,6 +3,8 @@ package com.example.nabu.utils
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.net.Uri
+import com.example.nabu.tts.chatterbox.ChatterboxConfig
+import com.example.nabu.tts.chatterbox.ChatterboxRuntime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,7 +17,7 @@ import java.io.File
 
 fun playBook(
     scope: CoroutineScope,
-    session: OrtSession,
+    session: OrtSession?,
     phonemeConverter: PhonemeConverter,
     styleLoader: StyleLoader,
     selectedStyles: List<String>,
@@ -35,7 +37,8 @@ fun playBook(
         DebugLogger.log("Starting playbook from line $startLine")
         var completed = true
 
-        val mixedVector = mixStyles(
+        val engine = SettingsManager.getTtsEngine(context)
+        val voiceVector = if (engine == TtsEngine.CHATTERBOX) null else mixStyles(
             styleLoader = styleLoader,
             styles = selectedStyles,
             weights = weights,
@@ -50,35 +53,51 @@ fun playBook(
                 }
             }
             val line = lines[index]
-            val engine = SettingsManager.getTtsEngine(context)
-            return if (engine == TtsEngine.KITTEN) {
-                val (_, tokens) = KittenPhonemizer.phonemize(line)
-                val (audio, _) = createKittenAudioFromStyleVector(
-                    tokens = tokens,
-                    voice = mixedVector,
-                    speed = speed,
-                    session = session,
-                )
-                audio
-            } else {
-                val phonemes = phonemeConverter.phonemize(line)
-                val chunks = mutableListOf<FloatArray>()
-                createAudioFlowFromStyleVector(
-                    phonemes = phonemes,
-                    voice = mixedVector,
-                    speed = speed,
-                    session = session,
-                ).collect { chunk ->
-                    chunks.add(chunk)
+            return when (engine) {
+                TtsEngine.KITTEN -> {
+                    val sessionNonNull = requireNotNull(session) { "Kitten ONNX session not initialized" }
+                    val vector = requireNotNull(voiceVector) { "Kitten voice vector missing" }
+                    val (_, tokens) = KittenPhonemizer.phonemize(line)
+                    val (audio, _) = createKittenAudioFromStyleVector(
+                        tokens = tokens,
+                        voice = vector,
+                        speed = speed,
+                        session = sessionNonNull,
+                    )
+                    audio
                 }
-                val totalSize = chunks.sumOf { it.size }
-                val audio = FloatArray(totalSize)
-                var pos = 0
-                for (chunk in chunks) {
-                    chunk.copyInto(audio, pos)
-                    pos += chunk.size
+                TtsEngine.KOKORO -> {
+                    val sessionNonNull = requireNotNull(session) { "Kokoro ONNX session not initialized" }
+                    val vector = requireNotNull(voiceVector) { "Kokoro voice vector missing" }
+                    val phonemes = phonemeConverter.phonemize(line)
+                    val chunks = mutableListOf<FloatArray>()
+                    createAudioFlowFromStyleVector(
+                        phonemes = phonemes,
+                        voice = vector,
+                        speed = speed,
+                        session = sessionNonNull,
+                    ).collect { chunk ->
+                        chunks.add(chunk)
+                    }
+                    val totalSize = chunks.sumOf { it.size }
+                    val audio = FloatArray(totalSize)
+                    var pos = 0
+                    for (chunk in chunks) {
+                        chunk.copyInto(audio, pos)
+                        pos += chunk.size
+                    }
+                    audio
                 }
-                audio
+                TtsEngine.CHATTERBOX -> {
+                    val chatterbox = ChatterboxRuntime.getOrLoad(context)
+                    chatterbox.synthesize(
+                        line,
+                        ChatterboxConfig(
+                            exaggeration = SettingsManager.getChatterboxExaggeration(context),
+                            referenceVoicePath = SettingsManager.getChatterboxReferenceVoice(context)
+                        )
+                    )
+                }
             }
         }
 
@@ -134,4 +153,3 @@ fun playBook(
         }
     }
 }
-

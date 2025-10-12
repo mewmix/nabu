@@ -23,6 +23,25 @@ class ModelDownloader(
 
     fun downloadModel(model: Model) {
         scope.launch {
+            if (model.id == "chatterbox-en") {
+                try {
+                    DebugLogger.log("ModelDownloader: Installing Chatterbox assets")
+                    _progress.value = _progress.value.toMutableMap().apply { put(model.id, 0f) }
+                    com.example.nabu.tts.chatterbox.ChatterboxInstaller.ensureInstalled(context) { progress ->
+                        _progress.value = _progress.value.toMutableMap().apply { put(model.id, progress) }
+                    }
+                    model.isDownloaded = true
+                    model.hasPartial = false
+                    DebugLogger.log("ModelDownloader: Chatterbox assets ready")
+                } catch (e: Exception) {
+                    model.hasPartial = false
+                    DebugLogger.log("ModelDownloader: Error installing Chatterbox: ${e.message}")
+                } finally {
+                    _progress.value = _progress.value.toMutableMap().apply { remove(model.id) }
+                }
+                return@launch
+            }
+
             val token = userPreferencesRepository.hfToken.first()
             val modelDir = File(context.filesDir, "models")
             if (!modelDir.exists()) modelDir.mkdirs()

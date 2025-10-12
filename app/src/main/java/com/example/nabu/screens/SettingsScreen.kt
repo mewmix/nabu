@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.nabu.tts.chatterbox.ChatterboxRuntime
 import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.OnnxRuntimeManager
@@ -36,11 +37,16 @@ fun SettingsScreen() {
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
+    var chatterboxNnapi by remember { mutableStateOf(SettingsManager.isChatterboxNnapi(context)) }
     var expanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(engine) {
-        withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        if (engine == TtsEngine.CHATTERBOX) {
+            chatterboxNnapi = SettingsManager.isChatterboxNnapi(context)
+        } else {
+            withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
         }
     }
 
@@ -74,7 +80,7 @@ fun SettingsScreen() {
                 onExpandedChange = { expanded = it }
             ) {
                 TextField(
-                    value = engine.name,
+                    value = engine.displayName,
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("TTS Engine") },
@@ -87,7 +93,7 @@ fun SettingsScreen() {
                 ) {
                     TtsEngine.values().forEach { option ->
                         DropdownMenuItem(
-                            text = { Text(option.name) },
+                            text = { Text(option.displayName) },
                             onClick = {
                                 engine = option
                                 SettingsManager.setTtsEngine(context, option)
@@ -96,6 +102,18 @@ fun SettingsScreen() {
                         )
                     }
                 }
+            }
+
+            if (engine == TtsEngine.CHATTERBOX) {
+                SwitchToggle(
+                    checked = chatterboxNnapi,
+                    onToggle = {
+                        chatterboxNnapi = it
+                        SettingsManager.setChatterboxNnapi(context, it)
+                        ChatterboxRuntime.shutdown()
+                    },
+                    label = "Use NNAPI acceleration"
+                )
             }
         }
     }

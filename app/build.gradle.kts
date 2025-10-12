@@ -79,7 +79,7 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
     implementation("org.jetbrains.bio:npy:0.3.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
