@@ -1,0 +1,261 @@
+name: linux-gpu
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+    paths:
+      - '.github/workflows/linux-gpu.yaml'
+      - '.github/scripts/test-online-transducer.sh'
+      - '.github/scripts/test-online-paraformer.sh'
+      - '.github/scripts/test-offline-transducer.sh'
+      - '.github/scripts/test-offline-ctc.sh'
+      - '.github/scripts/test-online-ctc.sh'
+      - '.github/scripts/test-offline-tts.sh'
+      - 'cmake/**'
+      - 'sherpa-onnx/csrc/*'
+      - 'sherpa-onnx/c-api/*'
+      - 'c-api-examples/**'
+
+  workflow_dispatch:
+
+concurrency:
+  group: linux-gpu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux_gpu:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.build_type }} ${{ matrix.onnxruntime_version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # build_type: [Release, Debug]
+        build_type: [Release]
+        onnxruntime_version: ["1.17.1", "1.22.0"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: Build sherpa-onnx
+        uses: addnab/docker-run-action@v3
+        with:
+            image: quay.io/pypa/manylinux_2_28_x86_64
+            options: |
+              --volume ${{ github.workspace }}/:/home/runner/work/sherpa-onnx/sherpa-onnx
+            shell: bash
+            run: |
+              uname -a
+              gcc --version
+              cmake --version
+              cat /etc/*release
+              id
+              pwd
+
+              cd /home/runner/work/sherpa-onnx/sherpa-onnx
+
+              onnxruntime_version=${{ matrix.onnxruntime_version }}
+              if [[ $onnxruntime_version == "1.22.0" ]]; then
+                curl -SL -O https://github.com/csukuangfj/onnxruntime-libs/releases/download/v1.22.0/onnxruntime-linux-x64-gpu-1.22.0-patched.zip
+                unzip  onnxruntime-linux-x64-gpu-1.22.0-patched.zip
+
+                export SHERPA_ONNXRUNTIME_LIB_DIR=$PWD/onnxruntime-linux-x64-gpu-1.22.0-patched/lib
+                export SHERPA_ONNXRUNTIME_INCLUDE_DIR=$PWD/onnxruntime-linux-x64-gpu-1.22.0-patched/include
+
+                ls -lh /home/runner/work/sherpa-onnx/sherpa-onnx/onnxruntime-linux-x64-gpu-1.22.0-patched/lib/libonnxruntime.so
+              fi
+
+              git clone --depth 1 --branch v1.2.12 https://github.com/alsa-project/alsa-lib
+              pushd alsa-lib
+              ./gitcompile
+              popd
+
+              export CPLUS_INCLUDE_PATH=$PWD/alsa-lib/include:$CPLUS_INCLUDE_PATH
+              export C_INCLUDE_PATH=$PWD/alsa-lib/include:$C_INCLUDE_PATH
+              export SHERPA_ONNX_ALSA_LIB_DIR=$PWD/alsa-lib/src/.libs
+
+              p=$PWD
+
+              mkdir build
+              cd build
+
+              cmake \
+                -DALSA_INCLUDE_DIR=$p/alsa-lib/include \
+                -DALSA_LIBRARY=$p/alsa-lib/src/.libs/libasound.so \
+                -D CMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+                -D CMAKE_INSTALL_PREFIX=./install \
+                -D BUILD_SHARED_LIBS=ON \
+                -D SHERPA_ONNX_ENABLE_GPU=ON \
+                ..
+
+              make -j2
+              make install
+
+              ls -lh lib
+              ls -lh bin
+
+              echo "----"
+              ls -lh install/lib
+
+              echo "----"
+              ls -lh install/bin
+
+      - name: Display dependencies of sherpa-onnx for linux
+        shell: bash
+        run: |
+          du -h -d1 .
+          sudo chown -R $USER ./build
+          ls -lh build/bin
+          ls -lh build/_deps/onnxruntime-src/lib/ || true
+
+          echo "strip"
+          strip build/bin/*
+          echo "after strip"
+          ls -lh build/bin
+
+          file build/bin/sherpa-onnx
+          file build/bin/sherpa-onnx
+          ls -lh build/bin/sherpa-onnx
+          readelf -d build/bin/sherpa-onnx
+
+          rm -fv build/install/include/cargs.h
+          rm -fv build/install/lib/cargs.h
+          rm -fv build/install/lib/libcargs.so
+          rm -rfv build/install/lib/pkgconfig
+
+          strings build/install/lib/*.so | grep "^GLIBC_"
+
+      - name: Copy files
+        shell: bash
+        run: |
+          SHERPA_ONNX_VERSION=v$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)
+
+          dst=sherpa-onnx-${SHERPA_ONNX_VERSION}-linux-x64-gpu
+
+          onnxruntime_version=${{ matrix.onnxruntime_version }}
+          if [[ $onnxruntime_version == "1.22.0" ]]; then
+            dst=sherpa-onnx-${SHERPA_ONNX_VERSION}-cuda-12.x-cudnn-9.x-linux-x64-gpu
+          fi
+
+          mkdir $dst
+
+          cp -a build/install/bin $dst/
+          cp -a build/install/lib $dst/
+          cp -a build/install/include $dst/
+
+          tree $dst
+
+          tar cjvf ${dst}.tar.bz2 $dst
+
+      - name: Release pre-compiled binaries and libs for linux x64
+        if: github.repository_owner == 'csukuangfj' && github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file_glob: true
+          overwrite: true
+          file: sherpa-onnx-*gpu.tar.bz2
+          repo_name: k2-fsa/sherpa-onnx
+          repo_token: ${{ secrets.UPLOAD_GH_SHERPA_ONNX_TOKEN }}
+          tag: v1.12.13
+
+      - name: Release pre-compiled binaries and libs for linux x64
+        if: github.repository_owner == 'k2-fsa' && github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file_glob: true
+          overwrite: true
+          file: sherpa-onnx-*gpu.tar.bz2
+
+      - name: Display dependencies of sherpa-onnx for linux
+        shell: bash
+        run: |
+          file build/bin/sherpa-onnx
+          readelf -d build/bin/sherpa-onnx
+
+      - name: Test spoken language identification
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx-offline-language-identification
+
+          .github/scripts/test-spoken-language-identification.sh
+
+      - name: Test online CTC
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx
+
+          .github/scripts/test-online-ctc.sh
+
+      - name: Test offline TTS
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx-offline-tts
+
+          .github/scripts/test-offline-tts.sh
+
+      - name: Test online paraformer
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx
+
+          .github/scripts/test-online-paraformer.sh
+
+
+      - name: Test offline Whisper
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx-offline
+
+          .github/scripts/test-offline-whisper.sh
+
+      - name: Test offline CTC
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx-offline
+
+          .github/scripts/test-offline-ctc.sh
+
+      - name: Test offline transducer
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx-offline
+
+          .github/scripts/test-offline-transducer.sh
+
+      - name: Test online transducer
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx
+
+          .github/scripts/test-online-transducer.sh
+
+      - name: Test online transducer (C API)
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=decode-file-c-api
+
+          .github/scripts/test-online-transducer.sh
+
+
+
+

@@ -1,0 +1,181 @@
+# Modified from https://github.com/Tencent/ncnn/blob/master/.github/workflows/linux-arm-cpu-gcc.yml
+name: arm-linux-gnueabihf
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/arm-linux-gnueabihf.yaml'
+      - 'cmake/**'
+      - 'sherpa-onnx/csrc/*'
+      - 'sherpa-onnx/c-api/*'
+      - 'toolchains/arm-linux-gnueabihf.toolchain.cmake'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+  workflow_dispatch:
+
+concurrency:
+  group: arm-linux-gnueabihf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arm_linux_gnueabihf:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} ${{ matrix.lib_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        lib_type: [static, shared]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}-arm-${{ matrix.lib_type }}
+
+      - name: cache-toolchain
+        id: cache-toolchain
+        uses: actions/cache@v4
+        with:
+          path: toolchain
+          key: gcc-arm-9.2-2019.12-x86_64-arm-none-linux-gnueabihf
+
+      - name: Download toolchain
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          git lfs install
+          export GIT_CLONE_PROTECTION_ACTIVE=false
+          git clone https://huggingface.co/csukuangfj/arm-linux-gcc
+          ls -lh arm-linux-gcc
+
+          mkdir $GITHUB_WORKSPACE/toolchain
+          tar xvf ./arm-linux-gcc/gcc-arm-9.2-2019.12-x86_64-arm-none-linux-gnueabihf.tar.xz --strip-components 1 -C $GITHUB_WORKSPACE/toolchain
+
+      - name: Display toolchain info
+        shell: bash
+        run: |
+          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          arm-none-linux-gnueabihf-gcc --version
+
+      - name: build arm-linux-gnueabihf
+        shell: bash
+        run: |
+          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+
+          export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+
+          cmake --version
+
+          lib_type=${{ matrix.lib_type }}
+
+          if [[ $lib_type == "shared" ]]; then
+            export BUILD_SHARED_LIBS=ON
+          else
+            export BUILD_SHARED_LIBS=OFF
+          fi
+
+          ./build-arm-linux-gnueabihf.sh
+
+          ls -lh build-arm-linux-gnueabihf/bin
+          ls -lh build-arm-linux-gnueabihf/lib
+
+          file build-arm-linux-gnueabihf/bin/sherpa-onnx
+
+      - name: Copy files
+        shell: bash
+        run: |
+          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          arm-none-linux-gnueabihf-strip --version
+
+          SHERPA_ONNX_VERSION=v$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)
+
+          dst=sherpa-onnx-${SHERPA_ONNX_VERSION}-linux-arm-gnueabihf-${{ matrix.lib_type }}
+          mkdir $dst
+
+          ls -lh build-arm-linux-gnueabihf/install/lib
+
+          cp -a build-arm-linux-gnueabihf/install/bin $dst/
+          ls -lh $dst/bin/*
+          arm-none-linux-gnueabihf-strip $dst/bin/*
+          ls -lh $dst
+
+          lib_type=${{ matrix.lib_type }}
+          if [[ $lib_type == "shared" ]]; then
+            cp -a build-arm-linux-gnueabihf/install/lib $dst/
+            rm -v $dst/lib/libasound.so
+          fi
+
+          tree $dst
+
+          tar cjvf ${dst}.tar.bz2 $dst
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.lib_type == 'shared'
+        with:
+          name: sherpa-onnx-linux-arm-gnueabihf-shared
+          path: sherpa-onnx-*linux-arm-gnueabihf-shared.tar.bz2
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.lib_type == 'static'
+        with:
+          name: sherpa-onnx-linux-arm-gnueabihf-static
+          path: sherpa-onnx-*linux-arm-gnueabihf-static.tar.bz2
+
+      # https://huggingface.co/docs/hub/spaces-github-actions
+      - name: Publish to huggingface
+        if: (github.repository_owner == 'csukuangfj' || github.repository_owner == 'k2-fsa') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 20
+          timeout_seconds: 200
+          shell: bash
+          command: |
+            SHERPA_ONNX_VERSION=$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)
+            git config --global user.email "csukuangfj@gmail.com"
+            git config --global user.name "Fangjun Kuang"
+
+            rm -rf huggingface
+            GIT_LFS_SKIP_SMUDGE=1 git clone https://csukuangfj:$HF_TOKEN@huggingface.co/csukuangfj/sherpa-onnx-libs huggingface
+
+            cd huggingface
+            dst=arm32/$SHERPA_ONNX_VERSION
+            mkdir -p $dst
+
+            cp -v ../sherpa-onnx-*.tar.bz2 $dst/
+
+            git status
+            git lfs track "*.bz2"
+
+            git add .
+
+            git commit -m "upload sherpa-onnx-${SHERPA_ONNX_VERSION}"
+
+            git push https://csukuangfj:$HF_TOKEN@huggingface.co/csukuangfj/sherpa-onnx-libs main
+
+      - name: Release pre-compiled binaries and libs for arm linux gnueabihf ${{ matrix.lib_type }}
+        if: (github.repository_owner == 'csukuangfj' || github.repository_owner == 'k2-fsa') && github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file_glob: true
+          overwrite: true
+          file: sherpa-onnx-*linux-arm-gnueabihf*.tar.bz2
+          # repo_name: k2-fsa/sherpa-onnx
+          # repo_token: ${{ secrets.UPLOAD_GH_SHERPA_ONNX_TOKEN }}
+          # tag: v1.12.0

@@ -1,0 +1,184 @@
+# Modified from https://github.com/Tencent/ncnn/blob/master/.github/workflows/linux-arm-cpu-gcc.yml
+name: aarch64-linux-gnu-static
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+    paths:
+      - '.github/workflows/aarch64-linux-gnu-static.yaml'
+      - 'cmake/**'
+      - 'sherpa-onnx/csrc/*'
+      - 'sherpa-onnx/c-api/*'
+      - 'toolchains/aarch64-linux-gnu.toolchain.cmake'
+
+  workflow_dispatch:
+
+concurrency:
+  group: aarch64-linux-gnu-static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aarch64_linux_gnu_static:
+    runs-on: ${{ matrix.os }}
+    name: aarch64 static lib test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04-arm]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: Build sherpa-onnx
+        uses: addnab/docker-run-action@v3
+        with:
+            image: quay.io/pypa/manylinux2014_aarch64
+            options: |
+              --volume ${{ github.workspace }}/:/k2-fsa/sherpa-onnx
+            shell: bash
+            run: |
+              echo "config: ${{ matrix.config }}"
+              uname -a
+              which gcc
+
+              gcc --version
+              g++ --version
+
+              echo "pwd"
+
+              ls -lh
+
+              cd /k2-fsa/sherpa-onnx/
+
+              git clone --depth 1 --branch v1.2.12 https://github.com/alsa-project/alsa-lib
+              pushd alsa-lib
+              ./gitcompile
+              popd
+
+              export CPLUS_INCLUDE_PATH=$PWD/alsa-lib/include:$CPLUS_INCLUDE_PATH
+              export C_INCLUDE_PATH=$PWD/alsa-lib/include:$C_INCLUDE_PATH
+              export SHERPA_ONNX_ALSA_LIB_DIR=$PWD/alsa-lib/src/.libs
+
+              p=$PWD
+
+              mkdir build
+              cd build
+              cmake \
+                -DALSA_INCLUDE_DIR=$p/alsa-lib/include \
+                -DALSA_LIBRARY=$p/alsa-lib/src/.libs/libasound.so \
+                -DBUILD_SHARED_LIBS=OFF \
+                -DCMAKE_INSTALL_PREFIX=./install \
+                ..
+
+              make -j 4
+
+              make install
+
+              cp bin/sense-voice-simulate-streaming-alsa-cxx-api install/bin
+              cp bin/zipformer-ctc-simulate-streaming-alsa-cxx-api install/bin
+
+              ls -lh install/lib
+
+              rm -rf install/lib/pkgconfig
+              rm -fv install/lib/cargs.h
+
+      - name: Copy files
+        shell: bash
+        run: |
+          SHERPA_ONNX_VERSION=v$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)
+
+          dst=sherpa-onnx-${SHERPA_ONNX_VERSION}-linux-aarch64-static
+          mkdir $dst
+
+          ls -lh build/install/lib
+
+          cp -a build/install/bin $dst/
+          ls -lh $dst/bin/
+          echo "strip"
+          strip $dst/bin/*
+          ls -lh $dst/bin/
+
+          tree $dst
+
+          tar cjvf ${dst}.tar.bz2 $dst
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sherpa-onnx-linux-aarch64-static
+          path: sherpa-onnx-*linux-aarch64-static.tar.bz2
+
+      # https://huggingface.co/docs/hub/spaces-github-actions
+      - name: Publish to huggingface
+        if: (github.repository_owner == 'csukuangfj' || github.repository_owner == 'k2-fsa') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 20
+          timeout_seconds: 200
+          shell: bash
+          command: |
+            SHERPA_ONNX_VERSION=$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)
+            git config --global user.email "csukuangfj@gmail.com"
+            git config --global user.name "Fangjun Kuang"
+
+            rm -rf huggingface
+            export GIT_CLONE_PROTECTION_ACTIVE=false
+            GIT_LFS_SKIP_SMUDGE=1 git clone https://csukuangfj:$HF_TOKEN@huggingface.co/csukuangfj/sherpa-onnx-libs huggingface
+
+            cd huggingface
+            dst=aarch64/$SHERPA_ONNX_VERSION
+            mkdir -p $dst
+
+            cp -v ../sherpa-onnx-*-static.tar.bz2 $dst/
+
+            git status
+            git lfs track "*.bz2"
+
+            git add .
+
+            git commit -m "upload sherpa-onnx-${SHERPA_ONNX_VERSION}-linux-aarch64-static.tar.bz2"
+
+            git push https://csukuangfj:$HF_TOKEN@huggingface.co/csukuangfj/sherpa-onnx-libs main
+
+      - name: Release pre-compiled binaries and libs for aarch64 linux
+        if: github.repository_owner == 'k2-fsa' && github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file_glob: true
+          overwrite: true
+          file: sherpa-onnx-*linux-aarch64*.tar.bz2
+
+      - name: Release pre-compiled binaries and libs for aarch64 linux
+        if: github.repository_owner == 'csukuangfj' && github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file_glob: true
+          overwrite: true
+          file: sherpa-onnx-*linux-aarch64*.tar.bz2
+          # repo_name: k2-fsa/sherpa-onnx
+          # repo_token: ${{ secrets.UPLOAD_GH_SHERPA_ONNX_TOKEN }}
+          # tag: v1.11.5
+
+      - name: Test offline Moonshine
+        if: matrix.build_type != 'Debug'
+        shell: bash
+        run: |
+          du -h -d1 .
+          export PATH=$PWD/build/bin:$PATH
+          export EXE=sherpa-onnx-offline
+
+          readelf -d build/bin/sherpa-onnx-offline
+
+          .github/scripts/test-offline-moonshine.sh

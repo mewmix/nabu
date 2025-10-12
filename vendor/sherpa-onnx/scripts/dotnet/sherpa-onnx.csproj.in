@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <OutputType>Library</OutputType>
+    <LangVersion>10.0</LangVersion>
+    <TargetFrameworks>net8.0;net7.0;net6.0;net45;net40;net35;net20;netstandard2.0</TargetFrameworks>
+    <RuntimeIdentifiers>linux-x64;linux-arm64;osx-x64;osx-arm64;win-x64;win-x86;win-arm64</RuntimeIdentifiers>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>sherpa-onnx</AssemblyName>
+    <Version>{{ version }}</Version>
+
+    <PackageProjectUrl>https://github.com/k2-fsa/sherpa-onnx</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/k2-fsa/sherpa-onnx</RepositoryUrl>
+    <PackageTags>speech recognition voice audio stt asr speech-to-text AI offline
+      privacy open-sourced next-gen-kaldi k2 kaldi2 sherpa-onnx</PackageTags>
+
+    <Authors>The Next-gen Kaldi development team</Authors>
+    <Owners>The Next-gen Kaldi development team</Owners>
+    <Company>Xiaomi Corporation</Company>
+    <Copyright>Copyright 2019-2023 Xiaomi Corporation</Copyright>
+    <Description>sherpa-onnx is an open-source real-time speech recognition toolkit developed
+    by the Next-gen Kaldi team. It supports streaming recognition on a variety of
+    platforms such as Android, iOS, Raspberry, Linux, Windows, macOS, etc.
+
+    It does not require Internet connection during recognition.
+
+    See the documentation https://k2-fsa.github.io/sherpa/onnx/index.html
+    for details.
+    </Description>
+
+    <!-- Pack Option -->
+    <Title>sherpa-onnx v{{ version }}</Title>
+    <PackageId>org.k2fsa.sherpa.onnx</PackageId>
+
+    <!-- Signing -->
+    <SignAssembly>false</SignAssembly>
+    <PublicSign>false</PublicSign>
+    <DelaySign>false</DelaySign>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RestoreSources>{{ packages_dir }};$(RestoreSources);https://api.nuget.org/v3/index.json</RestoreSources>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.linux-x64" Version="{{ version }}" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.linux-arm64" Version="{{ version }}" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.osx-x64"   Version="{{ version }}" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.osx-arm64" Version="{{ version }}" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.win-x64"   Version="{{ version }}" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.win-x86"   Version="{{ version }}" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.win-arm64" Version="{{ version }}" />
+  </ItemGroup>
+
+</Project>

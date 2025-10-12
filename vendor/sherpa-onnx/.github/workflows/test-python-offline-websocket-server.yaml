@@ -1,0 +1,225 @@
+name: Python offline websocket server
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/test-python-offline-websocket-server.yaml'
+      - 'cmake/**'
+      - 'sherpa-onnx/csrc/*'
+      - 'sherpa-onnx/python/**'
+
+  workflow_dispatch:
+
+concurrency:
+  group: python-offline-websocket-server-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python_offline_websocket_server:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} ${{ matrix.python-version }} ${{ matrix.model_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04, windows-latest, macos-latest, macos-14]
+        python-version: ["3.10"]
+        model_type: ["transducer", "paraformer", "nemo_ctc", "whisper", "tdnn"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}-python-${{ matrix.python-version }}
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          python3 -m pip install --upgrade pip numpy pypinyin sentencepiece setuptools wheel
+
+      - name: Install sherpa-onnx
+        shell: bash
+        run: |
+          export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake --version
+
+          python3 -m pip install .
+          python3 -m pip install websockets
+
+      - name: Start server for transducer models
+        if: matrix.model_type == 'transducer'
+        shell: bash
+        run: |
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-en-2023-06-26.tar.bz2
+          tar xvf sherpa-onnx-zipformer-en-2023-06-26.tar.bz2
+          rm sherpa-onnx-zipformer-en-2023-06-26.tar.bz2
+
+          python3 ./python-api-examples/non_streaming_server.py \
+            --encoder ./sherpa-onnx-zipformer-en-2023-06-26/encoder-epoch-99-avg-1.onnx \
+            --decoder ./sherpa-onnx-zipformer-en-2023-06-26/decoder-epoch-99-avg-1.onnx \
+            --joiner ./sherpa-onnx-zipformer-en-2023-06-26/joiner-epoch-99-avg-1.onnx \
+            --tokens ./sherpa-onnx-zipformer-en-2023-06-26/tokens.txt &
+
+          echo "sleep 10 seconds to wait the server start"
+          sleep 10
+
+      - name: Start client for transducer models
+        if: matrix.model_type == 'transducer'
+        shell: bash
+        run: |
+          python3 ./python-api-examples/offline-websocket-client-decode-files-paralell.py \
+            ./sherpa-onnx-zipformer-en-2023-06-26/test_wavs/0.wav \
+            ./sherpa-onnx-zipformer-en-2023-06-26/test_wavs/1.wav \
+            ./sherpa-onnx-zipformer-en-2023-06-26/test_wavs/8k.wav
+
+          python3 ./python-api-examples/offline-websocket-client-decode-files-sequential.py \
+            ./sherpa-onnx-zipformer-en-2023-06-26/test_wavs/0.wav \
+            ./sherpa-onnx-zipformer-en-2023-06-26/test_wavs/1.wav \
+            ./sherpa-onnx-zipformer-en-2023-06-26/test_wavs/8k.wav
+
+      - name: Start server for paraformer models
+        if: matrix.model_type == 'paraformer' && matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2
+          tar xvf sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2
+          rm sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2
+
+          python3 ./python-api-examples/non_streaming_server.py \
+            --paraformer ./sherpa-onnx-paraformer-zh-2023-09-14/model.int8.onnx \
+            --tokens ./sherpa-onnx-paraformer-zh-2023-09-14/tokens.txt &
+
+          echo "sleep 10 seconds to wait the server start"
+          sleep 10
+
+      - name: Start client for paraformer models
+        if: matrix.model_type == 'paraformer' && matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          python3 ./python-api-examples/offline-websocket-client-decode-files-paralell.py \
+            ./sherpa-onnx-paraformer-zh-2023-09-14/test_wavs/0.wav \
+            ./sherpa-onnx-paraformer-zh-2023-09-14/test_wavs/1.wav \
+            ./sherpa-onnx-paraformer-zh-2023-09-14/test_wavs/2.wav \
+            ./sherpa-onnx-paraformer-zh-2023-09-14/test_wavs/8k.wav
+
+          python3 ./python-api-examples/offline-websocket-client-decode-files-sequential.py \
+            ./sherpa-onnx-paraformer-zh-2023-09-14/test_wavs/0.wav \
+            ./sherpa-onnx-paraformer-zh-2023-09-14/test_wavs/1.wav \
+            ./sherpa-onnx-paraformer-zh-2023-09-14/test_wavs/2.wav \
+            ./sherpa-onnx-paraformer-zh-2023-09-14/test_wavs/8k.wav
+
+      - name: Start server for nemo_ctc models
+        if: matrix.model_type == 'nemo_ctc'
+        shell: bash
+        run: |
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-ctc-en-conformer-medium.tar.bz2
+          tar xvf sherpa-onnx-nemo-ctc-en-conformer-medium.tar.bz2
+          rm sherpa-onnx-nemo-ctc-en-conformer-medium.tar.bz2
+
+          python3 ./python-api-examples/non_streaming_server.py \
+            --nemo-ctc ./sherpa-onnx-nemo-ctc-en-conformer-medium/model.onnx \
+            --tokens ./sherpa-onnx-nemo-ctc-en-conformer-medium/tokens.txt &
+
+          echo "sleep 10 seconds to wait the server start"
+          sleep 10
+
+      - name: Start client for nemo_ctc models
+        if: matrix.model_type == 'nemo_ctc'
+        shell: bash
+        run: |
+          python3 ./python-api-examples/offline-websocket-client-decode-files-paralell.py \
+            ./sherpa-onnx-nemo-ctc-en-conformer-medium/test_wavs/0.wav \
+            ./sherpa-onnx-nemo-ctc-en-conformer-medium/test_wavs/1.wav \
+            ./sherpa-onnx-nemo-ctc-en-conformer-medium/test_wavs/8k.wav
+
+          python3 ./python-api-examples/offline-websocket-client-decode-files-sequential.py \
+            ./sherpa-onnx-nemo-ctc-en-conformer-medium/test_wavs/0.wav \
+            ./sherpa-onnx-nemo-ctc-en-conformer-medium/test_wavs/1.wav \
+            ./sherpa-onnx-nemo-ctc-en-conformer-medium/test_wavs/8k.wav
+
+      - name: Start server for whisper models
+        if: matrix.model_type == 'whisper'
+        shell: bash
+        run: |
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.en.tar.bz2
+          tar xvf sherpa-onnx-whisper-tiny.en.tar.bz2
+          rm sherpa-onnx-whisper-tiny.en.tar.bz2
+
+          python3 ./python-api-examples/non_streaming_server.py \
+            --whisper-encoder=./sherpa-onnx-whisper-tiny.en/tiny.en-encoder.onnx \
+            --whisper-decoder=./sherpa-onnx-whisper-tiny.en/tiny.en-decoder.onnx \
+            --tokens=./sherpa-onnx-whisper-tiny.en/tiny.en-tokens.txt &
+
+          echo "sleep 10 seconds to wait the server start"
+          sleep 10
+
+      - name: Start client for whisper models
+        if: matrix.model_type == 'whisper'
+        shell: bash
+        run: |
+          python3 ./python-api-examples/offline-websocket-client-decode-files-paralell.py \
+            ./sherpa-onnx-whisper-tiny.en/test_wavs/0.wav \
+            ./sherpa-onnx-whisper-tiny.en/test_wavs/1.wav \
+            ./sherpa-onnx-whisper-tiny.en/test_wavs/8k.wav
+
+          python3 ./python-api-examples/offline-websocket-client-decode-files-sequential.py \
+            ./sherpa-onnx-whisper-tiny.en/test_wavs/0.wav \
+            ./sherpa-onnx-whisper-tiny.en/test_wavs/1.wav \
+            ./sherpa-onnx-whisper-tiny.en/test_wavs/8k.wav
+
+      - name: Start server for tdnn models
+        if: matrix.model_type == 'tdnn'
+        shell: bash
+        run: |
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-tdnn-yesno.tar.bz2
+          tar xvf sherpa-onnx-tdnn-yesno.tar.bz2
+          rm sherpa-onnx-tdnn-yesno.tar.bz2
+
+          python3 ./python-api-examples/non_streaming_server.py \
+            --tdnn-model=./sherpa-onnx-tdnn-yesno/model-epoch-14-avg-2.onnx \
+            --tokens=./sherpa-onnx-tdnn-yesno/tokens.txt \
+            --sample-rate=8000 \
+            --feat-dim=23 &
+
+          echo "sleep 10 seconds to wait the server start"
+          sleep 10
+
+      - name: Start client for tdnn models
+        if: matrix.model_type == 'tdnn'
+        shell: bash
+        run: |
+          python3 ./python-api-examples/offline-websocket-client-decode-files-paralell.py \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_0_1_0_0_0_1.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_0_0_0_1_0.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_0_0_1_1_1.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_0_1_0_0_1.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_1_0_0_0_1.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_1_0_1_1_0.wav
+
+          python3 ./python-api-examples/offline-websocket-client-decode-files-sequential.py \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_0_1_0_0_0_1.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_0_0_0_1_0.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_0_0_1_1_1.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_0_1_0_0_1.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_1_0_0_0_1.wav \
+            ./sherpa-onnx-tdnn-yesno/test_wavs/0_0_1_1_0_1_1_0.wav

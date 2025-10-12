@@ -40,7 +40,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation(platform(libs.androidx.compose.bom))
     implementation("androidx.compose.runtime:runtime")
-    implementation(files("libs/sherpa-onnx.aar"))
+    implementation(files("libs/sherpa-onnx-1.12.14.jar"))
 }
 
 tasks.withType<JavaCompile> {

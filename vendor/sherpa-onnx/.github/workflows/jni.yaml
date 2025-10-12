@@ -1,0 +1,77 @@
+name: jni
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/jni.yaml'
+      - 'cmake/**'
+      - 'kotlin-api-examples/**'
+      - 'sherpa-onnx/csrc/*'
+      - 'sherpa-onnx/jni/*'
+
+  workflow_dispatch:
+
+concurrency:
+  group: jni-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  jni:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-13]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: OS info
+        shell: bash
+        run: |
+          uname -a
+
+      - name: Display kotlin version
+        shell: bash
+        run: |
+          kotlinc -version
+
+      - name: Display java version
+        shell: bash
+        run: |
+          java -version
+          javac -help
+          echo "JAVA_HOME is: ${JAVA_HOME}"
+
+      - name:  Run JNI test
+        shell: bash
+        run: |
+          export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake --version
+
+          cd ./kotlin-api-examples
+          ./run.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tts-files-${{ matrix.os }}
+          path: kotlin-api-examples/test-*.wav

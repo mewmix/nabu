@@ -1,0 +1,10 @@
+*.onnx
+*.config
+*.ort
+*-tokens.txt
+*.bias
+*.weights
+*.weight
+*.*embedding
+_Const*
+onnx__*

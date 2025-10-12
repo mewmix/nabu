@@ -1,0 +1,100 @@
+name: test-dot-net-nuget
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # minute (0-59)
+    # hour (0-23)
+    # day of the month (1-31)
+    # month (1-12)
+    # day of the week (0-6)
+    # nightly build at 23:50 UTC time every day
+    - cron: "50 23 * * *"
+
+concurrency:
+  group: test-dot-net-nuget-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-dot-net-nuget:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: Free space
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          df -h
+          rm -rf /opt/hostedtoolcache
+          df -h
+
+      - name: Free more space
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          # https://github.com/orgs/community/discussions/25678
+          cd /opt
+          find . -maxdepth 1 -mindepth 1 '!' -path ./containerd '!' -path ./actionarchivecache '!' -path ./runner '!' -path ./runner-cache -exec rm -rf '{}' ';'
+
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - name: Free Disk Space (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # this might remove tools that are actually needed,
+          # if set to "true" but frees about 6 GB
+          tool-cache: false
+
+          # all of these default to true, but feel free to set to
+          # "false" if necessary for your workflow
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - name: Check space
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          df -h
+
+      - name: Setup .NET 8.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Check dotnet
+        run: dotnet --info
+
+      - name: Run tests
+        shell: bash
+        run: |
+          .github/scripts/test-dot-net.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dot-net-tts-generated-test-files-${{ matrix.os }}
+          path: tts

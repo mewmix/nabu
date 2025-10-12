@@ -1,0 +1,115 @@
+name: test-nodejs
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/test-nodejs.yaml'
+      - 'cmake/**'
+      - 'sherpa-onnx/csrc/*'
+      - 'sherpa-onnx/c-api/*'
+      - 'scripts/nodejs/**'
+      - 'nodejs-examples/**'
+
+  workflow_dispatch:
+
+concurrency:
+  group: test-nodejs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-nodejs:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest] #, macos-latest] #, windows-2022]
+        python-version: ["3.8"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.build_type }}-wasm-nodejs
+
+      - name: Install emsdk
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.51
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: View emsdk version
+        shell: bash
+        run: |
+          emcc -v
+          echo "--------------------"
+          emcc --check
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Display node version
+        shell: bash
+        run: |
+          node --version
+
+      - name: Build nodejs package
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake --version
+
+          ./build-wasm-simd-nodejs.sh
+          cp -v build-wasm-simd-nodejs/install/bin/wasm/nodejs/*.js ./scripts/nodejs/
+          cp -v build-wasm-simd-nodejs/install/bin/wasm/nodejs/*.wasm ./scripts/nodejs/
+
+      - name: replace files
+        shell: bash
+        run: |
+          cd nodejs-examples
+          files=$(ls -1 *.js)
+          for f in ${files[@]}; do
+            echo $f
+            sed -i.bak s%\'sherpa-onnx\'%\'./index.js\'% $f
+            git status
+          done
+          git diff
+          cp *.js ../scripts/nodejs
+
+      - name: Run tests
+        shell: bash
+        run: |
+          node --version
+          npm --version
+          export d=scripts/nodejs
+          cat $d/index.js
+
+          pushd $d
+          npm install
+          npm install wav
+          popd
+
+          ./.github/scripts/test-nodejs-npm.sh

@@ -1,0 +1,336 @@
+name: run-java-test
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/run-java-test.yaml'
+      - 'cmake/**'
+      - 'java-api-examples/**'
+      - 'sherpa-onnx/csrc/*'
+      - 'sherpa-onnx/jni/*'
+      - 'sherpa-onnx/java-api/**'
+
+  workflow_dispatch:
+
+concurrency:
+  group: run-java-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  run_java_test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-14]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}-java
+
+      - name: OS info
+        shell: bash
+        run: |
+          uname -a
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin' # See 'Supported distributions' for available options
+          java-version: '21'
+
+      - name: Display java version
+        shell: bash
+        run: |
+          java -version
+          java -help
+          echo "----"
+          javac -version
+          javac -help
+          echo "JAVA_HOME is: ${JAVA_HOME}"
+
+          cmake --version
+
+      - name:  Build sherpa-onnx (jar)
+        shell: bash
+        run: |
+          cd sherpa-onnx/java-api/
+          make
+          ls -lh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sherpa-onnx-jar-${{ matrix.os }}
+          path: sherpa-onnx/java-api/build
+
+      - name:  Build sherpa-onnx (C++)
+        shell: bash
+        run: |
+          export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+
+          mkdir build
+          cd build
+
+          cmake \
+            -DSHERPA_ONNX_ENABLE_PYTHON=OFF \
+            -DSHERPA_ONNX_ENABLE_TESTS=OFF \
+            -DSHERPA_ONNX_ENABLE_CHECK=OFF \
+            -DBUILD_SHARED_LIBS=ON \
+            -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF \
+            -DSHERPA_ONNX_ENABLE_BINARY=OFF \
+            -DBUILD_ESPEAK_NG_EXE=OFF \
+            -DSHERPA_ONNX_ENABLE_JNI=ON \
+            ..
+
+            make -j4
+            ls -lh lib
+
+      - name:  Run java version test
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-version-test.sh
+
+      - name:  Run java test (Streaming T-one)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-streaming-decode-file-tone-ctc.sh
+          rm -rf sherpa-onnx-streaming-t-one-*
+
+      - name:  Run java test (Nemo Canary)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-non-streaming-decode-file-nemo-canary.sh
+          rm -rf sherpa-onnx-nemo-*
+
+      - name:  Run java test (Non-streaming SenseVoice with homophone replacer)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-non-streaming-decode-file-sense-voice-with-hr.sh
+          rm -rf sherpa-onnx-sense-*
+          rm -rf dict lexicon.txt replace.fst
+
+      - name:  Run java test (VAD + Non-streaming Dolphin CTC)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-vad-non-streaming-dolphin-ctc.sh
+          rm *.onnx
+          ls -lh *.wav
+          rm *.wav
+          rm -rf sherpa-onnx-dolphin-*
+
+      - name:  Run speech enhancement (GTCRN)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-non-streaming-speech-enhancement-gtcrn.sh
+          ls -lh *.wav
+
+          rm -fv gtcrn_simple.onnx *.wav
+
+      - name:  Run java test (Online add punctuations)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-online-add-punctuation-zh-en.sh
+          # Delete model files to save space
+          rm -rf sherpa-onnx-online-*
+
+      - name:  Run java test (Offline add punctuations)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-offline-add-punctuation-zh-en.sh
+          # Delete model files to save space
+          rm -rf sherpa-onnx-punct-*
+
+      - name:  Run java test (Non-Streaming ASR)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+
+          ./run-non-streaming-decode-file-zipformer-ctc.sh
+          rm -rf sherpa-onnx-zipformer-ctc-*
+
+          ./run-non-streaming-decode-file-dolphin-ctc.sh
+          rm -rf sherpa-onnx-dolphin-*
+
+          ./run-non-streaming-decode-file-moonshine.sh
+          rm -rf sherpa-onnx-moonshine-*
+
+          ./run-non-streaming-decode-file-sense-voice.sh
+          rm -rf sherpa-onnx-sense-voice-*
+
+          ./run-inverse-text-normalization-paraformer.sh
+
+          ./run-non-streaming-decode-file-paraformer.sh
+          rm -rf sherpa-onnx-paraformer-zh-*
+
+          ./run-non-streaming-decode-file-transducer.sh
+          rm -rf sherpa-onnx-zipformer-*
+
+          ./run-non-streaming-decode-file-fire-red-asr.sh
+          rm -rf sherpa-onnx-fire-red-*
+
+          ./run-non-streaming-decode-file-whisper.sh
+
+          ./run-non-streaming-decode-file-whisper-multiple.sh
+          rm -rf sherpa-onnx-whisper-*
+
+          ./run-non-streaming-decode-file-nemo.sh
+          rm -rf sherpa-onnx-nemo-*
+
+      - name:  Run java test (speaker diarization)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-offline-speaker-diarization.sh
+          rm -rfv *.onnx *.wav sherpa-onnx-pyannote-*
+
+      - name:  Run java test (kws)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-kws-from-file.sh
+          rm -rf sherpa-onnx-*
+
+      - name:  Run java test (VAD + Non-streaming SenseVoice)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-vad-non-streaming-sense-voice.sh
+          rm *.onnx
+          ls -lh *.wav
+          rm *.wav
+          rm -rf sherpa-onnx-*
+
+      - name:  Run java test (VAD + Non-streaming Paraformer)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-vad-non-streaming-paraformer.sh
+          rm *.onnx
+          ls -lh *.wav
+          rm *.wav
+          rm -rf sherpa-onnx-*
+
+      - name:  Run java test (ten-vad remove silence)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-ten-vad-remove-silence.sh
+          rm *.onnx
+          ls -lh *.wav
+          rm *.wav
+
+      - name:  Run java test (silero-vad remove silence)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-vad-remove-silence.sh
+          rm *.onnx
+          ls -lh *.wav
+          rm *.wav
+
+      - name:  Run java test (speaker identification)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-speaker-identification.sh
+          # Delete model files to save space
+          rm -rf *.onnx
+          rm -rf sr-data
+
+      - name:  Run java test (audio tagging)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-audio-tagging-zipformer-from-file.sh
+          # Delete model files to save space
+          rm -rf sherpa-onnx-zipformer-*
+
+          ./run-audio-tagging-ced-from-file.sh
+          rm -rf sherpa-onnx-ced-*
+
+
+      - name:  Run java test (Spoken language identification)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-spoken-language-identification-whisper.sh
+          # Delete model files to save space
+          rm -rf sherpa-onnx-whisper-*
+
+      - name:  Run java test (Streaming ASR)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-inverse-text-normalization-transducer.sh
+          rm -rf sherpa-onnx-streaming-*
+
+          ./run-streaming-decode-file-ctc.sh
+          # Delete model files to save space
+          rm -rf sherpa-onnx-streaming-*
+
+          ./run-streaming-decode-file-ctc-hlg.sh
+          rm -rf sherpa-onnx-streaming-*
+
+          ./run-streaming-decode-file-paraformer.sh
+          rm -rf sherpa-onnx-streaming-*
+
+          ./run-streaming-decode-file-transducer.sh
+          rm -rf sherpa-onnx-streaming-*
+
+      - name:  Run java test (Non-Streaming TTS)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+
+          ./run-non-streaming-tts-kitten-en.sh
+          ./run-non-streaming-tts-kokoro-zh-en.sh
+          ./run-non-streaming-tts-kokoro-en.sh
+          ./run-non-streaming-tts-matcha-zh.sh
+          ./run-non-streaming-tts-matcha-en.sh
+          ls -lh
+
+          rm -rf kitten-nano-en-*
+          rm -rf kokoro-multi-*
+          rm -rf kokoro-en-*
+
+          rm -rf matcha-icefall-*
+          rm vocos-22khz-univ.onnx
+
+          ./run-non-streaming-tts-piper-en.sh
+          rm -rf vits-piper-*
+
+          ./run-non-streaming-tts-coqui-de.sh
+          rm -rf vits-coqui-*
+
+          ./run-non-streaming-tts-vits-zh.sh
+          rm -rf vits-zh-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tts-wav-files-${{ matrix.os }}
+          path: java-api-examples/*.wav

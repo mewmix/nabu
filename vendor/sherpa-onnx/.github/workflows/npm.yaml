@@ -1,0 +1,112 @@
+name: npm
+
+on:
+  push:
+    branches:
+      - npm
+  workflow_dispatch:
+
+concurrency:
+  group: npm-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  nodejs:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.8"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: Install emsdk
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.51
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: View emsdk version
+        shell: bash
+        run: |
+          emcc -v
+          echo "--------------------"
+          emcc --check
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Display node version
+        shell: bash
+        run: |
+          node --version
+
+      - name: Build nodejs package
+        shell: bash
+        run: |
+          ./build-wasm-simd-nodejs.sh
+          cp -v build-wasm-simd-nodejs/install/bin/wasm/nodejs/*.js ./scripts/nodejs/
+          cp -v build-wasm-simd-nodejs/install/bin/wasm/nodejs/*.wasm ./scripts/nodejs/
+
+          SHERPA_ONNX_VERSION=$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)
+          echo "SHERPA_ONNX_VERSION $SHERPA_ONNX_VERSION"
+
+          cd scripts/nodejs
+
+          owner=${{ github.repository_owner }}
+          echo "owner: $owner"
+
+          sed -i.bak s/SHERPA_ONNX_VERSION/$SHERPA_ONNX_VERSION/g ./package.json
+          sed -i.bak s/k2-fsa/$owner/g ./package.json
+
+          rm package.json.bak
+
+      - name: Collect files
+        shell: bash
+        run: |
+          dst=sherpa-onnx-wasm-nodejs
+          mkdir $dst
+          cp -v scripts/nodejs/* $dst
+          tar cvjf $dst.tar.bz2 $dst
+
+          echo "---"
+          ls -h $dst
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sherpa-onnx-wasm-nodejs
+          path: ./*.tar.bz2
+
+      - name: Build nodejs package
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd scripts/nodejs
+
+          git diff
+
+          npm install
+          npm ci
+          # see https://docs.npmjs.com/generating-provenance-statements
+          npm publish --provenance --access public

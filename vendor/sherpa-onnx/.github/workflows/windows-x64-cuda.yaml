@@ -1,0 +1,191 @@
+name: windows-x64-cuda
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+    paths:
+      - '.github/workflows/windows-x64-cuda.yaml'
+      - '.github/scripts/test-online-transducer.sh'
+      - '.github/scripts/test-online-paraformer.sh'
+      - '.github/scripts/test-offline-transducer.sh'
+      - '.github/scripts/test-offline-ctc.sh'
+      - '.github/scripts/test-online-ctc.sh'
+      - '.github/scripts/test-offline-tts.sh'
+      - 'cmake/**'
+      - 'sherpa-onnx/csrc/*'
+
+  workflow_dispatch:
+
+concurrency:
+  group: windows-x64-cuda-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows_x64_cuda:
+    name: Windows x64 CUDA ${{ matrix.onnxruntime_version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        onnxruntime_version: ["1.17.1", "1.22.0"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          onnxruntime_version=${{ matrix.onnxruntime_version }}
+          if [[ $onnxruntime_version == "1.22.0" ]]; then
+            curl -SL -O https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-win-x64-gpu-1.22.0.zip
+            unzip onnxruntime-win-x64-gpu-1.22.0.zip
+
+            export SHERPA_ONNXRUNTIME_LIB_DIR=$PWD/onnxruntime-win-x64-gpu-1.22.0/lib
+            export SHERPA_ONNXRUNTIME_INCLUDE_DIR=$PWD/onnxruntime-win-x64-gpu-1.22.0/include
+          fi
+
+          mkdir build
+          cd build
+          cmake \
+          -A x64 \
+          -D CMAKE_BUILD_TYPE=Release \
+          -D BUILD_SHARED_LIBS=ON \
+          -D CMAKE_INSTALL_PREFIX=./install \
+          -D SHERPA_ONNX_ENABLE_GPU=ON \
+          ..
+
+      - name: Build sherpa-onnx for windows
+        shell: bash
+        run: |
+          cd build
+          cmake --build . --config Release -- -m:2
+          cmake --build . --config Release --target install -- -m:2
+
+          ls -lh ./bin/Release/sherpa-onnx.exe
+
+          onnxruntime_version=${{ matrix.onnxruntime_version }}
+
+      - name: Copy files
+        shell: bash
+        run: |
+          SHERPA_ONNX_VERSION=v$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)
+
+          dst=sherpa-onnx-${SHERPA_ONNX_VERSION}-win-x64-cuda
+
+          onnxruntime_version=${{ matrix.onnxruntime_version }}
+          if [[ $onnxruntime_version == "1.22.0" ]]; then
+            dst=sherpa-onnx-${SHERPA_ONNX_VERSION}-cuda-12.x-cudnn-9.x-win-x64-cuda
+          fi
+
+          mkdir $dst
+
+          cp -a build/install/bin $dst/
+          cp -a build/install/lib $dst/
+          cp -a build/install/include $dst/
+
+          tar cjvf ${dst}.tar.bz2 $dst
+
+      - name: Release pre-compiled binaries and libs for linux x64
+        if: github.repository_owner == 'csukuangfj' && github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file_glob: true
+          overwrite: true
+          file: sherpa-onnx-*cuda.tar.bz2
+          repo_name: k2-fsa/sherpa-onnx
+          repo_token: ${{ secrets.UPLOAD_GH_SHERPA_ONNX_TOKEN }}
+          tag: v1.12.13
+
+      - name: Release pre-compiled binaries and libs for linux x64
+        if: github.repository_owner == 'k2-fsa' && github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file_glob: true
+          overwrite: true
+          file: sherpa-onnx-*cuda.tar.bz2
+
+      - name: Test spoken language identification
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=sherpa-onnx-offline-language-identification.exe
+
+          .github/scripts/test-spoken-language-identification.sh
+
+      - name: Test online CTC
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=sherpa-onnx.exe
+
+          .github/scripts/test-online-ctc.sh
+
+      - name: Test offline TTS
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=sherpa-onnx-offline-tts.exe
+
+          .github/scripts/test-offline-tts.sh
+
+      - name: Test online paraformer for windows x64
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=sherpa-onnx.exe
+
+          .github/scripts/test-online-paraformer.sh
+
+      - name: Test offline Whisper for windows x64
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=sherpa-onnx-offline.exe
+
+          .github/scripts/test-offline-whisper.sh
+
+      - name: Test offline CTC for windows x64
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=sherpa-onnx-offline.exe
+
+          .github/scripts/test-offline-ctc.sh
+
+      - name: Test offline transducer for Windows x64
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=sherpa-onnx-offline.exe
+
+          .github/scripts/test-offline-transducer.sh
+
+      - name: Test online transducer for Windows x64
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=sherpa-onnx.exe
+
+          .github/scripts/test-online-transducer.sh
+
+      - name: Test online transducer (C API)
+        shell: bash
+        run: |
+          export PATH=$PWD/build/bin/Release:$PATH
+          export EXE=decode-file-c-api.exe
+
+          .github/scripts/test-online-transducer.sh
+
+

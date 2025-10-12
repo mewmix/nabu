@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "sherpa-onnx-node": "^1.12.14"
+  }
+}

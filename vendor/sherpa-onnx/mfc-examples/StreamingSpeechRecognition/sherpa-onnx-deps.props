@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <SherpaOnnxBuildDirectory>..\..\build</SherpaOnnxBuildDirectory>
+    <SherpaOnnxInstallDirectory>..\..\build\install</SherpaOnnxInstallDirectory>
+    <SherpaOnnxLibraries>
+        sherpa-onnx-portaudio_static.lib;
+        sherpa-onnx-c-api.lib;
+        sherpa-onnx-core.lib;
+        kaldi-decoder-core.lib;
+        sherpa-onnx-kaldifst-core.lib;
+        sherpa-onnx-fstfar.lib;
+        sherpa-onnx-fst.lib;
+        kaldi-native-fbank-core.lib;
+        kissfft-float.lib;
+        cppinyin_core.lib;
+        onnxruntime.lib;
+        piper_phonemize.lib;
+        espeak-ng.lib;
+        ucd.lib;
+        ssentencepiece_core.lib;
+    </SherpaOnnxLibraries>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>
+	  $(SherpaOnnxBuildDirectory)\_deps\portaudio-src\include;
+    $(SherpaOnnxInstallDirectory)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(SherpaOnnxInstallDirectory)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(SherpaOnnxLibraries);</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup />
+</Project>

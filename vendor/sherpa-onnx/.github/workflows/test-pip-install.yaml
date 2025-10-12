@@ -1,0 +1,145 @@
+name: test-pip-install
+
+on:
+  push:
+    branches:
+      - test-pip-install
+  schedule:
+    # minute (0-59)
+    # hour (0-23)
+    # day of the month (1-31)
+    # month (1-12)
+    # day of the week (0-6)
+    # nightly build at 23:50 UTC time every day
+    - cron: "50 23 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: test-pip-install-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test_pip_install:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} ${{ matrix.python-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # See https://github.com/actions/runner-images
+        include:
+          - os: ubuntu-22.04
+            python-version: "3.8"
+          - os: ubuntu-22.04
+            python-version: "3.9"
+          - os: ubuntu-22.04
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-24.04
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+
+          - os: ubuntu-24.04-arm
+            python-version: "3.8"
+          - os: ubuntu-24.04-arm
+            python-version: "3.9"
+          - os: ubuntu-24.04-arm
+            python-version: "3.10"
+          - os: ubuntu-24.04-arm
+            python-version: "3.11"
+          - os: ubuntu-24.04-arm
+            python-version: "3.12"
+          - os: ubuntu-24.04-arm
+            python-version: "3.13"
+
+          - os: macos-13
+            python-version: "3.8"
+
+          - os: macos-13
+            python-version: "3.9"
+          - os: macos-13
+            python-version: "3.10"
+          - os: macos-13
+            python-version: "3.11"
+
+          - os: macos-14
+            python-version: "3.12"
+          - os: macos-14
+            python-version: "3.13"
+
+          - os: windows-2022
+            python-version: "3.8"
+          - os: windows-2022
+            python-version: "3.9"
+
+          - os: windows-2022
+            python-version: "3.10"
+          - os: windows-2022
+            python-version: "3.11"
+          - os: windows-2022
+            python-version: "3.12"
+          - os: windows-2022
+            python-version: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        shell: bash
+        run: |
+          ./new-release.sh
+          git diff .
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install sherpa-onnx
+        shell: bash
+        run: |
+          pip install --verbose -U sherpa-onnx sherpa-onnx-core sherpa-onnx-bin
+
+      - name: Test sherpa-onnx-bin
+        shell: bash
+        run: |
+          sherpa-onnx-version
+
+          sherpa-onnx --help
+          sherpa-onnx-keyword-spotter --help
+          sherpa-onnx-offline --help
+          sherpa-onnx-offline-tts --help
+
+          sherpa-onnx-microphone --help
+          sherpa-onnx-microphone-offline --help
+
+          sherpa-onnx-offline-websocket-server --help
+
+          sherpa-onnx-online-websocket-server --help
+          sherpa-onnx-online-websocket-client --help
+
+      - name: Test sherpa-onnx-core
+        shell: bash
+        run: |
+          python3 -m sherpa_onnx --cflags
+          python3 -m sherpa_onnx --c-api-libs
+          python3 -m sherpa_onnx --c-api-libs-only-L
+          python3 -m sherpa_onnx --c-api-libs-only-l
+
+          python3 -m sherpa_onnx --cxx-api-libs
+          python3 -m sherpa_onnx --cxx-api-libs-only-L
+          python3 -m sherpa_onnx --cxx-api-libs-only-l
+
+      - name: Test sherpa-onnx
+        shell: bash
+        run: |
+          python3 -c "import sherpa_onnx; print(sherpa_onnx.__file__)"
+          python3 -c "import sherpa_onnx; print(sherpa_onnx.__version__)"
+          python3 -c "import sherpa_onnx; print(sherpa_onnx.OnlineRecognizer)"
+          python3 -c "import sherpa_onnx; print(sherpa_onnx.OfflineRecognizer)"
