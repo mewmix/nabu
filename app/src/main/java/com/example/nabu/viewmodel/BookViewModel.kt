@@ -19,7 +19,6 @@ import com.example.nabu.utils.KokoroAudioPlayer
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PlaybackNotification
-import com.example.nabu.utils.StoragePermissions
 import com.example.nabu.utils.StyleLoader
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.playBook
@@ -163,17 +162,14 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         _playableUnits.value = updated
     }
 
-    suspend fun saveEditedCopy(context: Context, desiredName: String): Uri? {
-        if (!StoragePermissions.hasRequiredPermissions(context)) {
-            throw SecurityException("Storage permission not granted")
-        }
+    suspend fun saveEditedCopy(context: Context, uri: Uri, desiredName: String): Boolean {
         val units = _playableUnits.value
-        if (units.isEmpty()) return null
+        if (units.isEmpty()) return false
         val displayName = buildEditedDisplayName(desiredName)
         val title = displayName.substringBeforeLast('.').ifBlank { "Edited Book" }
         val paragraphs = combineUnitsToParagraphs(units)
         return withContext(Dispatchers.IO) {
-            EpubWriter.save(context, displayName, title, paragraphs)
+            EpubWriter.save(context, uri, title, paragraphs)
         }
     }
 

@@ -1,10 +1,7 @@
 package com.example.nabu.utils
 
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
 import java.io.BufferedOutputStream
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
@@ -14,29 +11,18 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 object EpubWriter {
-    private const val MIME_TYPE = "application/epub+zip"
+    const val MIME_TYPE = "application/epub+zip"
 
-    fun save(context: Context, displayName: String, title: String, paragraphs: List<String>): Uri? {
-        if (paragraphs.isEmpty()) return null
+    fun save(context: Context, uri: Uri, title: String, paragraphs: List<String>): Boolean {
+        if (paragraphs.isEmpty()) return false
         val resolver = context.contentResolver
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, MIME_TYPE)
-            put(
-                MediaStore.MediaColumns.RELATIVE_PATH,
-                Environment.DIRECTORY_DOCUMENTS + "/Nabu"
-            )
-        }
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-            ?: return null
         return try {
-            resolver.openOutputStream(uri)?.use { outputStream ->
+            resolver.openOutputStream(uri, "wt")?.use { outputStream ->
                 writeEpub(outputStream, title.ifBlank { "Edited Book" }, paragraphs)
-            }
-            uri
+                true
+            } ?: false
         } catch (e: Exception) {
-            resolver.delete(uri, null, null)
-            null
+            false
         }
     }
 

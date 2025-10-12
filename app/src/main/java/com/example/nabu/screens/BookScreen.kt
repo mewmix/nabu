@@ -37,6 +37,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import androidx.compose.ui.unit.dp
 import com.example.nabu.ChatActivity
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -95,46 +96,49 @@ fun BookScreen(
     var isSavingEdited by remember { mutableStateOf(false) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
     var saveSuccessful by remember { mutableStateOf(false) }
+    var pendingSaveDisplayName by remember { mutableStateOf<String?>(null) }
 
-    fun startSaveEditedCopy() {
-        if (isSavingEdited) return
-        isSavingEdited = true
-        saveMessage = null
-        saveSuccessful = false
+    fun buildEditedDisplayName(name: String): String {
+        val currentBookDisplayName = bookDisplayName
+        val trimmed = name.trim().ifBlank {
+            currentBookDisplayName
+                ?.substringBeforeLast('.', currentBookDisplayName)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "${it}_edited" }
+                ?: "edited_book"
+        }
+        return if (trimmed.lowercase(Locale.US).endsWith(".epub")) trimmed else "$trimmed.epub"
+    }
+
+    val saveEditedDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(EpubWriter.MIME_TYPE)
+    ) { uri: Uri? ->
+        val displayName = pendingSaveDisplayName
+        pendingSaveDisplayName = null
+        if (uri == null || displayName == null) {
+            if (uri == null && isSavingEdited) {
+                saveMessage = "Save canceled"
+                saveSuccessful = false
+            }
+            isSavingEdited = false
+            return@rememberLauncherForActivityResult
+        }
         scope.launch {
             try {
-                val uri = bookViewModel.saveEditedCopy(context, editedFileName)
-                if (uri != null) {
+                val saved = bookViewModel.saveEditedCopy(context, uri, displayName)
+                if (saved) {
                     saveMessage = "Saved edited copy"
                     saveSuccessful = true
                 } else {
                     saveMessage = "Unable to save edited copy"
                     saveSuccessful = false
                 }
-            } catch (e: SecurityException) {
-                saveMessage = e.localizedMessage ?: "Storage permission is required to save edited copy"
-                saveSuccessful = false
             } catch (e: Exception) {
                 saveMessage = e.localizedMessage ?: "Failed to save edited copy"
                 saveSuccessful = false
             } finally {
                 isSavingEdited = false
             }
-        }
-    }
-
-    var pendingSaveRequest by remember { mutableStateOf(false) }
-    val storagePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) {
-        val hasPermissions = StoragePermissions.hasRequiredPermissions(context)
-        if (hasPermissions && pendingSaveRequest) {
-            pendingSaveRequest = false
-            startSaveEditedCopy()
-        } else if (!hasPermissions) {
-            pendingSaveRequest = false
-            saveMessage = "Storage permission is required to save edited copy"
-            saveSuccessful = false
         }
     }
 
@@ -182,7 +186,7 @@ fun BookScreen(
         saveMessage = null
         isSavingEdited = false
         saveSuccessful = false
-        pendingSaveRequest = false
+        pendingSaveDisplayName = null
     }
 
     LaunchedEffect(currentUnitIndex, followText) {
@@ -413,13 +417,13 @@ fun BookScreen(
                         if (isSavingEdited || lines.isEmpty()) {
                             return@BrutalButton
                         }
-                        val permissions = StoragePermissions.requiredPermissions()
-                        if (permissions.isEmpty() || StoragePermissions.hasRequiredPermissions(context)) {
-                            startSaveEditedCopy()
-                        } else {
-                            pendingSaveRequest = true
-                            storagePermissionLauncher.launch(permissions)
-                        }
+                        val displayName = buildEditedDisplayName(editedFileName)
+                        editedFileName = displayName
+                        isSavingEdited = true
+                        saveMessage = null
+                        saveSuccessful = false
+                        pendingSaveDisplayName = displayName
+                        saveEditedDocumentLauncher.launch(displayName)
                     },
                     enabled = !isSavingEdited && lines.isNotEmpty(),
                     modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
