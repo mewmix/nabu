@@ -982,6 +982,7 @@ private fun immersiveReaderLineVisuals(): ReaderLineVisuals {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ReaderLine(
     line: String,
