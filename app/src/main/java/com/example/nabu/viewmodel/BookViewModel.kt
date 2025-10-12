@@ -19,6 +19,7 @@ import com.example.nabu.utils.KokoroAudioPlayer
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PlaybackNotification
+import com.example.nabu.utils.StoragePermissions
 import com.example.nabu.utils.StyleLoader
 import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.playBook
@@ -163,6 +164,9 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun saveEditedCopy(context: Context, desiredName: String): Uri? {
+        if (!StoragePermissions.hasRequiredPermissions(context)) {
+            throw SecurityException("Storage permission not granted")
+        }
         val units = _playableUnits.value
         if (units.isEmpty()) return null
         val displayName = buildEditedDisplayName(desiredName)

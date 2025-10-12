@@ -96,6 +96,48 @@ fun BookScreen(
     var saveMessage by remember { mutableStateOf<String?>(null) }
     var saveSuccessful by remember { mutableStateOf(false) }
 
+    fun startSaveEditedCopy() {
+        if (isSavingEdited) return
+        isSavingEdited = true
+        saveMessage = null
+        saveSuccessful = false
+        scope.launch {
+            try {
+                val uri = bookViewModel.saveEditedCopy(context, editedFileName)
+                if (uri != null) {
+                    saveMessage = "Saved edited copy"
+                    saveSuccessful = true
+                } else {
+                    saveMessage = "Unable to save edited copy"
+                    saveSuccessful = false
+                }
+            } catch (e: SecurityException) {
+                saveMessage = e.localizedMessage ?: "Storage permission is required to save edited copy"
+                saveSuccessful = false
+            } catch (e: Exception) {
+                saveMessage = e.localizedMessage ?: "Failed to save edited copy"
+                saveSuccessful = false
+            } finally {
+                isSavingEdited = false
+            }
+        }
+    }
+
+    var pendingSaveRequest by remember { mutableStateOf(false) }
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val hasPermissions = StoragePermissions.hasRequiredPermissions(context)
+        if (hasPermissions && pendingSaveRequest) {
+            pendingSaveRequest = false
+            startSaveEditedCopy()
+        } else if (!hasPermissions) {
+            pendingSaveRequest = false
+            saveMessage = "Storage permission is required to save edited copy"
+            saveSuccessful = false
+        }
+    }
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -140,6 +182,7 @@ fun BookScreen(
         saveMessage = null
         isSavingEdited = false
         saveSuccessful = false
+        pendingSaveRequest = false
     }
 
     LaunchedEffect(currentUnitIndex, followText) {
@@ -302,7 +345,7 @@ fun BookScreen(
 
         item {
             BrutalSection(
-                title = "Ebook Editor",
+                title = "Editor",
                 expanded = showEditorSection,
                 onToggle = { showEditorSection = !showEditorSection }
             ) {
@@ -367,25 +410,15 @@ fun BookScreen(
                 )
                 BrutalButton(
                     onClick = {
-                        isSavingEdited = true
-                        saveMessage = null
-                        saveSuccessful = false
-                        scope.launch {
-                            try {
-                                val uri = bookViewModel.saveEditedCopy(context, editedFileName)
-                                if (uri != null) {
-                                    saveMessage = "Saved edited copy"
-                                    saveSuccessful = true
-                                } else {
-                                    saveMessage = "Unable to save edited copy"
-                                    saveSuccessful = false
-                                }
-                            } catch (e: Exception) {
-                                saveMessage = e.localizedMessage ?: "Failed to save edited copy"
-                                saveSuccessful = false
-                            } finally {
-                                isSavingEdited = false
-                            }
+                        if (isSavingEdited || lines.isEmpty()) {
+                            return@BrutalButton
+                        }
+                        val permissions = StoragePermissions.requiredPermissions()
+                        if (permissions.isEmpty() || StoragePermissions.hasRequiredPermissions(context)) {
+                            startSaveEditedCopy()
+                        } else {
+                            pendingSaveRequest = true
+                            storagePermissionLauncher.launch(permissions)
                         }
                     },
                     enabled = !isSavingEdited && lines.isNotEmpty(),
