@@ -3,6 +3,7 @@ package com.example.nabu.viewmodel
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.nabu.data.PlayableUnit
@@ -10,6 +11,7 @@ import com.example.nabu.utils.AudioPlayer
 import com.example.nabu.utils.AudioPlayerManager
 import com.example.nabu.utils.ChunkFeeder
 import com.example.nabu.utils.DocumentReader
+import com.example.nabu.utils.EpubWriter
 import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.KokoroAudioPlayer
 import com.example.nabu.utils.PhonemeConverter
@@ -22,14 +24,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _bookUri = MutableStateFlow<Uri?>(null)
     val bookUri = _bookUri.asStateFlow()
+
+    private val _bookDisplayName = MutableStateFlow<String?>(null)
+    val bookDisplayName = _bookDisplayName.asStateFlow()
 
     private val _playableUnits = MutableStateFlow<List<PlayableUnit>>(emptyList())
     val playableUnits = _playableUnits.asStateFlow()
@@ -57,6 +63,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun loadBook(context: Context, uri: Uri) {
         _bookUri.value = uri
+        _bookDisplayName.value = resolveDisplayName(context, uri)
         viewModelScope.launch(Dispatchers.IO) {
             val units = DocumentReader
                 .asPlayableUnits(context, uri)
@@ -135,5 +142,62 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun stopReading() {
         ChunkFeeder.stop()
+    }
+
+    fun updatePlayableUnitText(index: Int, newText: String) {
+        val currentUnits = _playableUnits.value
+        if (index !in currentUnits.indices) return
+        val updated = currentUnits.toMutableList()
+        val existing = updated[index]
+        updated[index] = existing.copy(text = newText)
+        _playableUnits.value = updated
+    }
+
+    suspend fun saveEditedCopy(context: Context, uri: Uri, desiredName: String): Boolean {
+        val units = _playableUnits.value
+        if (units.isEmpty()) return false
+        val displayName = buildEditedDisplayName(desiredName)
+        val title = displayName.substringBeforeLast('.').ifBlank { "Edited Book" }
+        val paragraphs = combineUnitsToParagraphs(units)
+        return withContext(Dispatchers.IO) {
+            EpubWriter.save(context, uri, title, paragraphs)
+        }
+    }
+
+    private fun buildEditedDisplayName(desiredName: String): String {
+        val trimmed = desiredName.trim().ifBlank { defaultEditedName() }
+        return if (trimmed.lowercase(Locale.US).endsWith(".epub")) trimmed else "$trimmed.epub"
+    }
+
+    private fun defaultEditedName(): String {
+        val base = _bookDisplayName.value?.substringBeforeLast('.')
+        return ((base?.takeIf { it.isNotBlank() }) ?: "edited_book") + "_edited.epub"
+    }
+
+    private fun combineUnitsToParagraphs(units: List<PlayableUnit>): List<String> {
+        if (units.isEmpty()) return emptyList()
+        val grouped = units.groupBy { it.paragraphIndex }.toSortedMap()
+        return grouped.values.map { unitGroup ->
+            unitGroup
+                .sortedBy { it.unitIndex }
+                .joinToString(" ") { it.text.trim() }
+                .replace(Regex("\\s+"), " ")
+                .trim()
+        }.flatMap { paragraph ->
+            paragraph
+                .split(Regex("\\n{2,}"))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+        }
+    }
+
+    private fun resolveDisplayName(context: Context, uri: Uri): String {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val name = cursor.getString(0)
+                if (!name.isNullOrBlank()) return name
+            }
+        }
+        return uri.lastPathSegment ?: "document"
     }
 }

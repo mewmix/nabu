@@ -10,22 +10,30 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.TextStyle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nabu.R
 import com.example.nabu.utils.*
 import com.example.nabu.ui.components.ProgressDialog
 import com.example.nabu.ui.components.RadialWaveformVisualizer
+import com.example.nabu.ui.components.WaveformVisualizer
 import com.example.nabu.viewmodel.BookViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,6 +46,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import androidx.compose.ui.unit.dp
 import com.example.nabu.ChatActivity
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -60,6 +69,7 @@ fun BookScreen(
     val playerState by bookViewModel.playerState.collectAsState()
 
     val bookUri by bookViewModel.bookUri.collectAsState()
+    val bookDisplayName by bookViewModel.bookDisplayName.collectAsState()
     var bookmark by remember { mutableStateOf<Bookmark?>(null) }
 
     val listState = rememberLazyListState()
@@ -84,6 +94,60 @@ fun BookScreen(
     var projects by remember { mutableStateOf(listOf<Project>()) }
     val selectedLines = remember { mutableStateListOf<Int>() }
     var followText by remember { mutableStateOf(true) }
+    var showEditorSection by remember { mutableStateOf(false) }
+    var isEditMode by remember { mutableStateOf(false) }
+    var editingLineIndex by remember { mutableStateOf<Int?>(null) }
+    var editorText by remember { mutableStateOf("") }
+    var editedFileName by remember { mutableStateOf("edited_book.epub") }
+    var isSavingEdited by remember { mutableStateOf(false) }
+    var saveMessage by remember { mutableStateOf<String?>(null) }
+    var saveSuccessful by remember { mutableStateOf(false) }
+    var pendingSaveDisplayName by remember { mutableStateOf<String?>(null) }
+    var isImmersiveReader by remember { mutableStateOf(false) }
+
+    fun buildEditedDisplayName(name: String): String {
+        val currentBookDisplayName = bookDisplayName
+        val trimmed = name.trim().ifBlank {
+            currentBookDisplayName
+                ?.substringBeforeLast('.', currentBookDisplayName)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "${it}_edited" }
+                ?: "edited_book"
+        }
+        return if (trimmed.lowercase(Locale.US).endsWith(".epub")) trimmed else "$trimmed.epub"
+    }
+
+    val saveEditedDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(EpubWriter.MIME_TYPE)
+    ) { uri: Uri? ->
+        val displayName = pendingSaveDisplayName
+        pendingSaveDisplayName = null
+        if (uri == null || displayName == null) {
+            if (uri == null && isSavingEdited) {
+                saveMessage = "Save canceled"
+                saveSuccessful = false
+            }
+            isSavingEdited = false
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            try {
+                val saved = bookViewModel.saveEditedCopy(context, uri, displayName)
+                if (saved) {
+                    saveMessage = "Saved edited copy"
+                    saveSuccessful = true
+                } else {
+                    saveMessage = "Unable to save edited copy"
+                    saveSuccessful = false
+                }
+            } catch (e: Exception) {
+                saveMessage = e.localizedMessage ?: "Failed to save edited copy"
+                saveSuccessful = false
+            } finally {
+                isSavingEdited = false
+            }
+        }
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -123,11 +187,34 @@ fun BookScreen(
             }
             projects = ProjectManager.list(context)
         }
+        editingLineIndex = null
+        editorText = ""
+        isEditMode = false
+        saveMessage = null
+        isSavingEdited = false
+        saveSuccessful = false
+        pendingSaveDisplayName = null
     }
 
     LaunchedEffect(currentUnitIndex, followText) {
         if (followText && currentUnitIndex >= 0) {
             listState.animateScrollToItem(currentUnitIndex)
+        }
+    }
+
+    LaunchedEffect(bookDisplayName) {
+        val currentBookDisplayName = bookDisplayName
+        val suggestion = currentBookDisplayName
+            ?.substringBeforeLast('.', currentBookDisplayName)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "${it}_edited.epub" }
+            ?: "edited_book.epub"
+        editedFileName = suggestion
+    }
+
+    LaunchedEffect(editingLineIndex, lines) {
+        editingLineIndex?.let { index ->
+            editorText = lines.getOrNull(index) ?: ""
         }
     }
 
@@ -138,12 +225,67 @@ fun BookScreen(
         }
     }
 
-    PanelBox(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(dimensionResource(id = R.dimen.padding_large))
-    ) {
-        LazyColumn(
+    LaunchedEffect(lines) {
+        if (lines.isEmpty()) {
+            isImmersiveReader = false
+        }
+    }
+
+    fun startPlaybackFromLine(index: Int) {
+        bookViewModel.setCurrentUnitIndex(index)
+        bookViewModel.startPlayback(
+            session = session,
+            phonemeConverter = phonemeConverter,
+            styleLoader = styleLoader,
+            selectedStyles = selectedStyles,
+            weights = weights,
+            mode = interpolationMode,
+            speed = speed,
+            units = playableUnits,
+            startUnit = index,
+            bookUri = bookUri,
+            projectName = projectName,
+            context = context,
+            engine = SettingsManager.getTtsEngine(context),
+            usePregenerated = usePregenerated,
+            onFinished = {
+                bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
+                bookmark = null
+            },
+        )
+    }
+
+    fun handleLineClick(index: Int) {
+        if (isEditMode) {
+            editingLineIndex = index
+        } else if (selectedLines.contains(index)) {
+            selectedLines.remove(index)
+        } else {
+            startPlaybackFromLine(index)
+        }
+    }
+
+    fun handleLineLongPress(index: Int) {
+        if (selectedLines.contains(index)) {
+            selectedLines.remove(index)
+        } else {
+            selectedLines.add(index)
+        }
+    }
+
+    fun handleLineDoubleTap(index: Int) {
+        bookmark = Bookmark(index)
+        bookUri?.let { BookmarkManager.save(context, it.toString(), index) }
+    }
+
+    if (!isImmersiveReader) {
+        PanelBox(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(dimensionResource(id = R.dimen.padding_large))
+        ) {
+            val defaultLineVisuals = defaultReaderLineVisuals()
+            LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
             state = listState
@@ -267,6 +409,99 @@ fun BookScreen(
             }
         }
 
+        item {
+            BrutalSection(
+                title = "Editor",
+                expanded = showEditorSection,
+                onToggle = { showEditorSection = !showEditorSection }
+            ) {
+                SwitchToggle(
+                    checked = isEditMode,
+                    onToggle = {
+                        isEditMode = it
+                        if (!it) {
+                            editingLineIndex = null
+                            editorText = ""
+                        }
+                    },
+                    label = "Editing Mode"
+                )
+                if (isEditMode) {
+                    Text(
+                        text = if (editingLineIndex != null) {
+                            "Editing line ${editingLineIndex!! + 1}"
+                        } else {
+                            "Tap a line below to load it into the editor"
+                        },
+                        color = Brutal.textBright,
+                        modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                    )
+                    if (editingLineIndex != null) {
+                        OutlinedTextField(
+                            value = editorText,
+                            onValueChange = { editorText = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 160.dp)
+                                .padding(top = dimensionResource(id = R.dimen.padding_small)),
+                            label = { Text("Line Text") },
+                            supportingText = { Text("Changes apply only when you tap Apply Change") }
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small)),
+                            modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                        ) {
+                            BrutalButton(onClick = {
+                                editingLineIndex?.let { index ->
+                                    bookViewModel.updatePlayableUnitText(index, editorText)
+                                    saveMessage = "Updated line ${index + 1}"
+                                    saveSuccessful = true
+                                }
+                            }) { Text("Apply Change") }
+                            BrutalButton(onClick = {
+                                editingLineIndex?.let { index ->
+                                    editorText = lines.getOrNull(index) ?: ""
+                                }
+                            }) { Text("Reset") }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = editedFileName,
+                    onValueChange = { editedFileName = it },
+                    label = { Text("Edited File Name") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = dimensionResource(id = R.dimen.padding_small))
+                )
+                BrutalButton(
+                    onClick = {
+                        if (isSavingEdited || lines.isEmpty()) {
+                            return@BrutalButton
+                        }
+                        val displayName = buildEditedDisplayName(editedFileName)
+                        editedFileName = displayName
+                        isSavingEdited = true
+                        saveMessage = null
+                        saveSuccessful = false
+                        pendingSaveDisplayName = displayName
+                        saveEditedDocumentLauncher.launch(displayName)
+                    },
+                    enabled = !isSavingEdited && lines.isNotEmpty(),
+                    modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                ) {
+                    Text(if (isSavingEdited) "SAVING..." else "SAVE EDITED COPY")
+                }
+                saveMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = if (saveSuccessful) Brutal.textBright else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
+                    )
+                }
+            }
+        }
+
         if (bookmark != null && playerState == PlayerState.IDLE) {
             item {
                 Row(
@@ -295,6 +530,12 @@ fun BookScreen(
             ) {
                 BrutalButton(onClick = { launcher.launch(arrayOf("text/plain", "application/epub+zip")) }) {
                     Text("OPEN")
+                }
+                BrutalButton(
+                    onClick = { isImmersiveReader = true },
+                    enabled = lines.isNotEmpty()
+                ) {
+                    Text("FOCUS")
                 }
                 val startPlaybackAction = {
                     if (playerState == PlayerState.PAUSED) {
@@ -599,12 +840,212 @@ fun BookScreen(
     }
     }
 
+    }
+
+    if (isImmersiveReader) {
+        ImmersiveReaderOverlay(
+            lines = lines,
+            listState = listState,
+            currentUnitIndex = currentUnitIndex,
+            selectedLines = selectedLines,
+            playerState = playerState,
+            onDismiss = { isImmersiveReader = false },
+            onLineClick = ::handleLineClick,
+            onLineLongPress = ::handleLineLongPress,
+            onLineDoubleTap = ::handleLineDoubleTap
+        )
+    }
+
     if (isPregenerating) {
         ProgressDialog(
             message = "Pre-generating ${(preGenProgress * 100).toInt()}%",
             progress = preGenProgress
         )
     }
+}
+
+@Composable
+private fun ImmersiveReaderOverlay(
+    lines: List<String>,
+    listState: LazyListState,
+    currentUnitIndex: Int,
+    selectedLines: List<Int>,
+    playerState: PlayerState,
+    onDismiss: () -> Unit,
+    onLineClick: (Int) -> Unit,
+    onLineLongPress: (Int) -> Unit,
+    onLineDoubleTap: (Int) -> Unit,
+) {
+    val visuals = immersiveReaderLineVisuals()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brutal.panelBg.copy(alpha = 0.96f))
+    ) {
+        RadialWaveformVisualizer(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(48.dp),
+            lineColor = Brutal.green.copy(alpha = 0.4f),
+            visible = playerState != PlayerState.IDLE
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Brutal.panelBg.copy(alpha = 0.94f),
+                            Brutal.panelBg.copy(alpha = 0.78f)
+                        )
+                    )
+                )
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 32.dp, vertical = 24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                BrutalButton(onClick = onDismiss) {
+                    Text("EXIT")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (lines.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Load a book to enter focus mode.", color = Brutal.textDim)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    itemsIndexed(lines) { index, line ->
+                        ReaderLine(
+                            line = line,
+                            isSelected = selectedLines.contains(index),
+                            isCurrent = index == currentUnitIndex,
+                            visuals = visuals,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = MaterialTheme.typography.titleLarge,
+                            textAlign = TextAlign.Start,
+                            contentPadding = PaddingValues(vertical = 14.dp, horizontal = 20.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            onClick = { onLineClick(index) },
+                            onLongClick = { onLineLongPress(index) },
+                            onDoubleTap = { onLineDoubleTap(index) }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Brutal.panelHl.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
+                    .padding(vertical = 18.dp, horizontal = 12.dp)
+            ) {
+                WaveformVisualizer(
+                    modifier = Modifier.fillMaxWidth(),
+                    visible = playerState != PlayerState.IDLE,
+                    lineColor = Brutal.green
+                )
+            }
+        }
+    }
+}
+
+private data class ReaderLineVisuals(
+    val selectedBackground: Color,
+    val currentBackground: Color,
+    val defaultBackground: Color,
+    val selectedText: Color,
+    val currentText: Color,
+    val defaultText: Color,
+)
+
+@Composable
+private fun defaultReaderLineVisuals(): ReaderLineVisuals {
+    val colorScheme = MaterialTheme.colorScheme
+    return ReaderLineVisuals(
+        selectedBackground = colorScheme.secondaryContainer,
+        currentBackground = colorScheme.primaryContainer,
+        defaultBackground = Color.Transparent,
+        selectedText = colorScheme.onSecondaryContainer,
+        currentText = colorScheme.onPrimaryContainer,
+        defaultText = colorScheme.onSurface
+    )
+}
+
+@Composable
+private fun immersiveReaderLineVisuals(): ReaderLineVisuals {
+    return ReaderLineVisuals(
+        selectedBackground = Brutal.panelHl.copy(alpha = 0.9f),
+        currentBackground = Brutal.panelHl.copy(alpha = 0.75f),
+        defaultBackground = Brutal.panelBg.copy(alpha = 0.6f),
+        selectedText = Brutal.green,
+        currentText = Brutal.textBright,
+        defaultText = Brutal.textDim
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ReaderLine(
+    line: String,
+    isSelected: Boolean,
+    isCurrent: Boolean,
+    visuals: ReaderLineVisuals,
+    modifier: Modifier = Modifier,
+    textStyle: TextStyle,
+    textAlign: TextAlign = TextAlign.Justify,
+    contentPadding: PaddingValues,
+    shape: Shape = RectangleShape,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onDoubleTap: () -> Unit,
+) {
+    val background = when {
+        isSelected -> visuals.selectedBackground
+        isCurrent -> visuals.currentBackground
+        else -> visuals.defaultBackground
+    }
+    val textColor = when {
+        isSelected -> visuals.selectedText
+        isCurrent -> visuals.currentText
+        else -> visuals.defaultText
+    }
+
+    Text(
+        text = line,
+        modifier = modifier
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onDoubleClick = onDoubleTap
+            )
+            .background(background, shape)
+            .padding(contentPadding),
+        color = textColor,
+        textAlign = textAlign,
+        style = textStyle
+    )
 }
 
 private fun getDisplayName(context: android.content.Context, uri: Uri): String {
