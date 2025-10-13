@@ -25,21 +25,31 @@ object KokoroLoader {
         val fp16 = fp16Entry?.let { File(root, it.dest) }
         val int8 = int8Entry?.let { File(root, it.dest) }
 
+        val shouldCache: (ManifestFile?) -> Boolean = { manifestFile ->
+            // Quantized (INT8) Kokoro builds have been observed to produce invalid optimized
+            // graphs on some devices. Avoid persisting an optimized model for those builds so we
+            // always execute the original graph instead of replaying a broken cache.
+            when (manifestFile?.id) {
+                "kokoro_int8" -> false
+                else -> true
+            }
+        }
+
         val attempts = buildList {
             when (choice) {
                 RunEp.AUTO -> {
                     add(Attempt(RunEp.NNAPI, fp16Entry, fp16, cacheable = false))
-                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = true))
-                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = true))
+                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = shouldCache(int8Entry)))
+                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = shouldCache(fp16Entry)))
                 }
                 RunEp.NNAPI -> {
                     add(Attempt(RunEp.NNAPI, fp16Entry, fp16, cacheable = false))
-                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = true))
-                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = true))
+                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = shouldCache(int8Entry)))
+                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = shouldCache(fp16Entry)))
                 }
                 RunEp.CPU -> {
-                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = true))
-                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = true))
+                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = shouldCache(int8Entry)))
+                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = shouldCache(fp16Entry)))
                 }
             }
         }
