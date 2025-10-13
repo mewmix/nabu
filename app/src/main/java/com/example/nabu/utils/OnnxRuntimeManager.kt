@@ -1,93 +1,95 @@
 package com.example.nabu.utils
 
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
-import ai.onnxruntime.OrtSession.SessionOptions
 import android.content.Context
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.example.nabu.R
-import kotlinx.coroutines.launch
+import com.example.nabu.kokoro.Downloader
+import com.example.nabu.kokoro.KokoroBundle
+import com.example.nabu.kokoro.KokoroLoader
+import com.example.nabu.kokoro.Manifest
+import com.example.nabu.kokoro.ManifestProvider
+import com.example.nabu.kokoro.RunEp
+import com.example.nabu.kokoro.KokoroEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
-
-class MainViewModel(private val context: Context) : ViewModel() {
-    init {
-        viewModelScope.launch {
-            OnnxRuntimeManager.initialize(context.applicationContext)
-        }
-    }
-
-    fun getSession() = OnnxRuntimeManager.getSession()
-
-    fun reinitializeSession(modelPath: String) {
-        viewModelScope.launch {
-            OnnxRuntimeManager.reinitialize(context, modelPath)
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        OnnxRuntimeManager.close()
-    }
-}
+import java.io.FileOutputStream
 
 object OnnxRuntimeManager {
-    private var environment: OrtEnvironment? = null
-    private var session: OrtSession? = null
+    private const val TAG = "OnnxRuntimeManager"
+    private val mutex = Mutex()
 
-    @Synchronized
-    fun initialize(context: Context, modelPath: String? = null) {
-        if (environment == null) {
-            environment = OrtEnvironment.getEnvironment()
-        }
-        session = if (modelPath != null) {
-            createSession(modelPath)
-        } else {
-            createSession(context)
-        }
-    }
+    @Volatile
+    private var bundle: KokoroBundle? = null
+    @Volatile
+    private var manifest: Manifest = ManifestProvider.kokoroV1()
+    @Volatile
+    private var engine: KokoroEngine? = null
 
-    @Synchronized
-    fun reinitialize(context: Context, modelPath: String) {
-        if (modelPath.endsWith(".onnx")) {
-            session?.close()
-            initialize(context, modelPath)
-        }
-    }
+    suspend fun initialize(context: Context, preferred: RunEp? = null): Result<KokoroBundle> =
+        mutex.withLock {
+            val appContext = context.applicationContext
+            manifest = ManifestProvider.kokoroV1()
+            val choice = preferred ?: SettingsManager.getRuntimePreference(appContext)
 
-    private fun createSession(context: Context): OrtSession {
-        val options = SessionOptions().apply {
-            addConfigEntry("nnapi.flags", "USE_FP16")
-            addConfigEntry("nnapi.use_gpu", "true")
-            addConfigEntry("nnapi.gpu_precision_loss_allowed", "true")
-        }
-
-        return when (SettingsManager.getTtsEngine(context)) {
-            TtsEngine.KOKORO -> context.resources.openRawResource(R.raw.kokoro).use { stream ->
-                environment!!.createSession(stream.readBytes(), options)
+            val fetchResult = Downloader.ensureModels(appContext, manifest)
+            if (fetchResult.isFailure) {
+                Log.w(TAG, "Failed to download Kokoro models", fetchResult.exceptionOrNull())
+                ensureBundledFallback(appContext, manifest)
             }
-            TtsEngine.KITTEN -> context.assets.open("kitten_tts/kitten_tts_nano_v0_1.onnx").use { stream ->
-                environment!!.createSession(stream.readBytes(), options)
+
+            val loadResult = runCatching {
+                KokoroLoader.load(appContext, manifest, choice)
             }
+
+            loadResult.onSuccess { newBundle ->
+                bundle?.session?.close()
+                bundle = newBundle
+                engine = KokoroEngine(newBundle, manifest)
+            }.onFailure { error ->
+                Log.e(TAG, "Unable to load Kokoro session", error)
+            }
+
+            loadResult
         }
-    }
 
-    private fun createSession(modelPath: String): OrtSession {
-        val options = SessionOptions().apply {
-            addConfigEntry("nnapi.flags", "USE_FP16")
-            addConfigEntry("nnapi.use_gpu", "true")
-            addConfigEntry("nnapi.gpu_precision_loss_allowed", "true")
-        }
-        val modelBytes = File(modelPath).readBytes()
-        return environment!!.createSession(modelBytes, options)
-    }
+    fun getEngine(): KokoroEngine =
+        requireNotNull(engine) { "Kokoro engine not initialized" }
 
+    fun currentBundle(): KokoroBundle? = bundle
 
-    fun getSession() = requireNotNull(session) { "ONNX Session not initialized" }
+    fun currentManifest(): Manifest = manifest
 
     fun close() {
-        session?.close()
-        environment?.close()
+        bundle?.session?.close()
+        bundle = null
+        engine = null
+    }
+
+    private suspend fun ensureBundledFallback(context: Context, manifest: Manifest) {
+        withContext(Dispatchers.IO) {
+            val fallbackFile = manifest.files.firstOrNull { it.id == "kokoro_int8" } ?: return@withContext
+            val dest = File(context.filesDir, fallbackFile.dest)
+            if (dest.exists()) return@withContext
+
+            runCatching {
+                context.resources.openRawResource(R.raw.kokoro).use { input ->
+                    dest.parentFile?.mkdirs()
+                    FileOutputStream(dest).use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+                Log.i(TAG, "Provisioned bundled INT8 fallback to ${dest.absolutePath}")
+            }.onFailure { error ->
+                Log.w(TAG, "Bundled INT8 fallback unavailable", error)
+            }
+        }
     }
 }
-

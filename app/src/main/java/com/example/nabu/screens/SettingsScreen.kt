@@ -21,8 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.nabu.kokoro.RunEp
 import com.example.nabu.utils.SettingsManager
-import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.OnnxRuntimeManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,12 +35,12 @@ fun SettingsScreen() {
     val context = LocalContext.current
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
-    var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
+    var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
     var expanded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(engine) {
+    LaunchedEffect(runtime) {
         withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+            OnnxRuntimeManager.initialize(context.applicationContext, runtime)
         }
     }
 
@@ -74,10 +74,10 @@ fun SettingsScreen() {
                 onExpandedChange = { expanded = it }
             ) {
                 TextField(
-                    value = engine.name,
+                    value = runtime.name,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("TTS Engine") },
+                    label = { Text("Execution Provider") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                     modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
@@ -85,12 +85,12 @@ fun SettingsScreen() {
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
-                    TtsEngine.values().forEach { option ->
+                    RunEp.values().forEach { option ->
                         DropdownMenuItem(
                             text = { Text(option.name) },
                             onClick = {
-                                engine = option
-                                SettingsManager.setTtsEngine(context, option)
+                                runtime = option
+                                SettingsManager.setRuntimePreference(context, option)
                                 expanded = false
                             }
                         )

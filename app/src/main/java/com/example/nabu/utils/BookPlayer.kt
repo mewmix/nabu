@@ -1,8 +1,8 @@
 package com.example.nabu.utils
 
-import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.net.Uri
+import com.example.nabu.kokoro.KokoroEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -11,11 +11,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
 import java.io.File
 
 fun playBook(
     scope: CoroutineScope,
-    session: OrtSession,
+    engine: KokoroEngine,
     phonemeConverter: PhonemeConverter,
     styleLoader: StyleLoader,
     selectedStyles: List<String>,
@@ -50,36 +51,24 @@ fun playBook(
                 }
             }
             val line = lines[index]
-            val engine = SettingsManager.getTtsEngine(context)
-            return if (engine == TtsEngine.KITTEN) {
-                val (_, tokens) = KittenPhonemizer.phonemize(line)
-                val (audio, _) = createKittenAudioFromStyleVector(
-                    tokens = tokens,
-                    voice = mixedVector,
-                    speed = speed,
-                    session = session,
-                )
-                audio
-            } else {
-                val phonemes = phonemeConverter.phonemize(line)
-                val chunks = mutableListOf<FloatArray>()
-                createAudioFlowFromStyleVector(
-                    phonemes = phonemes,
-                    voice = mixedVector,
-                    speed = speed,
-                    session = session,
-                ).collect { chunk ->
-                    chunks.add(chunk)
-                }
-                val totalSize = chunks.sumOf { it.size }
-                val audio = FloatArray(totalSize)
-                var pos = 0
-                for (chunk in chunks) {
-                    chunk.copyInto(audio, pos)
-                    pos += chunk.size
-                }
-                audio
+            val phonemes = phonemeConverter.phonemize(line)
+            val chunks = mutableListOf<FloatArray>()
+            createAudioFlowFromStyleVector(
+                phonemes = phonemes,
+                voice = mixedVector,
+                speed = speed,
+                engine = engine,
+            ).collect { chunk ->
+                chunks.add(chunk)
             }
+            val totalSize = chunks.sumOf { it.size }
+            val audio = FloatArray(totalSize)
+            var pos = 0
+            for (chunk in chunks) {
+                chunk.copyInto(audio, pos)
+                pos += chunk.size
+            }
+            return audio
         }
 
         try {
@@ -101,7 +90,7 @@ fun playBook(
                 }
                 DebugLogger.log("Playing line $index")
 
-                audioPlayer.prepare(audio, 0)
+                audioPlayer.prepare(audio, engine.sampleRate, 0)
                 audioPlayer.playBlocking()
 
                 if (audioPlayer.getState() == PlayerState.PAUSED) {
@@ -134,4 +123,3 @@ fun playBook(
         }
     }
 }
-

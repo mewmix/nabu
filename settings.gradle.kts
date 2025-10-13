@@ -30,5 +30,4 @@ dependencyResolutionManagement {
 rootProject.name = "nabu"
 include(":app")
 include(":app-chat")
-include(":app-tts")
 include(":core-utils")

@@ -21,18 +21,18 @@ class KokoroAudioPlayer(
     private var pcmData: ByteArray? = null
     private var audioFloats: FloatArray? = null
     private var position: Int = 0
+    private var sampleRate: Int = 24_000
     private var currentState: PlayerState = PlayerState.IDLE
         set(value) {
             field = value
             onStateChanged(value)
         }
 
-    private val sampleRate = 22050
-
-    override fun prepare(audio: FloatArray, position: Int) {
+    override fun prepare(audio: FloatArray, sampleRate: Int, position: Int) {
         DebugLogger.log("KokoroAudioPlayer prepare length=${audio.size}, position=$position")
         release() // Release any existing track
         audioFloats = audio
+        this.sampleRate = sampleRate
         val channelConfig = AudioFormat.CHANNEL_OUT_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)

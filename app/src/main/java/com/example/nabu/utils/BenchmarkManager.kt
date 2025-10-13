@@ -46,10 +46,12 @@ object BenchmarkManager {
         DebugLogger.log("LLM->TTS handoff delay: ${now - lastToken} ms")
     }
 
-    fun recordTts(engine: TtsEngine, genTimeMs: Long, audioDurationMs: Long) {
+    fun recordTts(bundle: com.example.nabu.kokoro.KokoroBundle?, genTimeMs: Long, audioDurationMs: Long) {
         val ratio = if (genTimeMs > 0) audioDurationMs.toFloat() / genTimeMs else 0f
+        val runtime = bundle?.ep?.name ?: "UNKNOWN"
+        val graph = bundle?.graphId ?: "n/a"
         DebugLogger.log(
-            "TTS ${engine.name} gen ${genTimeMs}ms for ${audioDurationMs}ms audio (x${"%.2f".format(ratio)})"
+            "TTS Kokoro[$runtime/$graph] gen ${genTimeMs}ms for ${audioDurationMs}ms audio (x${"%.2f".format(ratio)})"
         )
     }
 
@@ -57,4 +59,3 @@ object BenchmarkManager {
         PerfKit.profile(context)
     }
 }
-

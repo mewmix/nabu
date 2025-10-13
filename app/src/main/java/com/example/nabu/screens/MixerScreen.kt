@@ -46,18 +46,15 @@ import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.PhonemeConverter
-import com.example.nabu.utils.KittenPhonemizer
 import com.example.nabu.utils.StyleLoader
 import com.example.nabu.utils.createAudioFromStyleVector
-import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
+import com.example.nabu.utils.SettingsManager
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.example.nabu.utils.playAudio
 import com.example.nabu.utils.saveAudio
-import com.example.nabu.utils.SettingsManager
-import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.buildStyleFileName
@@ -75,10 +72,8 @@ fun MixerScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    val engine by rememberUpdatedState(SettingsManager.getTtsEngine(context))
-
-    LaunchedEffect(engine) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
         }
     }
@@ -247,27 +242,16 @@ private fun generateAudio(
     context: android.content.Context,
     onComplete: () -> Unit
 ) {
-    val session = OnnxRuntimeManager.getSession()
     scope.launch(Dispatchers.IO) {
         try {
-            val engine = SettingsManager.getTtsEngine(context)
-            val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                val (_, tokens) = KittenPhonemizer.phonemize(text)
-                createKittenAudioFromStyleVector(
-                    tokens = tokens,
-                    voice = style,
-                    speed = speed,
-                    session = session
-                )
-            } else {
-                val phonemes = phonemeConverter.phonemize(text)
-                createAudioFromStyleVector(
-                    phonemes = phonemes,
-                    voice = style,
-                    speed = speed,
-                    session = session
-                )
-            }
+            val engine = OnnxRuntimeManager.getEngine()
+            val phonemes = phonemeConverter.phonemize(text)
+            val (audio, sampleRate) = createAudioFromStyleVector(
+                phonemes = phonemes,
+                voice = style,
+                speed = speed,
+                engine = engine
+            )
             if (shouldSaveFile && fileName != null) {
                 saveAudio(audio, context, fileName, sampleRate)
             }

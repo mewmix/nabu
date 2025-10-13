@@ -1,6 +1,5 @@
 package com.example.nabu.screens
 
-import ai.onnxruntime.OrtSession
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -28,7 +27,9 @@ import com.example.nabu.utils.*
 import com.example.nabu.ui.components.ProgressDialog
 import com.example.nabu.ui.components.RadialWaveformVisualizer
 import com.example.nabu.viewmodel.BookViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.Brutal
@@ -41,17 +42,14 @@ import com.example.nabu.ChatActivity
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun BookScreen(
-    session: OrtSession,
     phonemeConverter: PhonemeConverter,
     bookViewModel: BookViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val engine by rememberUpdatedState(SettingsManager.getTtsEngine(context))
-
-    LaunchedEffect(engine) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
         }
     }
@@ -304,7 +302,6 @@ fun BookScreen(
                     }
                     isPreparing = true
                     bookViewModel.startPlayback(
-                        session = session,
                         phonemeConverter = phonemeConverter,
                         styleLoader = styleLoader,
                         selectedStyles = selectedStyles,
@@ -316,7 +313,6 @@ fun BookScreen(
                         bookUri = bookUri,
                         projectName = projectName,
                         context = context,
-                        engine = SettingsManager.getTtsEngine(context),
                         usePregenerated = usePregenerated,
                         onFinished = {
                             bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
@@ -383,31 +379,24 @@ fun BookScreen(
                                     weights = weights,
                                     mode = interpolationMode
                                 )
-                                val audioData = mutableListOf<Float>()
-                                val engine = SettingsManager.getTtsEngine(context)
-                                val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
-                                for (line in lines) {
-                                    val (audio, _) = if (engine == TtsEngine.KITTEN) {
-                                        val (_, tokens) = KittenPhonemizer.phonemize(line)
-                                        createKittenAudioFromStyleVector(
-                                            tokens = tokens,
-                                            voice = mixedVector,
-                                            speed = speed,
-                                            session = session
-                                        )
-                                    } else {
+                                val (audioData, sampleRate) = withContext(Dispatchers.IO) {
+                                    val engineInstance = runCatching { OnnxRuntimeManager.getEngine() }
+                                        .getOrElse { throw IllegalStateException("Kokoro engine not ready", it) }
+                                    val collected = mutableListOf<Float>()
+                                    for (line in lines) {
                                         val phonemes = phonemeConverter.phonemize(line)
-                                        createAudioFromStyleVector(
+                                        val (audio, _) = createAudioFromStyleVector(
                                             phonemes = phonemes,
                                             voice = mixedVector,
                                             speed = speed,
-                                            session = session
+                                            engine = engineInstance
                                         )
+                                        collected.addAll(audio.toList())
                                     }
-                                    audioData.addAll(audio.toList())
+                                    collected.toFloatArray() to engineInstance.sampleRate
                                 }
                                 val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
-                                val uri = saveAudio(audioData.toFloatArray(), context, fileName, sampleRate)
+                                val uri = saveAudio(audioData, context, fileName, sampleRate)
                                 uri?.let { openAudioFile(context, it) }
                             } catch (e: Exception) {
                                 debugMessage = e.localizedMessage
@@ -433,31 +422,24 @@ fun BookScreen(
                                         weights = weights,
                                         mode = interpolationMode
                                     )
-                                    val audioData = mutableListOf<Float>()
-                                    val engine = SettingsManager.getTtsEngine(context)
-                                    val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
-                                    for (i in selectedLines.sorted()) {
-                                        val (audio, _) = if (engine == TtsEngine.KITTEN) {
-                                            val (_, tokens) = KittenPhonemizer.phonemize(lines[i])
-                                            createKittenAudioFromStyleVector(
-                                                tokens = tokens,
-                                                voice = mixedVector,
-                                                speed = speed,
-                                                session = session
-                                            )
-                                        } else {
+                                    val (audioData, sampleRate) = withContext(Dispatchers.IO) {
+                                        val engineInstance = runCatching { OnnxRuntimeManager.getEngine() }
+                                            .getOrElse { throw IllegalStateException("Kokoro engine not ready", it) }
+                                        val collected = mutableListOf<Float>()
+                                        for (i in selectedLines.sorted()) {
                                             val phonemes = phonemeConverter.phonemize(lines[i])
-                                            createAudioFromStyleVector(
+                                            val (audio, _) = createAudioFromStyleVector(
                                                 phonemes = phonemes,
                                                 voice = mixedVector,
                                                 speed = speed,
-                                                session = session
+                                                engine = engineInstance
                                             )
+                                            collected.addAll(audio.toList())
                                         }
-                                        audioData.addAll(audio.toList())
+                                        collected.toFloatArray() to engineInstance.sampleRate
                                     }
                                     val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode) + "_clip"
-                                    val uri = saveAudio(audioData.toFloatArray(), context, fileName, sampleRate)
+                                    val uri = saveAudio(audioData, context, fileName, sampleRate)
                                     uri?.let { openAudioFile(context, it) }
                                     selectedLines.clear()
                                 } catch (e: Exception) {
@@ -506,7 +488,6 @@ fun BookScreen(
                                     )
                                     preGenerateBook(
                                         context = context,
-                                        session = session,
                                         phonemeConverter = phonemeConverter,
                                         styleLoader = styleLoader,
                                         project = project,
@@ -559,7 +540,6 @@ fun BookScreen(
                             } else {
                                 bookViewModel.setCurrentUnitIndex(index)
                                 bookViewModel.startPlayback(
-                                    session = session,
                                     phonemeConverter = phonemeConverter,
                                     styleLoader = styleLoader,
                                     selectedStyles = selectedStyles,
@@ -571,7 +551,6 @@ fun BookScreen(
                                     bookUri = bookUri,
                                     projectName = projectName,
                                     context = context,
-                                    engine = SettingsManager.getTtsEngine(context),
                                     usePregenerated = usePregenerated,
                                     onFinished = {
                                         bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
@@ -634,5 +613,3 @@ private fun getDisplayName(context: android.content.Context, uri: Uri): String {
         ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else uri.lastPathSegment ?: "document" }
         ?: uri.lastPathSegment ?: "document"
 }
-
-
