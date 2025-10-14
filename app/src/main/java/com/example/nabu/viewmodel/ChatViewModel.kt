@@ -1,6 +1,5 @@
 package com.example.nabu.viewmodel
 
-import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
@@ -15,20 +14,18 @@ import com.example.nabu.data.ConversationSummary
 import com.example.nabu.data.ConversationTurn
 import com.example.nabu.data.Model
 import com.example.nabu.data.ModelManager
+import com.example.nabu.kokoro.KokoroEngine
 import com.example.nabu.utils.AudioPlayer
 import com.example.nabu.utils.BenchmarkManager
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.InterpolationMode
-import com.example.nabu.utils.KittenAudioPlayer
-import com.example.nabu.utils.KittenPhonemizer
 import com.example.nabu.utils.KokoroAudioPlayer
+import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.StyleLoader
-import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.createAudioFromStyleVector
-import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -43,7 +40,6 @@ import java.util.Locale
 
 class ChatViewModel(
     private val context: Context,
-    private val ortSession: OrtSession,
     initialModelId: String
 ) : ViewModel() {
 
@@ -56,13 +52,8 @@ class ChatViewModel(
     private val phonemeConverter = PhonemeConverter(context)
     val styleLoader = StyleLoader(context)
     private val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
-    private val audioPlayer: AudioPlayer = when (SettingsManager.getTtsEngine(context)) {
-        TtsEngine.KOKORO -> KokoroAudioPlayer(viewModelScope) { newState ->
-            _playerState.value = newState
-        }
-        TtsEngine.KITTEN -> KittenAudioPlayer(viewModelScope) { newState ->
-            _playerState.value = newState
-        }
+    private val audioPlayer: AudioPlayer = KokoroAudioPlayer(viewModelScope) { newState ->
+        _playerState.value = newState
     }
 
     private val modelManager = ModelManager(context)
@@ -112,25 +103,30 @@ class ChatViewModel(
     private val _speed = MutableStateFlow(1.0f)
     val speed = _speed.asStateFlow()
 
-    private val audioQueue = Channel<Pair<Int, FloatArray>>(Channel.UNLIMITED)
-    private val pendingAudio = mutableMapOf<Int, FloatArray>()
+    private data class QueuedAudio(val index: Int, val audio: FloatArray, val sampleRate: Int)
+
+    private val audioQueue = Channel<QueuedAudio>(Channel.UNLIMITED)
+    private val pendingAudio = mutableMapOf<Int, QueuedAudio>()
     private var nextPlaybackIndex = 0
     private var dropQueuedAudio = false
     private var lineIndex = 0
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            OnnxRuntimeManager.initialize(context.applicationContext)
+        }
         // Launch a coroutine to play queued audio in the order they were generated
         viewModelScope.launch {
-            for ((index, audio) in audioQueue) {
-                pendingAudio[index] = audio
+            for (item in audioQueue) {
+                pendingAudio[item.index] = item
                 while (pendingAudio.containsKey(nextPlaybackIndex)) {
-                    val data = pendingAudio.remove(nextPlaybackIndex)!!
+                    val queued = pendingAudio.remove(nextPlaybackIndex)!!
                     if (!_ttsEnabled.value || dropQueuedAudio) {
                         nextPlaybackIndex++
                         continue
                     }
                     try {
-                        audioPlayer.prepare(data)
+                        audioPlayer.prepare(queued.audio, queued.sampleRate)
                         audioPlayer.playBlocking()
                     } catch (e: Exception) {
                         DebugLogger.log("Audio playback error: ${e.localizedMessage}")
@@ -526,35 +522,26 @@ class ChatViewModel(
                         _weights.value,
                         _interpolationMode.value
                     )
-                    val engine = SettingsManager.getTtsEngine(context)
+                    val engine = runCatching { OnnxRuntimeManager.getEngine() }
+                        .getOrElse { throw IllegalStateException("Kokoro engine not ready", it) }
                     val ttsStart = SystemClock.elapsedRealtime()
-                    val (data, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                        val (_, tokens) = KittenPhonemizer.phonemize(text)
-                        createKittenAudioFromStyleVector(
-                            tokens = tokens,
-                            voice = mixedVector,
-                            speed = _speed.value,
-                            session = ortSession
-                        )
-                    } else {
-                        val phonemes = phonemeConverter.phonemize(text)
-                        createAudioFromStyleVector(
-                            phonemes = phonemes,
-                            voice = mixedVector,
-                            speed = _speed.value,
-                            session = ortSession
-                        )
-                    }
+                    val phonemes = phonemeConverter.phonemize(text)
+                    val (data, sampleRate) = createAudioFromStyleVector(
+                        phonemes = phonemes,
+                        voice = mixedVector,
+                        speed = _speed.value,
+                        engine = engine
+                    )
                     val genMs = SystemClock.elapsedRealtime() - ttsStart
                     if (benchmark) {
                         val audioMs = data.size * 1000L / sampleRate
-                        BenchmarkManager.recordTts(engine, genMs, audioMs)
+                        BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
                         BenchmarkManager.profileSystem(context)
                     }
-                    data
+                    QueuedAudio(currentIndex, data, sampleRate)
                 }
                 if (!dropQueuedAudio) {
-                    audioQueue.send(currentIndex to audioData)
+                    audioQueue.send(audioData)
                 }
             } catch (e: Exception) {
                 DebugLogger.log("Error synthesizing sentence: ${e.localizedMessage}")

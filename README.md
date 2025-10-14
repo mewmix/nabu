@@ -47,7 +47,7 @@ We have taken the original demo and expanded it with several key features:
 
 *   **🧠 Dynamic Model Management:** Download, manage, and switch between different chat models directly from the app. No need to bake them into the APK. Supports gated models from Hugging Face via user access tokens.
 
-*   **🚀 Multi-Engine TTS Support:** Seamlessly switch between the original `Kokoro` engine and the new `Kitten` TTS engine for different voice characteristics.
+*   **🚀 Accelerated Kokoro FP16:** Runs the Kokoro-82M ONNX graph with NNAPI acceleration when available, while keeping the legacy INT8 CPU path as a fallback.
 
 *   **📖 Advanced Audio Book Reader:**
     *   Open local text (`.txt`) and EPUB (`.epub`) files.
@@ -78,7 +78,6 @@ This project would not be possible without the amazing work of the open-source c
 *   **TTS Models:**
     *   [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache 2.0)
     *   [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) (MIT)
-    *   Kitten TTS Engine
 *   **LLM Inference:**
 *   **[Google AI Edge Gallery](https://github.com/google-ai-edge/gallery)**
     *   Google MediaPipe LLM Inference API

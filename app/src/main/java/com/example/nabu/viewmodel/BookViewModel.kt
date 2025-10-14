@@ -6,7 +6,6 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import ai.onnxruntime.OrtSession
 import com.example.nabu.data.PlayableUnit
 import com.example.nabu.utils.AudioPlayer
 import com.example.nabu.utils.AudioPlayerManager
@@ -14,13 +13,12 @@ import com.example.nabu.utils.ChunkFeeder
 import com.example.nabu.utils.DocumentReader
 import com.example.nabu.utils.EpubWriter
 import com.example.nabu.utils.InterpolationMode
-import com.example.nabu.utils.KittenAudioPlayer
 import com.example.nabu.utils.KokoroAudioPlayer
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PlaybackNotification
 import com.example.nabu.utils.StyleLoader
-import com.example.nabu.utils.TtsEngine
+import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.playBook
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,16 +52,10 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     val audioPlayer: AudioPlayer
         get() = _audioPlayer!!
 
-    private fun initializeAudioPlayer(engine: TtsEngine) {
-        _audioPlayer = when (engine) {
-            TtsEngine.KOKORO -> KokoroAudioPlayer(viewModelScope) { state ->
-                _playerState.value = state
-                appContext?.let { PlaybackNotification.update(it, state) }
-            }
-            TtsEngine.KITTEN -> KittenAudioPlayer(viewModelScope) { state ->
-                _playerState.value = state
-                appContext?.let { PlaybackNotification.update(it, state) }
-            }
+    private fun initializeAudioPlayer() {
+        _audioPlayer = KokoroAudioPlayer(viewModelScope) { state ->
+            _playerState.value = state
+            appContext?.let { PlaybackNotification.update(it, state) }
         }
     }
 
@@ -87,7 +79,6 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun startPlayback(
-        session: OrtSession,
         phonemeConverter: PhonemeConverter,
         styleLoader: StyleLoader,
         selectedStyles: List<String>,
@@ -99,15 +90,15 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         bookUri: Uri?,
         projectName: String,
         context: Context,
-        engine: TtsEngine,
         usePregenerated: Boolean,
         onFinished: () -> Unit,
     ) {
         playJob?.cancel()
         appContext = context.applicationContext
-        initializeAudioPlayer(engine)
+        initializeAudioPlayer()
         AudioPlayerManager.player = audioPlayer
         AudioPlayerManager.onStop = { stopPlayback() }
+        val engine = OnnxRuntimeManager.getEngine()
         val target = if (projectName.isNotBlank()) {
             projectName
         } else {
@@ -117,7 +108,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         PlaybackNotification.show(appContext!!, true, target, style)
         playJob = playBook(
             scope = viewModelScope,
-            session = session,
+            engine = engine,
             phonemeConverter = phonemeConverter,
             styleLoader = styleLoader,
             selectedStyles = selectedStyles,

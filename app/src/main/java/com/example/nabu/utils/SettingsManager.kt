@@ -1,6 +1,7 @@
 package com.example.nabu.utils
 
 import android.content.Context
+import com.example.nabu.kokoro.RunEp
 
 object SettingsManager {
     fun setDebug(context: Context, enabled: Boolean) {
@@ -31,15 +32,6 @@ object SettingsManager {
     fun getSpeed(context: Context, default: Float = 1.0f): Float =
         DatabaseManager.getSetting(context, "speed")?.toFloat() ?: default
 
-    fun setTtsEngine(context: Context, engine: TtsEngine) {
-        DatabaseManager.setSetting(context, "tts_engine", engine.name)
-    }
-
-    fun getTtsEngine(context: Context, default: TtsEngine = TtsEngine.KOKORO): TtsEngine =
-        DatabaseManager.getSetting(context, "tts_engine")?.let {
-            runCatching { TtsEngine.valueOf(it) }.getOrNull()
-        } ?: default
-
     fun setTtsEnabled(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "tts_enabled", if (enabled) "1" else "0")
     }
@@ -48,4 +40,13 @@ object SettingsManager {
         val fallback = if (default) "1" else "0"
         return (DatabaseManager.getSetting(context, "tts_enabled") ?: fallback) == "1"
     }
+
+    fun setRuntimePreference(context: Context, ep: RunEp) {
+        DatabaseManager.setSetting(context, "kokoro_ep", ep.name)
+    }
+
+    fun getRuntimePreference(context: Context, default: RunEp = RunEp.AUTO): RunEp =
+        DatabaseManager.getSetting(context, "kokoro_ep")?.let {
+            runCatching { RunEp.valueOf(it) }.getOrNull()
+        } ?: default
 }

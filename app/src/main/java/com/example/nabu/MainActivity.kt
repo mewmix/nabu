@@ -11,7 +11,6 @@ import com.example.nabu.screens.ModelsScreen
 import com.example.nabu.screens.DebugLogScreen
 import com.example.nabu.screens.CreditsConstellationScreen
 import com.example.kokoro.galleryport.PerfHud
-import ai.onnxruntime.OrtSession
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -37,12 +36,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import com.mewmix.nabu.ui.brutalist.PanelBox
@@ -65,25 +65,21 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nabu.data.UserPreferencesRepository
-import com.example.nabu.utils.MainViewModel
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.StyleLoader
 import com.example.nabu.utils.createAudio
-import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.BenchmarkManager
-import com.example.nabu.utils.KittenPhonemizer
 import com.example.nabu.utils.playAudio
 import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.SettingsManager
-import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.google.android.material.color.DynamicColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,10 +89,26 @@ private const val PLAYBACK_CHANNEL_ID = "playback_channel"
 private const val PLAYBACK_NOTIFICATION_ID = 1
 
 class MyApplication : Application() {
+    private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         DynamicColors.applyToActivitiesIfAvailable(this)
+        preloadScope.launch {
+            OnnxRuntimeManager.initialize(applicationContext)
+        }
     }
+
+    override fun onTerminate() {
+        super.onTerminate()
+        preloadScope.cancel()
+    }
+}
+
+private sealed interface ModelState {
+    data object Loading : ModelState
+    data object Ready : ModelState
+    data class Error(val message: String) : ModelState
 }
 
 private fun showPlaybackNotification(context: Context) {
@@ -156,12 +168,9 @@ class MainActivity : ComponentActivity() {
                     WindowCompat.setDecorFitsSystemWindows(window, false)
                 }
 
-                val viewModel: MainViewModel = viewModel { MainViewModel(this@MainActivity) }
-
                 MainScreen(
-                    session = viewModel.getSession(),
                     phonemeConverter = phonemeConverter,
-                    onGenerateAudio = { text, style, speed, shouldSave, useRaw, onComplete ->
+                    onGenerateAudio = { text, style, speed, shouldSave, onComplete ->
                         maybeRequestNotificationPermission()
                         generateAudio(
                             phonemeConverter,
@@ -171,7 +180,6 @@ class MainActivity : ComponentActivity() {
                             this@MainActivity,
                             scope,
                             shouldSave,
-                            useRaw,
                             onComplete
                         )
                     },
@@ -213,55 +221,36 @@ private fun generateAudio(
     context: Context,
     scope: CoroutineScope,
     shouldSave: Boolean,
-    useRaw: Boolean,
     onComplete: () -> Unit
 ) {
-    val session = OnnxRuntimeManager.getSession()
+    val engine = runCatching { OnnxRuntimeManager.getEngine() }
+        .getOrElse {
+            Toast.makeText(context, "Kokoro engine not ready", Toast.LENGTH_LONG).show()
+            onComplete()
+            return
+        }
+    val styleLoader = StyleLoader(context)
     scope.launch(Dispatchers.IO) {
         try {
-            val engine = SettingsManager.getTtsEngine(context)
             val ttsStart = SystemClock.elapsedRealtime()
-            val (audioData, sampleRate) = if (engine == TtsEngine.KITTEN) {
-                val (displayStr, tokens) = if (useRaw) {
-                    KittenPhonemizer.encodeText(text)
-                } else {
-                    KittenPhonemizer.phonemize(text)
-                }
-                val logLabel = if (useRaw) "Raw text" else "Phonemes"
-                DebugLogger.log("$logLabel: $displayStr")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "$logLabel: $displayStr", Toast.LENGTH_LONG).show()
-                }
-                val loader = StyleLoader(context)
-                val voiceArray = loader.getStyleArray(style)
-                PerfHud.record("ONNX synth") {
-                    createKittenAudioFromStyleVector(
-                        tokens = tokens,
-                        voice = voiceArray,
-                        speed = speed,
-                        session = session
-                    )
-                }
-            } else {
-                val phonemes = phonemeConverter.phonemize(text)
-                DebugLogger.log("Phonemes: $phonemes")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
-                }
-                PerfHud.record("ONNX synth") {
-                    createAudio(
-                        voice = style,
-                        phonemes = phonemes,
-                        speed = speed,
-                        context = context,
-                        session = session
-                    )
-                }
+            val phonemes = phonemeConverter.phonemize(text)
+            DebugLogger.log("Phonemes: $phonemes")
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
+            }
+            val (audioData, sampleRate) = PerfHud.record("ONNX synth") {
+                createAudio(
+                    phonemes = phonemes,
+                    voice = style,
+                    speed = speed,
+                    engine = engine,
+                    styleLoader = styleLoader
+                )
             }
             val genMs = SystemClock.elapsedRealtime() - ttsStart
             if (SettingsManager.isBenchmark(context)) {
                 val audioMs = audioData.size * 1000L / sampleRate
-                BenchmarkManager.recordTts(engine, genMs, audioMs)
+                BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
                 BenchmarkManager.profileSystem(context)
             }
 
@@ -319,9 +308,8 @@ sealed class Screen {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    session: OrtSession,
     phonemeConverter: PhonemeConverter,
-    onGenerateAudio: (String, String, Float, Boolean, Boolean, () -> Unit) -> Unit,
+    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
     userPreferencesRepository: UserPreferencesRepository,
     initialScreen: Screen = Screen.Basic
 ) {
@@ -374,7 +362,6 @@ fun MainScreen(
                     styleLoader = StyleLoader(context)
                 )
                 Screen.Book -> BookScreen(
-                    session = session,
                     phonemeConverter = phonemeConverter
                 )
                 Screen.Chat -> {
@@ -404,15 +391,14 @@ fun MainScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BasicScreen(
-    onGenerateAudio: (String, String, Float, Boolean, Boolean, () -> Unit) -> Unit,
+    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
-    var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
-    val styleLoader = remember(engine) { StyleLoader(context) }
+    val styleLoader = remember { StyleLoader(context) }
     val names = styleLoader.names.sorted()
 
     var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
-    var style by remember(engine) {
+    var style by remember {
         mutableStateOf(
             SettingsManager.getStyle(context).takeIf { it in names }
                 ?: names.firstOrNull().orEmpty()
@@ -421,17 +407,30 @@ fun BasicScreen(
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
-    var useRawText by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    var initTrigger by remember { mutableStateOf(0) }
+    var modelState by remember { mutableStateOf<ModelState>(ModelState.Loading) }
 
-    LaunchedEffect(engine) {
-        withContext(Dispatchers.IO) {
+    LaunchedEffect(initTrigger) {
+        modelState = ModelState.Loading
+        val result = withContext(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
         }
-        SettingsManager.setStyle(context, style)
+        modelState = result.fold(
+            onSuccess = { ModelState.Ready },
+            onFailure = { ModelState.Error(it?.message ?: "Unable to prepare Kokoro models") }
+        )
+        if (style.isEmpty() && names.isNotEmpty()) {
+            style = names.first()
+            SettingsManager.setStyle(context, style)
+        }
     }
 
-    var expanded by remember { mutableStateOf(false) }
-    var engineExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(style) {
+        if (style.isNotEmpty()) {
+            SettingsManager.setStyle(context, style)
+        }
+    }
 
     PanelBox(
         modifier = Modifier
@@ -439,154 +438,127 @@ fun BasicScreen(
             .fillMaxSize()
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            TextField(
-            value = text,
-            minLines = 3,
-            maxLines = 12,
-            onValueChange = { text = it },
-            label = { Text("TEXT TO SPEAK") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions.Default.copy(
-                keyboardType = KeyboardType.Text
-            )
-        )
-
-        ExposedDropdownMenuBox(
-            expanded = engineExpanded,
-            onExpandedChange = { engineExpanded = !engineExpanded },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            TextField(
-                value = engine.name,
-                onValueChange = {},
-                label = { Text("TTS ENGINE") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(),
-                readOnly = true,
-                trailingIcon = {
-                    Text(if (engineExpanded) "▲" else "▼", color = Brutal.textBright)
+            when (val state = modelState) {
+                ModelState.Loading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                        Text("Downloading voice models…")
+                    }
                 }
-            )
-
-            DropdownMenu(
-                expanded = engineExpanded,
-                onDismissRequest = { engineExpanded = false }
-            ) {
-                TtsEngine.values().forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option.name.uppercase()) },
-                        onClick = {
-                            engine = option
-                            SettingsManager.setTtsEngine(context, option)
-                            engineExpanded = false
+                is ModelState.Error -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = state.message,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        BrutalButton(onClick = { initTrigger++ }) {
+                            Text("Retry download")
                         }
-                    )
+                    }
                 }
+                ModelState.Ready -> Unit
             }
-        }
 
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded },
-            modifier = Modifier.fillMaxWidth()
-        ) {
             TextField(
-                value = style,
-                onValueChange = {
-                    style = it
-                    SettingsManager.setStyle(context, it)
-                },
-                label = { Text("STYLE") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(),
-                readOnly = true,
-                trailingIcon = {
-                    Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
-                }
+                value = text,
+                minLines = 3,
+                maxLines = 12,
+                onValueChange = { text = it },
+                label = { Text("TEXT TO SPEAK") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions.Default.copy(
+                    keyboardType = KeyboardType.Text
+                )
             )
 
-            DropdownMenu(
+            ExposedDropdownMenuBox(
                 expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                names.forEach { name ->
-                    DropdownMenuItem(
-                        text = { Text(name.uppercase()) },
-                        onClick = {
-                            style = name
-                            SettingsManager.setStyle(context, name)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-
-        if (engine == TtsEngine.KITTEN) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+                onExpandedChange = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("RAW TEXT INPUT")
-                Spacer(modifier = Modifier.width(8.dp))
-                Switch(checked = useRawText, onCheckedChange = { useRawText = it })
-            }
-        }
-
-        PanelRow(name = "SPEED") {
-            BrutalSlider(
-                value = speed,
-                onValueChange = {
-                    speed = it
-                    SettingsManager.setSpeed(context, it)
-                },
-                range = 0.5f..2.0f,
-                modifier = Modifier.weight(1f)
-            )
-            Text("%.2f".format(speed))
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            BrutalButton(
-                onClick = {
-                    shouldSaveFile = false
-                    isProcessing = true
-                    onGenerateAudio(text, style, speed, shouldSaveFile, useRawText) {
-                        isProcessing = false
+                TextField(
+                    value = style,
+                    onValueChange = {},
+                    label = { Text("STYLE") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    readOnly = true,
+                    trailingIcon = {
+                        Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                enabled = !isProcessing
-            ) {
-                Text(if (isProcessing) "GPU PROCESSING..." else "PLAY")
+                )
+
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    names.forEach { name ->
+                        DropdownMenuItem(
+                            text = { Text(name.uppercase()) },
+                            onClick = {
+                                style = name
+                                expanded = false
+                            }
+                        )
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            PanelRow(name = "SPEED") {
+                BrutalSlider(
+                    value = speed,
+                    onValueChange = {
+                        speed = it
+                        SettingsManager.setSpeed(context, it)
+                    },
+                    range = 0.5f..2.0f,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("%.2f".format(speed))
+            }
 
-            BrutalButton(
-                onClick = {
-                    shouldSaveFile = true
-                    isProcessing = true
-                    onGenerateAudio(text, style, speed, shouldSaveFile, useRawText) {
-                        isProcessing = false
-                    }
-                },
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                enabled = !isProcessing
+                    .padding(16.dp)
             ) {
-                Text(if (isProcessing) "GPU PROCESSING..." else "PLAY & SAVE")
+                val playEnabled = !isProcessing && style.isNotEmpty() && modelState is ModelState.Ready
+
+                BrutalButton(
+                    onClick = {
+                        shouldSaveFile = false
+                        isProcessing = true
+                        onGenerateAudio(text, style, speed, shouldSaveFile) {
+                            isProcessing = false
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    enabled = playEnabled
+                ) {
+                    Text(if (isProcessing) "PROCESSING..." else "PLAY")
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                BrutalButton(
+                    onClick = {
+                        shouldSaveFile = true
+                        isProcessing = true
+                        onGenerateAudio(text, style, speed, shouldSaveFile) {
+                            isProcessing = false
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    enabled = playEnabled
+                ) {
+                    Text(if (isProcessing) "PROCESSING..." else "PLAY & SAVE")
+                }
             }
         }
     }
-}
 }
