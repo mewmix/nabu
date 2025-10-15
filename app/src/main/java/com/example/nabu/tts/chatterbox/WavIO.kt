@@ -35,8 +35,14 @@ object WavIO {
                 val chunkId = String(chunkHeader, 0, 4)
                 val chunkSize = ByteBuffer.wrap(chunkHeader, 4, 4).order(ByteOrder.LITTLE_ENDIAN).int
                 val chunkData = ByteArray(chunkSize)
-                val bytesRead = input.readNBytes(chunkData, 0, chunkSize)
-                if (bytesRead != chunkSize) throw IOException("Unexpected end of WAV data")
+                var offset = 0
+                while (offset < chunkSize) {
+                    val readCount = input.read(chunkData, offset, chunkSize - offset)
+                    if (readCount == -1) {
+                        throw IOException("Unexpected end of WAV data")
+                    }
+                    offset += readCount
+                }
 
                 when (chunkId) {
                     "fmt " -> {

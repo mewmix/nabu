@@ -5,12 +5,53 @@ import android.content.res.Resources
 import com.example.nabu.R
 import com.github.medavox.ipa_transcribers.Language
 import java.io.IOException
+import java.util.Locale
 
-class PhonemeConverter(context: Context) {
-    private val phonemeMap = mutableMapOf<String, String>()
+class PhonemeConverter private constructor(
+    private val phonemeMap: MutableMap<String, String>
+) {
 
-    init {
+    constructor(context: Context) : this(mutableMapOf()) {
         loadDictionary(context)
+    }
+
+    private val pronunciationOverrides = mapOf(
+        "IT" to "ɪt",
+        "ITS" to "ɪts",
+        "US" to "ʌs"
+    )
+
+    private val letterPronunciations = mapOf(
+        'A' to "eɪ",
+        'B' to "biː",
+        'C' to "siː",
+        'D' to "diː",
+        'E' to "iː",
+        'F' to "ɛf",
+        'G' to "dʒiː",
+        'H' to "eɪtʃ",
+        'I' to "aɪ",
+        'J' to "dʒeɪ",
+        'K' to "keɪ",
+        'L' to "ɛl",
+        'M' to "ɛm",
+        'N' to "ɛn",
+        'O' to "oʊ",
+        'P' to "piː",
+        'Q' to "kjuː",
+        'R' to "ɑːr",
+        'S' to "ɛs",
+        'T' to "tiː",
+        'U' to "juː",
+        'V' to "viː",
+        'W' to "dʌbəljuː",
+        'X' to "ɛks",
+        'Y' to "waɪ",
+        'Z' to "ziː"
+    )
+
+    private val englishTranscriber by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        runCatching { Language.ENGLISH.transcriber }.getOrNull()
     }
 
     private fun loadDictionary(context: Context) {
@@ -20,7 +61,7 @@ class PhonemeConverter(context: Context) {
                     lines.filter { !it.startsWith(";;;") }.forEach { line ->
                         val parts = line.split("\t", limit = 2)
                         if (parts.size == 2) {
-                            phonemeMap[parts[0]] = parts[1]
+                            registerEntry(parts[0], parts[1])
                         } else {
                             DebugLogger.log("Invalid line format: $line")
                         }
@@ -36,33 +77,85 @@ class PhonemeConverter(context: Context) {
         }
     }
 
+    private fun loadDictionary(entries: Map<String, String>) {
+        entries.forEach { (key, value) ->
+            registerEntry(key, value)
+        }
+        DebugLogger.log("Dictionary loaded from override. Total entries: ${phonemeMap.size}")
+    }
+
+    private fun registerEntry(key: String, value: String) {
+        val normalizedKey = key.uppercase(Locale.US)
+        val normalizedValue = pronunciationOverrides[normalizedKey] ?: value
+        phonemeMap[normalizedKey] = normalizedValue
+    }
+
     private fun convertToPhonemes(word: String): String {
         if (word.matches(Regex("[^a-zA-Z']+"))) {
             return word
         }
 
-        val cleanUpper = word.replace(Regex("[^a-zA-Z']"), "").uppercase()
-        val phonemesFromDict = phonemeMap[cleanUpper]
+        val cleanedWord = word.replace(Regex("[^a-zA-Z']"), "")
+        val cleanKey = cleanedWord.uppercase(Locale.US)
+        val isAllUppercase = cleanedWord.isNotEmpty() && cleanedWord.all { it.isUpperCase() }
 
-        val isAllUppercase = word.all { it.isUpperCase() }
-        if (phonemesFromDict != null && !isAllUppercase && word.length <= 3) {
-            val stressCount = phonemesFromDict.count { it == 'ˈ' || it == 'ˌ' }
-            if (stressCount > 1) {
-                return fallbackTranscribe(word.lowercase())
-            }
+        if (!isAllUppercase) {
+            pronunciationOverrides[cleanKey]?.let { return it }
         }
 
-        val phonemes = phonemesFromDict ?: return fallbackTranscribe(word)
+        val phonemesFromDict = phonemeMap[cleanKey]
 
-        return phonemes.split(",").first().trim()
+        if (phonemesFromDict != null) {
+            val sanitized = phonemesFromDict.split(",").first().trim()
+            val stressCount = sanitized.count { it == 'ˈ' || it == 'ˌ' }
+            if (shouldSpellOutAsInitialism(isAllUppercase, cleanedWord.length, stressCount)) {
+                return fallbackTranscribe(cleanedWord)
+            }
+
+            return sanitized
+        }
+
+        return fallbackTranscribe(cleanedWord)
+    }
+
+    private fun shouldSpellOutAsInitialism(
+        isAllUppercase: Boolean,
+        length: Int,
+        stressCount: Int
+    ): Boolean {
+        if (!isAllUppercase) {
+            return false
+        }
+        if (length > 4) {
+            return false
+        }
+        return stressCount > 1
     }
 
     private fun fallbackTranscribe(word: String): String {
-        val englishTranscriber =
-            Language.ENGLISH.transcriber
+        if (word.isEmpty()) {
+            return word
+        }
 
-        val ipaText = englishTranscriber.transcribe(word)
-        return ipaText
+        val key = word.uppercase(Locale.US)
+        pronunciationOverrides[key]?.let { return it }
+
+        englishTranscriber?.let { transcriber ->
+            runCatching { transcriber.transcribe(word.lowercase(Locale.US)) }
+                .onSuccess { return it }
+        }
+
+        if (word.all { it.isLetter() }) {
+            val pronunciation = key
+                .mapNotNull { letterPronunciations[it] }
+                .joinToString(" ")
+
+            if (pronunciation.isNotEmpty()) {
+                return pronunciation
+            }
+        }
+
+        return word
     }
 
     fun phonemize(text: String, lang: String = "en-us", norm: Boolean = true): String {
@@ -227,6 +320,12 @@ class PhonemeConverter(context: Context) {
     }
 
     companion object {
+
+        fun fromDictionary(entries: Map<String, String>): PhonemeConverter {
+            return PhonemeConverter(mutableMapOf()).apply {
+                loadDictionary(entries)
+            }
+        }
 
         private val VOCAB: Map<Char, Int> = run {
             val pad = '$'

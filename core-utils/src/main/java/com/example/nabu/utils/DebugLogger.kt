@@ -10,8 +10,12 @@ import java.util.Date
 import java.util.Locale
 
 object DebugLogger {
+    private const val MAX_BUFFERED_LOGS = 100
+    private const val TAG = "Nabu"
+
     private var logFile: File? = null
     private val logs = mutableListOf<String>()
+    private var logcatAvailable = true
 
     @Synchronized
     fun initialize(context: Context) {
@@ -20,28 +24,36 @@ object DebugLogger {
             if (!logDirectory.exists()) {
                 logDirectory.mkdirs()
             }
-              logFile = File(logDirectory, "nabu_log.txt")
+            logFile = File(logDirectory, "nabu_log.txt")
         }
     }
 
     @Synchronized
     fun log(message: String) {
-        if (logs.size > 100) {
-            logs.removeAt(0)
-        }
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         val logMessage = "$timestamp: $message"
-        logs.add(logMessage)
-          Log.d("Nabu", logMessage)
 
-        // Write to file
-        try {
-            FileWriter(logFile, true).use {
-                it.append(logMessage)
-                it.append("\n")
+        if (logs.size >= MAX_BUFFERED_LOGS) {
+            logs.removeAt(0)
+        }
+        logs.add(logMessage)
+
+        if (logcatAvailable) {
+            runCatching { Log.d(TAG, logMessage) }
+                .onFailure { logcatAvailable = false }
+        }
+
+        logFile?.let { destination ->
+            runCatching {
+                FileWriter(destination, true).use {
+                    it.appendLine(logMessage)
+                }
+            }.onFailure {
+                if (logcatAvailable) {
+                    runCatching { Log.e(TAG, "Failed to write to log file", it) }
+                        .onFailure { logcatAvailable = false }
+                }
             }
-        } catch (e: IOException) {
-              Log.e("Nabu", "Failed to write to log file", e)
         }
     }
 
