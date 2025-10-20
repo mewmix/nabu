@@ -5,11 +5,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
@@ -24,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.example.nabu.kokoro.RunEp
 import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.OnnxRuntimeManager
+import com.example.nabu.utils.getAppVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.PanelBox
@@ -33,6 +35,7 @@ import com.mewmix.nabu.ui.brutalist.SwitchToggle
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
+    val versionName = remember { getAppVersion(context) }
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
@@ -97,6 +100,11 @@ fun SettingsScreen() {
                     }
                 }
             }
+
+            Text(
+                text = "Version $versionName",
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }

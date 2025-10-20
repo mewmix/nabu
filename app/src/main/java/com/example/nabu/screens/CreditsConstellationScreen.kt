@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.weight
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
@@ -45,6 +47,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import com.mewmix.nabu.ui.brutalist.PanelBox
+import com.example.nabu.utils.getAppVersion
 
 // Data classes representing credits hierarchy
 
@@ -114,6 +117,8 @@ fun CreditsConstellationScreen() {
     }
 
     var expandedGroup by remember { mutableStateOf<CreditGroup?>(null) }
+    val context = LocalContext.current
+    val versionName = remember { getAppVersion(context) }
 
     PanelBox(
         title = "Credits",
@@ -121,36 +126,48 @@ fun CreditsConstellationScreen() {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(expandedGroup) {
-                    if (expandedGroup != null) {
-                        detectTapGestures { expandedGroup = null }
-                    }
-                },
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .pointerInput(expandedGroup) {
+                        if (expandedGroup != null) {
+                            detectTapGestures { expandedGroup = null }
+                        }
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                StarCluster(
-                    group = legacyCredits,
-                    expanded = expandedGroup == legacyCredits,
-                    onToggle = {
-                        expandedGroup = if (expandedGroup == legacyCredits) null else legacyCredits
-                    }
-                )
-                Spacer(modifier = Modifier.height(32.dp))
-                StarCluster(
-                    group = ourCredits,
-                    expanded = expandedGroup == ourCredits,
-                    onToggle = {
-                        expandedGroup = if (expandedGroup == ourCredits) null else ourCredits
-                    }
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    StarCluster(
+                        group = legacyCredits,
+                        expanded = expandedGroup == legacyCredits,
+                        onToggle = {
+                            expandedGroup = if (expandedGroup == legacyCredits) null else legacyCredits
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(32.dp))
+                    StarCluster(
+                        group = ourCredits,
+                        expanded = expandedGroup == ourCredits,
+                        onToggle = {
+                            expandedGroup = if (expandedGroup == ourCredits) null else ourCredits
+                        }
+                    )
+                }
             }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Version $versionName",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

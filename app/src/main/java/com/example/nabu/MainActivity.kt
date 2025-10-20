@@ -23,8 +23,10 @@ import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,12 +56,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.consume
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -83,6 +90,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 const val EXTRA_START_SCREEN = "start_screen"
 private const val PLAYBACK_CHANNEL_ID = "playback_channel"
@@ -292,6 +300,19 @@ private fun screenFromString(name: String?): Screen = when (name) {
     else -> Screen.Basic
 }
 
+private fun screenToString(screen: Screen): String = when (screen) {
+    Screen.Basic -> "Basic"
+    Screen.Mixer -> "Mixer"
+    Screen.Book -> "Book"
+    Screen.Chat -> "Chat"
+    Screen.More -> "More"
+    Screen.Creations -> "Creations"
+    Screen.Settings -> "Settings"
+    Screen.Models -> "Models"
+    Screen.DebugLog -> "DebugLog"
+    Screen.Credits -> "Credits"
+}
+
 sealed class Screen {
     object Basic : Screen()
     object Mixer : Screen()
@@ -305,6 +326,16 @@ sealed class Screen {
     object Credits : Screen()
 }
 
+private val featureScreens = listOf(Screen.Basic, Screen.Mixer, Screen.Book, Screen.More)
+
+private fun Screen.asFeature(): Screen? = when (this) {
+    Screen.Basic -> Screen.Basic
+    Screen.Mixer -> Screen.Mixer
+    Screen.Book -> Screen.Book
+    Screen.More, Screen.Creations, Screen.Settings, Screen.Models, Screen.Credits, Screen.DebugLog -> Screen.More
+    Screen.Chat -> null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -313,7 +344,40 @@ fun MainScreen(
     userPreferencesRepository: UserPreferencesRepository,
     initialScreen: Screen = Screen.Basic
 ) {
-    var currentScreen by remember { mutableStateOf(initialScreen) }
+    val screenStack = rememberSaveable(
+        saver = listSaver(
+            save = { stateList -> stateList.map(::screenToString) },
+            restore = { saved ->
+                mutableStateListOf<Screen>().apply {
+                    if (saved.isEmpty()) {
+                        add(Screen.Basic)
+                    } else {
+                        saved.map(::screenFromString).forEach { add(it) }
+                    }
+                }
+            }
+        )
+    ) {
+        mutableStateListOf(initialScreen)
+    }
+
+    if (screenStack.isEmpty()) {
+        screenStack.add(Screen.Basic)
+    }
+
+    val currentScreen = screenStack.last()
+    val currentFeature = currentScreen.asFeature()
+    val navigateTo: (Screen) -> Unit = { screen ->
+        if (screenStack.lastOrNull() != screen) {
+            screenStack.add(screen)
+        }
+    }
+
+    BackHandler(enabled = screenStack.size > 1) {
+        if (screenStack.size > 1) {
+            screenStack.removeAt(screenStack.lastIndex)
+        }
+    }
     val context = LocalContext.current
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -326,19 +390,19 @@ fun MainScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 BrutalButton(
-                    onClick = { currentScreen = Screen.Basic },
+                    onClick = { navigateTo(Screen.Basic) },
                     modifier = Modifier.weight(1f),
-                    enabled = currentScreen != Screen.Basic
+                    enabled = currentFeature != Screen.Basic
                 ) { Text("BASIC") }
                 BrutalButton(
-                    onClick = { currentScreen = Screen.Mixer },
+                    onClick = { navigateTo(Screen.Mixer) },
                     modifier = Modifier.weight(1f),
-                    enabled = currentScreen != Screen.Mixer
+                    enabled = currentFeature != Screen.Mixer
                 ) { Text("MIXER") }
                 BrutalButton(
-                    onClick = { currentScreen = Screen.Book },
+                    onClick = { navigateTo(Screen.Book) },
                     modifier = Modifier.weight(1f),
-                    enabled = currentScreen != Screen.Book
+                    enabled = currentFeature != Screen.Book
                 ) { Text("BOOK") }
                 BrutalButton(
                     onClick = {
@@ -347,14 +411,38 @@ fun MainScreen(
                     modifier = Modifier.weight(1f)
                 ) { Text("CHAT") }
                 BrutalButton(
-                    onClick = { currentScreen = Screen.More },
+                    onClick = { navigateTo(Screen.More) },
                     modifier = Modifier.weight(1f),
-                    enabled = currentScreen != Screen.More
+                    enabled = currentFeature != Screen.More
                 ) { Text("MORE") }
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
+        Box(
+            modifier = Modifier
+                .padding(innerPadding)
+                .pointerInput(currentScreen, screenStack.size) {
+                    var totalDrag = 0f
+                    detectDragGestures(
+                        onDragStart = { totalDrag = 0f },
+                        onDragCancel = { totalDrag = 0f },
+                        onDragEnd = {
+                            val feature = currentFeature ?: return@detectDragGestures
+                            val index = featureScreens.indexOf(feature)
+                            if (abs(totalDrag) > 96f && index != -1) {
+                                when {
+                                    totalDrag > 0f && index > 0 -> navigateTo(featureScreens[index - 1])
+                                    totalDrag < 0f && index < featureScreens.lastIndex -> navigateTo(featureScreens[index + 1])
+                                }
+                            }
+                            totalDrag = 0f
+                        }
+                    ) { change, dragAmount ->
+                        change.consume()
+                        totalDrag += dragAmount.x
+                    }
+                }
+        ) {
             when (currentScreen) {
                 Screen.Basic -> BasicScreen(onGenerateAudio = onGenerateAudio)
                 Screen.Mixer -> MixerScreen(
@@ -369,14 +457,15 @@ fun MainScreen(
                     // This case is primarily for the 'selected' state of the NavigationBarItem
                 }
                 Screen.More -> MoreScreen { screen ->
-                    currentScreen = when (screen) {
+                    val destination = when (screen) {
                         "Creations" -> Screen.Creations
                         "Settings" -> Screen.Settings
                         "Models" -> Screen.Models
                         "Credits" -> Screen.Credits
                         "DebugLog" -> Screen.DebugLog
-                        else -> currentScreen
+                        else -> null
                     }
+                    destination?.let { navigateTo(it) }
                 }
                 Screen.Creations -> CreationsScreen()
                 Screen.Settings -> SettingsScreen()
