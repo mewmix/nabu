@@ -32,16 +32,18 @@ object DebugLogger {
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         val logMessage = "$timestamp: $message"
         logs.add(logMessage)
-          Log.d("Nabu", logMessage)
+        logFile?.let { 
+            Log.d("Nabu", logMessage)
 
-        // Write to file
-        try {
-            FileWriter(logFile, true).use {
-                it.append(logMessage)
-                it.append("\n")
+            // Write to file
+            try {
+                FileWriter(it, true).use {
+                    it.append(logMessage)
+                    it.append("\n")
+                }
+            } catch (e: IOException) {
+                Log.e("Nabu", "Failed to write to log file", e)
             }
-        } catch (e: IOException) {
-              Log.e("Nabu", "Failed to write to log file", e)
         }
     }
 
