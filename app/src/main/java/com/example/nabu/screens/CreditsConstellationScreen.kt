@@ -47,6 +47,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import com.mewmix.nabu.ui.brutalist.PanelBox
+import com.example.nabu.components.VersionPlate
 import com.example.nabu.utils.getAppVersion
 
 // Data classes representing credits hierarchy
@@ -163,10 +164,9 @@ fun CreditsConstellationScreen() {
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Version $versionName",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center
+            VersionPlate(
+                version = versionName,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

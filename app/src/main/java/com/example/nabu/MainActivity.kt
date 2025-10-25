@@ -81,6 +81,8 @@ import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
+import com.example.nabu.kokoro.Downloader
+import com.example.nabu.kokoro.RunEp
 import com.google.android.material.color.DynamicColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +92,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import java.util.Locale
 
 const val EXTRA_START_SCREEN = "start_screen"
 private const val PLAYBACK_CHANNEL_ID = "playback_channel"
@@ -497,9 +500,21 @@ fun BasicScreen(
     var expanded by remember { mutableStateOf(false) }
     var initTrigger by remember { mutableStateOf(0) }
     var modelState by remember { mutableStateOf<ModelState>(ModelState.Loading) }
+    var hasLocalModels by remember {
+        mutableStateOf(
+            Downloader.modelsAvailable(
+                context.applicationContext,
+                OnnxRuntimeManager.currentManifest()
+            )
+        )
+    }
 
     LaunchedEffect(initTrigger) {
         modelState = ModelState.Loading
+        hasLocalModels = Downloader.modelsAvailable(
+            context.applicationContext,
+            OnnxRuntimeManager.currentManifest()
+        )
         val result = withContext(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
         }
@@ -527,9 +542,16 @@ fun BasicScreen(
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             when (val state = modelState) {
                 ModelState.Loading -> {
+                    val runtimePreference = SettingsManager.getRuntimePreference(context)
+                    val runtimeLabel = runtimePreference.displayName()
+                    val loadingMessage = if (hasLocalModels) {
+                        "Loading $runtimeLabel runtime…"
+                    } else {
+                        "Downloading voice models…"
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
-                        Text("Downloading voice models…")
+                        Text(loadingMessage, color = Brutal.textBright)
                     }
                 }
                 is ModelState.Error -> {
@@ -649,3 +671,6 @@ fun BasicScreen(
         }
     }
 }
+
+private fun RunEp.displayName(): String =
+    name.lowercase(Locale.ROOT).replaceFirstChar { it.titlecase(Locale.ROOT) }

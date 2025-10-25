@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.nabu.kokoro.RunEp
+import com.example.nabu.components.VersionPlate
 import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.getAppVersion
@@ -101,10 +102,7 @@ fun SettingsScreen() {
                 }
             }
 
-            Text(
-                text = "Version $versionName",
-                style = MaterialTheme.typography.bodyMedium
-            )
+            VersionPlate(version = versionName)
         }
     }
 }

@@ -62,6 +62,14 @@ object Downloader {
             }
         }
 
+    fun modelsAvailable(ctx: Context, manifest: Manifest): Boolean {
+        val root = File(ctx.filesDir, "")
+        return manifest.files.all { file ->
+            val outFile = File(root, file.dest)
+            outFile.exists()
+        }
+    }
+
     @Throws(IOException::class)
     private fun rangeDownload(url: String, target: File) {
         var existingBytes = if (target.exists()) target.length() else 0L
