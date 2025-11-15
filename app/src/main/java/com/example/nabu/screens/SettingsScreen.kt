@@ -102,7 +102,15 @@ fun SettingsScreen() {
                 }
             }
 
-            VersionPlate(version = versionName)
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+
+            val scope = rememberCoroutineScope()
+            VersionPlate(version = versionName, onClick = {
+                scope.launch {
+                    UpdateChecker.checkForUpdate(context)
+                }
+            })
         }
     }
 }
