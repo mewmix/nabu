@@ -31,6 +31,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.nabu.utils.UpdateChecker
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,7 +105,12 @@ fun SettingsScreen() {
                 }
             }
 
-            VersionPlate(version = versionName)
+            val scope = rememberCoroutineScope()
+            VersionPlate(version = versionName, onClick = {
+                scope.launch {
+                    UpdateChecker.checkForUpdate(context)
+                }
+            })
         }
     }
 }

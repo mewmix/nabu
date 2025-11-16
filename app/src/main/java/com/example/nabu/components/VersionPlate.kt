@@ -2,6 +2,7 @@ package com.example.nabu.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,13 +25,15 @@ private val VersionPlateShape: Shape = RoundedCornerShape(6.dp)
 fun VersionPlate(
     version: String,
     modifier: Modifier = Modifier,
-    label: String = "Version"
+    label: String = "Version",
+    onClick: (() -> Unit)? = null
 ) {
     Row(
         modifier
             .fillMaxWidth()
             .background(Brutal.panelHl, VersionPlateShape)
             .border(1.dp, Brutal.hairline, VersionPlateShape)
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

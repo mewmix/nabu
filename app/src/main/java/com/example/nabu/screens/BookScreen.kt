@@ -523,7 +523,7 @@ fun BookScreen(
         item {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small)),
+                horizontalArrangement = Arrangement.Center,
                 maxItemsInEachRow = 3
             ) {
                 BrutalButton(onClick = { launcher.launch(arrayOf("text/plain", "application/epub+zip")) }) {
