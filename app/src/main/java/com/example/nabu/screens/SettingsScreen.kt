@@ -22,6 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.nabu.R
+import com.example.nabu.Screen
 import com.example.nabu.kokoro.RunEp
 import com.example.nabu.components.VersionPlate
 import com.example.nabu.utils.SettingsManager
@@ -34,16 +36,20 @@ import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.nabu.utils.UpdateChecker
+import com.example.nabu.utils.UpdateStatus
+import com.mewmix.nabu.ui.brutalist.Brutal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(navigateTo: (Screen) -> Unit) {
     val context = LocalContext.current
     val versionName = remember { getAppVersion(context) }
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
     var expanded by remember { mutableStateOf(false) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(runtime) {
         withContext(Dispatchers.IO) {
@@ -105,12 +111,44 @@ fun SettingsScreen() {
                 }
             }
 
-            val scope = rememberCoroutineScope()
-            VersionPlate(version = versionName, onClick = {
-                scope.launch {
-                    UpdateChecker.checkForUpdate(context)
+            VersionPlate(
+                version = versionName,
+                onClick = {
+                    scope.launch {
+                        UpdateChecker.checkForUpdate(context)
+                        val status = UpdateChecker.getLastStatus()
+                        updateStatus = when (status) {
+                            is UpdateStatus.NoUpdate -> "No update available"
+                            is UpdateStatus.UpdateAvailable -> "Update found: v${status.latest}"
+                            is UpdateStatus.DownloadFailed -> "Download failed: ${status.reason}"
+                            is UpdateStatus.Checking -> "Checking for updates..."
+                            else -> null
+                        }
+                    }
+                },
+                debugTapToLog = debug
+            )
+            if (updateStatus != null) {
+                Text(
+                    text = updateStatus!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Brutal.textDisabled
+                )
+            }
+            if (debug) {
+                if (UpdateChecker.getLastStatus() !is UpdateStatus.Idle) {
+                    Text(
+                        text = "Debug: ${UpdateChecker.getLastStatus()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Brutal.textDisabled
+                    )
                 }
-            })
+                PanelBox(
+                    modifier = Modifier.clickable { navigateTo(Screen.DebugLog) }
+                ) {
+                    Text("View update logs")
+                }
+            }
         }
     }
 }

@@ -26,8 +26,10 @@ fun VersionPlate(
     version: String,
     modifier: Modifier = Modifier,
     label: String = "Version",
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    debugTapToLog: Boolean = false
 ) {
+    val finalLabel = if (debugTapToLog) "Version (tap for logs)" else label
     Row(
         modifier
             .fillMaxWidth()
@@ -37,7 +39,7 @@ fun VersionPlate(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        LabelPlate(text = label)
+        LabelPlate(text = finalLabel)
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = version,

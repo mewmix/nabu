@@ -469,7 +469,7 @@ fun MainScreen(
                     destination?.let { navigateTo(it) }
                 }
                 Screen.Creations -> CreationsScreen()
-                Screen.Settings -> SettingsScreen()
+                Screen.Settings -> SettingsScreen(navigateTo = navigateTo)
                 Screen.Models -> ModelsScreen(userPreferencesRepository)
                 Screen.Credits -> CreditsConstellationScreen()
                 Screen.DebugLog -> DebugLogScreen()
