@@ -4,27 +4,39 @@
     "description": "Gemma 3n Instruct 4B parameter model",
     "repo": "google/gemma-3n-E4B-it-int4",
     "downloadUrl": "https://huggingface.co/google/gemma-3n-E4B-it-litert-preview/resolve/main/gemma-3n-E4B-it-int4.task",
-    "gated": true
+    "gated": true,
+    "type": "LLM"
   },
   "gemma3-1b-it-q4": {
     "name": "Gemma3 1B IT q4",
     "description": "A 4-bit variant of Gemma3 1B IT for Android",
     "repo": "litert-community/Gemma3-1B-IT",
     "downloadUrl": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv2048.task",
-    "gated": false
+    "gated": false,
+    "type": "LLM"
   },
   "gemma3-270m-it-q8": {
     "name": "Gemma3 270M IT q8",
     "description": "An 8-bit variant of Gemma3 270M IT for Android",
     "repo": "litert-community/gemma-3-270m-it",
     "downloadUrl": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task",
-    "gated": true
+    "gated": true,
+    "type": "LLM"
   },
   "qwen2.5-1.5b-instruct-q8": {
     "name": "Qwen2.5 1.5B Instruct q8",
     "description": "A quantized 8-bit Qwen2.5 1.5B Instruct model",
     "repo": "litert-community/Qwen2.5-1.5B-Instruct",
     "downloadUrl": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
-    "gated": false
+    "gated": false,
+    "type": "LLM"
+  },
+  "supertonic-onnx": {
+    "name": "Supertonic TTS",
+    "description": "Lightweight, controllable text-to-speech model",
+    "repo": "Supertone/supertonic",
+    "downloadUrl": "https://huggingface.co/Supertone/supertonic/resolve/main/onnx/",
+    "gated": false,
+    "type": "TTS"
   }
 }

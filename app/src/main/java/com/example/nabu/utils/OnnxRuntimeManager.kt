@@ -10,6 +10,7 @@ import com.example.nabu.kokoro.Manifest
 import com.example.nabu.kokoro.ManifestProvider
 import com.example.nabu.kokoro.RunEp
 import com.example.nabu.kokoro.KokoroEngine
+import com.example.nabu.tts.TTSEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock

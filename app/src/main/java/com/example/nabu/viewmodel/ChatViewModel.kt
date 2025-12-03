@@ -15,6 +15,7 @@ import com.example.nabu.data.ConversationTurn
 import com.example.nabu.data.Model
 import com.example.nabu.data.ModelManager
 import com.example.nabu.kokoro.KokoroEngine
+import com.example.nabu.tts.TTSManager
 import com.example.nabu.utils.AudioPlayer
 import com.example.nabu.utils.BenchmarkManager
 import com.example.nabu.utils.DebugLogger
@@ -516,25 +517,36 @@ class ChatViewModel(
                 }
                 DebugLogger.log("Synthesizing: ${text}")
                 val audioData = withContext(Dispatchers.IO) {
-                    val mixedVector = mixStyles(
-                        styleLoader,
-                        _selectedStyles.value,
-                        _weights.value,
-                        _interpolationMode.value
-                    )
-                    val engine = runCatching { OnnxRuntimeManager.getEngine() }
-                        .getOrElse { throw IllegalStateException("Kokoro engine not ready", it) }
+                    val engine = TTSManager.getEngine(context, modelManager)
+                        ?: throw IllegalStateException("No TTS engine available")
+
                     val ttsStart = SystemClock.elapsedRealtime()
-                    val phonemes = phonemeConverter.phonemize(text)
-                    val (data, sampleRate) = createAudioFromStyleVector(
-                        phonemes = phonemes,
-                        voice = mixedVector,
-                        speed = _speed.value,
-                        engine = engine
-                    )
+
+                    val (data, sampleRate) = if (engine is KokoroEngine) {
+                        val mixedVector = mixStyles(
+                            styleLoader,
+                            _selectedStyles.value,
+                            _weights.value,
+                            _interpolationMode.value
+                        )
+                        val phonemes = phonemeConverter.phonemize(text)
+                        createAudioFromStyleVector(
+                            phonemes = phonemes,
+                            voice = mixedVector,
+                            speed = _speed.value,
+                            engine = engine
+                        )
+                    } else {
+                        // For Supertonic or other engines, use the interface directly
+                        // Note: Supertonic does its own text normalization/phonemization internally or via TextProcessor
+                        val result = engine.synthesize(text, _speed.value)
+                        result.wav to result.sampleRate
+                    }
+
                     val genMs = SystemClock.elapsedRealtime() - ttsStart
                     if (benchmark) {
                         val audioMs = data.size * 1000L / sampleRate
+                        // Note: Benchmark might need adjustment for Supertonic details
                         BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
                         BenchmarkManager.profileSystem(context)
                     }

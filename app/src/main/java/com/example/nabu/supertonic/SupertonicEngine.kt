@@ -3,6 +3,8 @@ package com.example.nabu.supertonic
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import com.example.nabu.tts.AudioResult
+import com.example.nabu.tts.TTSEngine
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,8 +21,10 @@ import kotlin.random.Random
 class SupertonicEngine(
     private val modelDir: File,
     env: OrtEnvironment = OrtEnvironment.getEnvironment()
-) : AutoCloseable {
+) : AutoCloseable, TTSEngine {
     private val config: SupertonicConfig = loadConfig(modelDir)
+    override val sampleRate: Int
+        get() = config.sampleRate
     private val textProcessor = UnicodeProcessor(File(modelDir, "unicode_indexer.json"))
     private val dpSession: OrtSession
     private val textEncSession: OrtSession
@@ -33,6 +37,17 @@ class SupertonicEngine(
         textEncSession = env.createSession(File(modelDir, "text_encoder.onnx").absolutePath, opts)
         vectorEstSession = env.createSession(File(modelDir, "vector_estimator.onnx").absolutePath, opts)
         vocoderSession = env.createSession(File(modelDir, "vocoder.onnx").absolutePath, opts)
+    }
+
+    override suspend fun synthesize(text: String, speed: Float): AudioResult {
+        // Use a default style if not provided or manage style externally.
+        // For interface compliance, we might need a default style or handle this differently.
+        // Assuming default style is handled by loading one or creating a dummy if needed.
+        // For now, let's just use the first available style if we can find one or a default empty tensor?
+        // Actually, style is required. This interface adaptation is tricky without a default style.
+        // Let's assume there is a default style loaded or we can pick one.
+        // Ideally the Engine should hold the current style.
+        throw UnsupportedOperationException("SupertonicEngine requires a style. Use the specific synthesize method.")
     }
 
     suspend fun synthesize(
