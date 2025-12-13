@@ -35,6 +35,9 @@ import com.example.nabu.ui.components.ProgressDialog
 import com.example.nabu.ui.components.RadialWaveformVisualizer
 import com.example.nabu.ui.components.WaveformVisualizer
 import com.example.nabu.viewmodel.BookViewModel
+import com.example.nabu.tts.TTSManager
+import com.example.nabu.data.ModelManager
+import com.example.nabu.kokoro.KokoroEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -619,18 +622,33 @@ fun BookScreen(
                                     mode = interpolationMode
                                 )
                                 val (audioData, sampleRate) = withContext(Dispatchers.IO) {
-                                    val engineInstance = runCatching { OnnxRuntimeManager.getEngine() }
-                                        .getOrElse { throw IllegalStateException("Kokoro engine not ready", it) }
+                                    val modelManager = ModelManager(context)
+                                    val engineInstance = TTSManager.getEngine(context, modelManager)
+                                        ?: throw IllegalStateException("TTS engine not ready")
+                                    
                                     val collected = mutableListOf<Float>()
-                                    for (line in lines) {
-                                        val phonemes = phonemeConverter.phonemize(line)
-                                        val (audio, _) = createAudioFromStyleVector(
-                                            phonemes = phonemes,
-                                            voice = mixedVector,
-                                            speed = speed,
-                                            engine = engineInstance
-                                        )
-                                        collected.addAll(audio.toList())
+                                    val rawEngine = if (engineInstance is com.example.nabu.tts.BenchmarkingTTSEngine) engineInstance.delegate else engineInstance
+                                    
+                                    if (rawEngine is KokoroEngine) {
+                                        for (line in lines) {
+                                            val phonemes = phonemeConverter.phonemize(line)
+                                            val (audio, _) = createAudioFromStyleVector(
+                                                phonemes = phonemes,
+                                                voice = mixedVector,
+                                                speed = speed,
+                                                engine = rawEngine
+                                            )
+                                            collected.addAll(audio.toList())
+                                        }
+                                    } else {
+                                        // Generic TTSEngine (Supertonic)
+                                        if (rawEngine is com.example.nabu.supertonic.DebugSupertonicEngine && selectedStyles.isNotEmpty()) {
+                                            rawEngine.setStyle(selectedStyles.first())
+                                        }
+                                        for (line in lines) {
+                                            val result = engineInstance.synthesize(line, speed)
+                                            collected.addAll(result.wav.toList())
+                                        }
                                     }
                                     collected.toFloatArray() to engineInstance.sampleRate
                                 }
@@ -662,34 +680,49 @@ fun BookScreen(
                                         mode = interpolationMode
                                     )
                                     val (audioData, sampleRate) = withContext(Dispatchers.IO) {
-                                        val engineInstance = runCatching { OnnxRuntimeManager.getEngine() }
-                                            .getOrElse { throw IllegalStateException("Kokoro engine not ready", it) }
-                                        val collected = mutableListOf<Float>()
+                                    val modelManager = ModelManager(context)
+                                    val engineInstance = TTSManager.getEngine(context, modelManager)
+                                        ?: throw IllegalStateException("TTS engine not ready")
+                                    
+                                    val collected = mutableListOf<Float>()
+                                    val rawEngine = if (engineInstance is com.example.nabu.tts.BenchmarkingTTSEngine) engineInstance.delegate else engineInstance
+
+                                    if (rawEngine is KokoroEngine) {
                                         for (i in selectedLines.sorted()) {
                                             val phonemes = phonemeConverter.phonemize(lines[i])
                                             val (audio, _) = createAudioFromStyleVector(
                                                 phonemes = phonemes,
                                                 voice = mixedVector,
                                                 speed = speed,
-                                                engine = engineInstance
+                                                engine = rawEngine
                                             )
                                             collected.addAll(audio.toList())
                                         }
-                                        collected.toFloatArray() to engineInstance.sampleRate
+                                    } else {
+                                        // Generic TTSEngine (Supertonic)
+                                        if (rawEngine is com.example.nabu.supertonic.DebugSupertonicEngine && selectedStyles.isNotEmpty()) {
+                                            rawEngine.setStyle(selectedStyles.first())
+                                        }
+                                        for (i in selectedLines.sorted()) {
+                                            val result = engineInstance.synthesize(lines[i], speed)
+                                            collected.addAll(result.wav.toList())
+                                        }
                                     }
-                                    val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode) + "_clip"
-                                    val uri = saveAudio(audioData, context, fileName, sampleRate)
-                                    uri?.let { openAudioFile(context, it) }
-                                    selectedLines.clear()
-                                } catch (e: Exception) {
-                                    debugMessage = e.localizedMessage
-                                } finally {
-                                    isProcessing = false
+                                    collected.toFloatArray() to engineInstance.sampleRate
                                 }
+                                val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode) + "_clip"
+                                val uri = saveAudio(audioData, context, fileName, sampleRate)
+                                uri?.let { openAudioFile(context, it) }
+                                selectedLines.clear()
+                            } catch (e: Exception) {
+                                debugMessage = e.localizedMessage
+                            } finally {
+                                isProcessing = false
                             }
-                        },
-                        enabled = !isProcessing
-                    ) {
+                        }
+                    },
+                    enabled = !isProcessing
+                ) {
                         Text(if (isProcessing) "SAVING..." else "SAVE CLIP")
                     }
                     BrutalButton(

@@ -20,6 +20,9 @@ import com.example.nabu.utils.PlaybackNotification
 import com.example.nabu.utils.StyleLoader
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.playBook
+import com.example.nabu.tts.TTSManager
+import com.example.nabu.data.ModelManager
+import com.example.nabu.utils.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,32 +101,42 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         initializeAudioPlayer()
         AudioPlayerManager.player = audioPlayer
         AudioPlayerManager.onStop = { stopPlayback() }
-        val engine = OnnxRuntimeManager.getEngine()
-        val target = if (projectName.isNotBlank()) {
-            projectName
-        } else {
-            bookUri?.lastPathSegment ?: "unknown"
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            val modelManager = ModelManager(context)
+            val engine = TTSManager.getEngine(context, modelManager)
+            
+            if (engine == null) {
+                DebugLogger.log("BookViewModel: No TTS engine available")
+                return@launch
+            }
+
+            val target = if (projectName.isNotBlank()) {
+                projectName
+            } else {
+                bookUri?.lastPathSegment ?: "unknown"
+            }
+            val style = selectedStyles.joinToString("+") { it.uppercase() }
+            PlaybackNotification.show(appContext!!, true, target, style)
+            playJob = playBook(
+                scope = viewModelScope,
+                engine = engine,
+                phonemeConverter = phonemeConverter,
+                styleLoader = styleLoader,
+                selectedStyles = selectedStyles,
+                weights = weights,
+                mode = mode,
+                speed = speed,
+                lines = units.map { it.text },
+                startLine = startUnit,
+                bookUri = bookUri,
+                audioPlayer = audioPlayer,
+                context = context,
+                onLineChanged = { setCurrentUnitIndex(it) },
+                onFinished = onFinished,
+                usePregenerated = usePregenerated,
+            )
         }
-        val style = selectedStyles.joinToString("+") { it.uppercase() }
-        PlaybackNotification.show(appContext!!, true, target, style)
-        playJob = playBook(
-            scope = viewModelScope,
-            engine = engine,
-            phonemeConverter = phonemeConverter,
-            styleLoader = styleLoader,
-            selectedStyles = selectedStyles,
-            weights = weights,
-            mode = mode,
-            speed = speed,
-            lines = units.map { it.text },
-            startLine = startUnit,
-            bookUri = bookUri,
-            audioPlayer = audioPlayer,
-            context = context,
-            onLineChanged = { setCurrentUnitIndex(it) },
-            onFinished = onFinished,
-            usePregenerated = usePregenerated,
-        )
     }
 
     fun stopPlayback() {

@@ -4,8 +4,7 @@ import android.content.Context
 import com.example.nabu.utils.DebugLogger
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
-import org.json.JSONArray
-import org.json.JSONObject
+
 
 class LlmInference(
     private val context: Context,
@@ -50,14 +49,12 @@ class LlmInference(
     }
 
     private fun buildConversationPayload(conversation: List<LlmMessage>): String {
-        val array = JSONArray()
+        val sb = StringBuilder()
         conversation.forEach { message ->
-            val obj = JSONObject()
-            obj.put("role", message.role)
-            obj.put("content", message.content)
-            array.put(obj)
+            sb.append("<start_of_turn>${message.role}\n${message.content}<end_of_turn>\n")
         }
-        return array.toString()
+        sb.append("<start_of_turn>model\n")
+        return sb.toString()
     }
 
     fun close() {

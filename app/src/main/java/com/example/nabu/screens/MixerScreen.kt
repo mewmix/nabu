@@ -150,22 +150,27 @@ fun MixerScreen(
             }
         )
 
-        WeightSliders(
-            selectedStyles = selectedStyles,
-            weights = weights,
-            onWeightChanged = { style, value ->
-                weights = weights.toMutableMap().apply { put(style, value) }
-                saveStyleConfig(context, selectedStyles, weights, interpolationMode)
-            }
-        )
+        if (SettingsManager.getTtsEngine(context) != "supertonic") {
+            WeightSliders(
+                selectedStyles = selectedStyles,
+                weights = weights,
+                onWeightChanged = { style, value ->
+                    weights = weights.toMutableMap().apply { put(style, value) }
+                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                }
+            )
 
-        InterpolationModeSelector(
-            currentMode = interpolationMode,
-            onModeSelected = {
-                interpolationMode = it
-                saveStyleConfig(context, selectedStyles, weights, interpolationMode)
-            }
-        )
+            InterpolationModeSelector(
+                currentMode = interpolationMode,
+                onModeSelected = {
+                    interpolationMode = it
+                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                }
+            )
+        }
+
+        val ttsEngine = remember { SettingsManager.getTtsEngine(context) }
+        val isSupertonic = ttsEngine == "supertonic"
 
         Row(modifier = Modifier.fillMaxWidth()) {
             BrutalButton(
@@ -173,7 +178,7 @@ fun MixerScreen(
                     shouldSaveFile = false
                     isProcessing = true
                     scope.launch {
-                        val mixed = mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
+                        val mixed = if (isSupertonic) emptyArray<FloatArray>() else mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
                         generateAudio(
                             text,
                             mixed,
@@ -182,7 +187,8 @@ fun MixerScreen(
                             null,
                             phonemeConverter,
                             scope,
-                            context
+                            context,
+                            selectedStyles.firstOrNull()
                         ) {
                             isProcessing = false
                         }
@@ -197,7 +203,7 @@ fun MixerScreen(
                     shouldSaveFile = true
                     isProcessing = true
                     scope.launch {
-                        val mixed = mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
+                        val mixed = if (isSupertonic) emptyArray<FloatArray>() else mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
                         val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
                         generateAudio(
                             text,
@@ -207,7 +213,8 @@ fun MixerScreen(
                             fileName,
                             phonemeConverter,
                             scope,
-                            context
+                            context,
+                            selectedStyles.firstOrNull()
                         ) {
                             isProcessing = false
                         }
@@ -241,25 +248,50 @@ private fun loadStyleConfig(context: android.content.Context): Triple<List<Strin
 
 private fun generateAudio(
     text: String,
-    style: Array<FloatArray>,
+    style: Array<FloatArray>, // This is still used for Kokoro mixing
     speed: Float,
     shouldSaveFile: Boolean,
     fileName: String?,
     phonemeConverter: PhonemeConverter,
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
+    // Add selectedStyleName for Supertonic fallback/usage since we can't mix
+    selectedStyleName: String? = null,
     onComplete: () -> Unit
 ) {
+    val modelManager = com.example.nabu.data.ModelManager(context)
     scope.launch(Dispatchers.IO) {
         try {
-            val engine = OnnxRuntimeManager.getEngine()
-            val phonemes = phonemeConverter.phonemize(text)
-            val (audio, sampleRate) = createAudioFromStyleVector(
-                phonemes = phonemes,
-                voice = style,
-                speed = speed,
-                engine = engine
-            )
+            val engine = com.example.nabu.tts.TTSManager.getEngine(context, modelManager)
+            if (engine == null) {
+                 withContext(Dispatchers.Main) {
+                    // Toast or log? MixerScreen doesn't have easy toast access context?
+                    // It has context.
+                 }
+                 return@launch
+            }
+
+            val rawEngine = if (engine is com.example.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+
+            val (audio, sampleRate) = if (rawEngine is com.example.nabu.kokoro.KokoroEngine) {
+                val phonemes = phonemeConverter.phonemize(text)
+                createAudioFromStyleVector(
+                    phonemes = phonemes,
+                    voice = style,
+                    speed = speed,
+                    engine = rawEngine
+                )
+            } else if (rawEngine is com.example.nabu.supertonic.DebugSupertonicEngine) {
+                if (selectedStyleName != null) {
+                    rawEngine.setStyle(selectedStyleName)
+                }
+                val result = rawEngine.synthesize(text, speed)
+                result.wav to result.sampleRate
+            } else {
+                 val result = engine.synthesize(text, speed)
+                 result.wav to result.sampleRate
+            }
+
             if (shouldSaveFile && fileName != null) {
                 saveAudio(audio, context, fileName, sampleRate)
             }

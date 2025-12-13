@@ -69,6 +69,10 @@ fun ChatScreen(
     val availableModels by viewModel.availableModels.collectAsState()
     val activeModel by viewModel.activeModel.collectAsState()
 
+    LaunchedEffect(Unit) {
+        viewModel.refreshStyles()
+    }
+
     LaunchedEffect(playerState) {
         PcmTap.enabled = playerState == PlayerState.PLAYING
     }
@@ -273,16 +277,65 @@ fun ChatScreen(
                 }
             }
 
+
+
             BrutalSection(
-                title = "Voice Mixer Settings",
-                expanded = showMixerSettings,
+                title = "Model Settings",
+                expanded = showMixerSettings, // Reusing mixer settings state for now, or rename it
                 onToggle = { showMixerSettings = !showMixerSettings },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
             ) {
+                val systemPrompt by viewModel.systemPrompt.collectAsState()
+                val tokenUsage by viewModel.tokenUsage.collectAsState()
+                
                 Spacer(modifier = Modifier.height(8.dp))
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = "System Prompt",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Brutal.textBright
+                    )
+                    TextField(
+                        value = systemPrompt,
+                        onValueChange = { viewModel.updateSystemPrompt(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Brutal.panelBg,
+                            unfocusedContainerColor = Brutal.panelBg,
+                            focusedTextColor = Brutal.textBright,
+                            unfocusedTextColor = Brutal.textBright
+                        ),
+                        minLines = 2,
+                        maxLines = 5
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text(
+                        text = "Context Usage",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Brutal.textBright
+                    )
+                    val (current, max) = tokenUsage
+                    val usagePercent = if (max > 0) current.toFloat() / max else 0f
+                    LinearProgressIndicator(
+                        progress = { usagePercent },
+                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                        color = if (usagePercent > 0.9f) Brutal.red else Brutal.amber,
+                        trackColor = Brutal.panelStroke,
+                    )
+                    Text(
+                        text = "$current / $max tokens",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Brutal.textDim,
+                        modifier = Modifier.align(Alignment.End)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Voice Settings", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+                    
                     StyleSelector(
                         styleNames = viewModel.styleLoader.names,
                         selectedStyles = selectedStyles,

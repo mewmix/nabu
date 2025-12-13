@@ -12,8 +12,19 @@ android {
         applicationId = "com.example.nabu"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.4.7"
+        versionCode = 2
+        versionName = "0.4.8"
+
+        val gitCommitHash = try {
+            val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+                .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                .redirectError(ProcessBuilder.Redirect.PIPE)
+                .start()
+            process.inputStream.bufferedReader().readText().trim()
+        } catch (e: Exception) {
+            "unknown"
+        }
+        buildConfigField("String", "GIT_COMMIT_HASH", "\"$gitCommitHash\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -40,6 +51,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

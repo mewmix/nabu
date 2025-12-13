@@ -233,14 +233,18 @@ private fun generateAudio(
     shouldSave: Boolean,
     onComplete: () -> Unit
 ) {
-    val engine = runCatching { OnnxRuntimeManager.getEngine() }
-        .getOrElse {
-            Toast.makeText(context, "Kokoro engine not ready", Toast.LENGTH_LONG).show()
-            onComplete()
-            return
-        }
-    val styleLoader = StyleLoader(context)
+    val modelManager = com.example.nabu.data.ModelManager(context)
     scope.launch(Dispatchers.IO) {
+        val engine = com.example.nabu.tts.TTSManager.getEngine(context, modelManager)
+        if (engine == null) {
+             withContext(Dispatchers.Main) {
+                Toast.makeText(context, "No TTS engine available", Toast.LENGTH_LONG).show()
+                onComplete()
+            }
+            return@launch
+        }
+
+        val styleLoader = StyleLoader(context)
         try {
             val ttsStart = SystemClock.elapsedRealtime()
             val phonemes = phonemeConverter.phonemize(text)
@@ -248,15 +252,32 @@ private fun generateAudio(
             withContext(Dispatchers.Main) {
                 Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
             }
-            val (audioData, sampleRate) = PerfHud.record("ONNX synth") {
-                createAudio(
-                    phonemes = phonemes,
-                    voice = style,
-                    speed = speed,
-                    engine = engine,
-                    styleLoader = styleLoader
-                )
+
+            val rawEngine = if (engine is com.example.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+
+            val (audioData, sampleRate) = if (rawEngine is com.example.nabu.kokoro.KokoroEngine) {
+                PerfHud.record("TTS synth") {
+                     createAudio(
+                        phonemes = phonemes,
+                        voice = style,
+                        speed = speed,
+                        engine = rawEngine,
+                        styleLoader = styleLoader
+                    )
+                }
+            } else {
+                // Supertonic and others are suspend functions, so we can't use PerfHud.record (which expects non-suspend)
+                // We can manually measure if needed, but for now just call directly.
+                if (rawEngine is com.example.nabu.supertonic.DebugSupertonicEngine) {
+                    rawEngine.setStyle(style)
+                    val result = rawEngine.synthesize(text, speed)
+                    result.wav to result.sampleRate
+                } else {
+                    val result = engine.synthesize(text, speed)
+                    result.wav to result.sampleRate
+                }
             }
+
             val genMs = SystemClock.elapsedRealtime() - ttsStart
             if (SettingsManager.isBenchmark(context)) {
                 val audioMs = audioData.size * 1000L / sampleRate

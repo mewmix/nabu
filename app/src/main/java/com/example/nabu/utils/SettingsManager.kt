@@ -49,4 +49,11 @@ object SettingsManager {
         DatabaseManager.getSetting(context, "kokoro_ep")?.let {
             runCatching { RunEp.valueOf(it) }.getOrNull()
         } ?: default
+
+    fun setTtsEngine(context: Context, engine: String) {
+        DatabaseManager.setSetting(context, "tts_engine", engine)
+    }
+
+    fun getTtsEngine(context: Context, default: String = "kokoro"): String =
+        DatabaseManager.getSetting(context, "tts_engine") ?: default
 }

@@ -16,7 +16,7 @@ import java.io.File
 
 fun playBook(
     scope: CoroutineScope,
-    engine: KokoroEngine,
+    engine: com.example.nabu.tts.TTSEngine,
     phonemeConverter: PhonemeConverter,
     styleLoader: StyleLoader,
     selectedStyles: List<String>,
@@ -36,12 +36,17 @@ fun playBook(
         DebugLogger.log("Starting playbook from line $startLine")
         var completed = true
 
-        val mixedVector = mixStyles(
-            styleLoader = styleLoader,
-            styles = selectedStyles,
-            weights = weights,
-            mode = mode,
-        )
+        val rawEngine = if (engine is com.example.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+        val mixedVector = if (rawEngine is KokoroEngine) {
+            mixStyles(
+                styleLoader = styleLoader,
+                styles = selectedStyles,
+                weights = weights,
+                mode = mode,
+            )
+        } else {
+            null
+        }
 
         suspend fun generateLine(index: Int): FloatArray {
             if (usePregenerated && bookUri != null) {
@@ -51,24 +56,36 @@ fun playBook(
                 }
             }
             val line = lines[index]
-            val phonemes = phonemeConverter.phonemize(line)
-            val chunks = mutableListOf<FloatArray>()
-            createAudioFlowFromStyleVector(
-                phonemes = phonemes,
-                voice = mixedVector,
-                speed = speed,
-                engine = engine,
-            ).collect { chunk ->
-                chunks.add(chunk)
+
+            if (rawEngine is KokoroEngine && mixedVector != null) {
+                val phonemes = phonemeConverter.phonemize(line)
+                val chunks = mutableListOf<FloatArray>()
+                createAudioFlowFromStyleVector(
+                    phonemes = phonemes,
+                    voice = mixedVector,
+                    speed = speed,
+                    engine = rawEngine,
+                ).collect { chunk ->
+                    chunks.add(chunk)
+                }
+                val totalSize = chunks.sumOf { it.size }
+                val audio = FloatArray(totalSize)
+                var pos = 0
+                for (chunk in chunks) {
+                    chunk.copyInto(audio, pos)
+                    pos += chunk.size
+                }
+                return audio
+            } else {
+                // Generic TTSEngine (e.g. Supertonic)
+                if (rawEngine is com.example.nabu.supertonic.DebugSupertonicEngine && selectedStyles.isNotEmpty()) {
+                    rawEngine.setStyle(selectedStyles.first())
+                }
+                // Note: This blocks until the whole line is synthesized, unlike the flow above.
+                // For long lines, this might cause a delay.
+                val result = engine.synthesize(line, speed)
+                return result.wav
             }
-            val totalSize = chunks.sumOf { it.size }
-            val audio = FloatArray(totalSize)
-            var pos = 0
-            for (chunk in chunks) {
-                chunk.copyInto(audio, pos)
-                pos += chunk.size
-            }
-            return audio
         }
 
         try {

@@ -15,6 +15,8 @@ import com.example.nabu.data.ConversationTurn
 import com.example.nabu.data.Model
 import com.example.nabu.data.ModelManager
 import com.example.nabu.kokoro.KokoroEngine
+import com.example.nabu.supertonic.DebugSupertonicEngine
+import com.example.nabu.tts.TTSManager
 import com.example.nabu.utils.AudioPlayer
 import com.example.nabu.utils.BenchmarkManager
 import com.example.nabu.utils.DebugLogger
@@ -142,6 +144,19 @@ class ChatViewModel(
         startingModel?.let { setActiveModel(it, persistConversation = false) }
 
         refreshConversations()
+        refreshStyles()
+    }
+
+    fun refreshStyles() {
+        val available = styleLoader.names
+        if (available.isNotEmpty()) {
+            val current = _selectedStyles.value
+            if (current.isEmpty() || current.any { it !in available }) {
+                val default = available.first()
+                _selectedStyles.value = listOf(default)
+                _weights.value = mapOf(default to 1f)
+            }
+        }
     }
 
     fun toggleTtsEnabled() {
@@ -426,17 +441,41 @@ class ChatViewModel(
         return "Conversation ${formatter.format(Date())}"
     }
 
+    // System Prompt & Token Usage
+    private val _systemPrompt = MutableStateFlow("You are a helpful AI assistant.")
+    val systemPrompt = _systemPrompt.asStateFlow()
+
+    private val _tokenUsage = MutableStateFlow(0 to DEFAULT_MAX_CONTEXT_TOKENS)
+    val tokenUsage = _tokenUsage.asStateFlow()
+
+    fun updateSystemPrompt(newPrompt: String) {
+        _systemPrompt.value = newPrompt
+    }
+
     private fun prepareConversationForModel(maxTokens: Int): List<LlmMessage> {
-        val trimmedConversation = trimConversationToTokenLimit(conversationHistory, maxTokens)
-        val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) }
-        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns (~${totalTokens} tokens) for inference")
-        return trimmedConversation.map { turn ->
+        val systemMsg = LlmMessage(role = "system", content = _systemPrompt.value)
+        val systemTokens = estimateTokenCount(systemMsg.content)
+        val availableTokens = maxTokens - systemTokens
+
+        val trimmedConversation = trimConversationToTokenLimit(conversationHistory, availableTokens)
+        val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) } + systemTokens
+        
+        _tokenUsage.value = totalTokens to maxTokens
+        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns + system prompt (~${totalTokens} tokens) for inference")
+        
+        val messages = mutableListOf<LlmMessage>()
+        if (systemMsg.content.isNotBlank()) {
+            messages.add(systemMsg)
+        }
+        
+        messages.addAll(trimmedConversation.map { turn ->
             val role = when (turn.role) {
                 ConversationRole.USER -> "user"
-                ConversationRole.AGENT -> "agent"
+                ConversationRole.AGENT -> "model" // Changed from "agent" to "model"
             }
             LlmMessage(role = role, content = turn.content)
-        }
+        })
+        return messages
     }
 
     private fun trimConversationToTokenLimit(
@@ -516,25 +555,40 @@ class ChatViewModel(
                 }
                 DebugLogger.log("Synthesizing: ${text}")
                 val audioData = withContext(Dispatchers.IO) {
-                    val mixedVector = mixStyles(
-                        styleLoader,
-                        _selectedStyles.value,
-                        _weights.value,
-                        _interpolationMode.value
-                    )
-                    val engine = runCatching { OnnxRuntimeManager.getEngine() }
-                        .getOrElse { throw IllegalStateException("Kokoro engine not ready", it) }
+                    val engine = TTSManager.getEngine(context, modelManager)
+                        ?: throw IllegalStateException("No TTS engine available")
+
                     val ttsStart = SystemClock.elapsedRealtime()
-                    val phonemes = phonemeConverter.phonemize(text)
-                    val (data, sampleRate) = createAudioFromStyleVector(
-                        phonemes = phonemes,
-                        voice = mixedVector,
-                        speed = _speed.value,
-                        engine = engine
-                    )
+
+                    val (data, sampleRate) = if (engine is KokoroEngine) {
+                        val mixedVector = mixStyles(
+                            styleLoader,
+                            _selectedStyles.value,
+                            _weights.value,
+                            _interpolationMode.value
+                        )
+                        val phonemes = phonemeConverter.phonemize(text)
+                        createAudioFromStyleVector(
+                            phonemes = phonemes,
+                            voice = mixedVector,
+                            speed = _speed.value,
+                            engine = engine
+                        )
+                    } else {
+                        // For Supertonic or other engines, use the interface directly
+                        // Note: Supertonic does its own text normalization/phonemization internally or via TextProcessor
+                        if (engine is DebugSupertonicEngine) {
+                            val styleName = _selectedStyles.value.firstOrNull() ?: "F1"
+                            engine.setStyle(styleName)
+                        }
+                        val result = engine.synthesize(text, _speed.value)
+                        result.wav to result.sampleRate
+                    }
+
                     val genMs = SystemClock.elapsedRealtime() - ttsStart
                     if (benchmark) {
                         val audioMs = data.size * 1000L / sampleRate
+                        // Note: Benchmark might need adjustment for Supertonic details
                         BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
                         BenchmarkManager.profileSystem(context)
                     }

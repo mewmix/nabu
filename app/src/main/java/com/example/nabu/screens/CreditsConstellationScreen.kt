@@ -112,6 +112,10 @@ fun CreditsConstellationScreen() {
                 CreditEntry(
                     "jsoup: HTML parser for EPUB support (MIT) by Jonathan Hedley",
                     "https://jsoup.org/",
+                ),
+                CreditEntry(
+                    "Supertonic: a lightweight TTS engine for Android",
+                    "https://github.com/supertonic-tts/supertonic"
                 )
             )
         )

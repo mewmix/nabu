@@ -3,13 +3,15 @@ package com.example.nabu.kokoro
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtException
 import android.util.Log
+import com.example.nabu.tts.AudioResult
+import com.example.nabu.tts.TTSEngine
 import com.example.nabu.utils.DebugLogger
 import java.util.Locale
 
 class KokoroEngine(
     private val bundle: KokoroBundle,
     manifest: Manifest
-) {
+) : TTSEngine {
     private val tag = "KokoroEngine"
     private val env = OrtFactory.env
     private val session = bundle.session
@@ -19,8 +21,24 @@ class KokoroEngine(
     private val speedName = inputNames.firstOrNull { it.equals("speed", ignoreCase = true) }
     private val primaryInput: String = resolvePrimaryInput(manifest)
 
-    val sampleRate: Int
+    override val sampleRate: Int
         get() = bundle.sampleRate
+
+    override val name: String = "Kokoro"
+    override val provider: String
+        get() = bundle.ep.name
+
+    override suspend fun synthesize(text: String, speed: Float): AudioResult {
+         // This needs to tokenize and synth. Kokoro logic is complex and separated.
+         // 'synth' takes tokens. We need to look at how KokoroEngine is used to bridge this.
+         // It seems KokoroEngine as defined here is low level.
+         // We might need to implement synthesize by calling the higher level logic or leave it throwing for now and adapt the caller.
+         throw UnsupportedOperationException("KokoroEngine requires tokenization first. Use higher level wrappers.")
+    }
+
+    override fun close() {
+        // bundle is managed externally usually but we can implement close if needed or leave empty if managed by loader
+    }
 
     fun synth(
         tokens: LongArray,

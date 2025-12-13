@@ -34,6 +34,9 @@ import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.nabu.utils.UpdateChecker
+import com.example.nabu.BuildConfig
+import android.content.Intent
+import android.net.Uri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,10 +84,10 @@ fun SettingsScreen() {
                 onExpandedChange = { expanded = it }
             ) {
                 TextField(
-                    value = runtime.name,
+                    value = "${SettingsManager.getTtsEngine(context).replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} / ${runtime.name}",
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Execution Provider") },
+                    label = { Text("Active Engine / Provider") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                     modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
@@ -105,11 +108,46 @@ fun SettingsScreen() {
                 }
             }
 
-            val scope = rememberCoroutineScope()
-            VersionPlate(version = versionName, onClick = {
-                scope.launch {
-                    UpdateChecker.checkForUpdate(context)
+            // TTS Engine Selection
+            var ttsEngineExpanded by remember { mutableStateOf(false) }
+            var ttsEngine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
+            val ttsEngineOptions = listOf("kokoro", "supertonic")
+
+            ExposedDropdownMenuBox(
+                expanded = ttsEngineExpanded,
+                onExpandedChange = { ttsEngineExpanded = it }
+            ) {
+                TextField(
+                    value = ttsEngine.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("TTS Engine") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ttsEngineExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = ttsEngineExpanded,
+                    onDismissRequest = { ttsEngineExpanded = false }
+                ) {
+                    ttsEngineOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }) },
+                            onClick = {
+                                ttsEngine = option
+                                SettingsManager.setTtsEngine(context, option)
+                                ttsEngineExpanded = false
+                            }
+                        )
+                    }
                 }
+            }
+
+            val scope = rememberCoroutineScope()
+            val commitHash = BuildConfig.GIT_COMMIT_HASH
+            val versionText = "v$versionName ($commitHash)"
+            VersionPlate(version = versionText, onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mewmix/nabu/commit/$commitHash"))
+                context.startActivity(intent)
             })
         }
     }

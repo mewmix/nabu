@@ -47,7 +47,7 @@ class ChatActivity : ComponentActivity() {
             }
 
             val modelManager = ModelManager(applicationContext)
-            val downloaded = modelManager.models.filter { it.isDownloaded }
+            val downloaded = modelManager.models.filter { it.isDownloaded && it.type != com.example.nabu.data.ModelType.TTS }
 
             if (downloaded.isEmpty()) {
                 Toast.makeText(

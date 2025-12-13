@@ -5,13 +5,37 @@ import org.jetbrains.bio.npy.NpyArray
 import org.jetbrains.bio.npy.NpyFile
 import java.io.File
 import java.io.FileOutputStream
+import com.example.nabu.data.ModelManager
 
 class StyleLoader(private val context: Context) {
-    val names: List<String> = context.assets
-        .list("kokoro/voices")
-        ?.map { it.removeSuffix(".npy") }
-        ?.sorted()
-        ?: emptyList()
+    val names: List<String>
+        get() {
+            val engine = SettingsManager.getTtsEngine(context)
+            if (engine == "supertonic") {
+                // Find active Supertonic model
+                // This is a bit duplicative of TTSManager logic, but acceptable for now.
+                // Ideally we'd inject this path.
+                val modelManager = ModelManager(context)
+                val ttsModels = modelManager.models.filter { it.type == com.example.nabu.data.ModelType.TTS && it.isDownloaded }
+                if (ttsModels.isNotEmpty()) {
+                    val model = ttsModels.first()
+                    val voicesDir = File(context.filesDir, "models/${model.id}/voice_styles")
+                    if (voicesDir.exists()) {
+                        return voicesDir.listFiles { _, name -> name.endsWith(".json") }
+                            ?.map { it.name.removeSuffix(".json") }
+                            ?.sorted()
+                            ?: emptyList()
+                    }
+                }
+                return emptyList()
+            } else {
+                return context.assets
+                    .list("kokoro/voices")
+                    ?.map { it.removeSuffix(".npy") }
+                    ?.sorted()
+                    ?: emptyList()
+            }
+        }
 
     fun getStyleArray(name: String, index: Int = 0): Array<FloatArray> {
         val inputStream = context.assets.open("kokoro/voices/$name.npy")

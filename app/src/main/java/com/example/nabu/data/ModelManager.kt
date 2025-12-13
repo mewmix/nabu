@@ -37,6 +37,13 @@ class ModelManager(private val context: Context) {
         while (keys.hasNext()) {
             val key = keys.next()
             val modelJson = json.getJSONObject(key)
+            val typeStr = modelJson.optString("type", "LLM")
+            val type = try {
+                ModelType.valueOf(typeStr)
+            } catch (e: Exception) {
+                ModelType.LLM
+            }
+
             val model = Model(
                 id = key,
                 name = modelJson.getString("name"),
@@ -44,12 +51,22 @@ class ModelManager(private val context: Context) {
                 repo = modelJson.getString("repo"),
                 downloadUrl = modelJson.getString("downloadUrl"),
                 gated = modelJson.optBoolean("gated", false),
+                type = type
             )
             val modelDir = File(context.filesDir, "models")
-            val modelFile = File(modelDir, "${model.id}.task")
-            val partialFile = File(modelDir, "${model.id}.task.part")
-            model.isDownloaded = modelFile.exists()
-            model.hasPartial = !model.isDownloaded && partialFile.exists()
+
+            if (model.type == ModelType.TTS) {
+                val ttsDir = File(modelDir, model.id)
+                model.isDownloaded = ttsDir.exists() && ttsDir.isDirectory && (ttsDir.list()?.isNotEmpty() == true)
+                // Partial check for TTS is simplified or we can check for a temp folder
+                val partialDir = File(modelDir, "${model.id}_partial")
+                model.hasPartial = !model.isDownloaded && partialDir.exists()
+            } else {
+                val modelFile = File(modelDir, "${model.id}.task")
+                val partialFile = File(modelDir, "${model.id}.task.part")
+                model.isDownloaded = modelFile.exists()
+                model.hasPartial = !model.isDownloaded && partialFile.exists()
+            }
             modelList.add(model)
         }
 
@@ -86,8 +103,14 @@ class ModelManager(private val context: Context) {
 
     fun deleteModel(model: Model) {
         val modelDir = File(context.filesDir, "models")
-        File(modelDir, "${model.id}.task").delete()
-        File(modelDir, "${model.id}.task.part").delete()
+        if (model.type == ModelType.TTS) {
+            File(modelDir, model.id).deleteRecursively()
+            File(modelDir, "${model.id}_partial").deleteRecursively()
+        } else {
+            File(modelDir, "${model.id}.task").delete()
+            File(modelDir, "${model.id}.task.part").delete()
+        }
+
         if (model.repo.isEmpty() && model.downloadUrl.isEmpty()) {
             _models.remove(model)
         } else {
