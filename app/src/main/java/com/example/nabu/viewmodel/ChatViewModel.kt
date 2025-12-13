@@ -17,9 +17,12 @@ import com.example.nabu.data.ModelManager
 import com.example.nabu.kokoro.KokoroEngine
 import com.example.nabu.utils.AudioPlayer
 import com.example.nabu.utils.BenchmarkManager
+import com.example.nabu.utils.ConversationTrimmer
 import com.example.nabu.utils.DebugLogger
+import com.example.nabu.utils.DefaultConversationTrimmer
 import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.KokoroAudioPlayer
+import com.example.nabu.utils.LlmExperimentRunner
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.PlayerState
@@ -43,13 +46,9 @@ class ChatViewModel(
     initialModelId: String
 ) : ViewModel() {
 
-    companion object {
-        private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
-        private val TOKEN_REGEX = Regex("\\S+")
-    }
-
     // Dependencies
     private val phonemeConverter = PhonemeConverter(context)
+    private val conversationTrimmer: ConversationTrimmer = DefaultConversationTrimmer
     val styleLoader = StyleLoader(context)
     private val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
     private val audioPlayer: AudioPlayer = KokoroAudioPlayer(viewModelScope) { newState ->
@@ -239,7 +238,8 @@ class ChatViewModel(
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
-        val conversationForModel = prepareConversationForModel(DEFAULT_MAX_CONTEXT_TOKENS)
+        val contextCap = SettingsManager.getContextTokenCapUi(context)
+        val conversationForModel = prepareConversationForModel(contextCap)
 
         viewModelScope.launch(Dispatchers.IO) {
             inference.sendMessage(conversationForModel) { partial, done ->
@@ -427,9 +427,11 @@ class ChatViewModel(
     }
 
     private fun prepareConversationForModel(maxTokens: Int): List<LlmMessage> {
-        val trimmedConversation = trimConversationToTokenLimit(conversationHistory, maxTokens)
-        val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) }
-        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns (~${totalTokens} tokens) for inference")
+        val modelId = _activeModel.value?.id ?: "unknown"
+        val trimResult = conversationTrimmer.trim(conversationHistory, maxTokens, context, modelId)
+        val trimmedConversation = trimResult.trimmedMessages
+
+        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns (~${trimResult.tokensEstimatedWhitespace} tokens) for inference")
         return trimmedConversation.map { turn ->
             val role = when (turn.role) {
                 ConversationRole.USER -> "user"
@@ -439,45 +441,22 @@ class ChatViewModel(
         }
     }
 
-    private fun trimConversationToTokenLimit(
-        conversation: List<ConversationTurn>,
-        maxTokens: Int
-    ): List<ConversationTurn> {
-        if (conversation.isEmpty() || maxTokens <= 0) {
-            return emptyList()
-        }
-        var remainingTokens = maxTokens
-        val trimmed = ArrayDeque<ConversationTurn>()
-        for (turn in conversation.asReversed()) {
-            if (remainingTokens <= 0) break
-            val tokenCount = estimateTokenCount(turn.content)
-            if (tokenCount <= remainingTokens) {
-                trimmed.addFirst(turn)
-                remainingTokens -= tokenCount
-            } else {
-                val truncatedContent = takeLastTokens(turn.content, remainingTokens)
-                if (truncatedContent.isNotBlank()) {
-                    trimmed.addFirst(turn.copy(content = truncatedContent))
-                }
-                break
+    fun runContextSweep() {
+        val modelId = _activeModel.value?.id ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            LlmExperimentRunner.runContextSweep(context, modelId) { ctx, path ->
+                LlmInference(ctx, path)
             }
         }
-        return trimmed.toList()
     }
 
-    private fun estimateTokenCount(text: String): Int {
-        if (text.isBlank()) return 0
-        return TOKEN_REGEX.findAll(text).count()
-    }
-
-    private fun takeLastTokens(text: String, tokenLimit: Int): String {
-        if (tokenLimit <= 0) return ""
-        val tokens = TOKEN_REGEX.findAll(text).map { it.value }.toList()
-        if (tokens.isEmpty()) return ""
-        if (tokens.size <= tokenLimit) {
-            return text.trim()
+    fun runOutputSweep() {
+        val modelId = _activeModel.value?.id ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            LlmExperimentRunner.runOutputSweep(context, modelId) { ctx, path ->
+                LlmInference(ctx, path)
+            }
         }
-        return tokens.takeLast(tokenLimit).joinToString(" ")
     }
 
     private fun processSentences(builder: StringBuilder, done: Boolean) {

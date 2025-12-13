@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.DropdownMenu
@@ -21,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.nabu.kokoro.RunEp
 import com.example.nabu.components.VersionPlate
@@ -34,6 +38,7 @@ import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.nabu.utils.UpdateChecker
+import com.mewmix.nabu.ui.brutalist.Brutal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +48,12 @@ fun SettingsScreen() {
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
+
+    // LLM Diagnostics
+    var llmLogging by remember { mutableStateOf(SettingsManager.isLlmLoggingEnabled(context)) }
+    var llmExperiments by remember { mutableStateOf(SettingsManager.isLlmExperimentsEnabled(context)) }
+    var contextCap by remember { mutableStateOf(SettingsManager.getContextTokenCapUi(context).toString()) }
+
     var expanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(runtime) {
@@ -57,7 +68,10 @@ fun SettingsScreen() {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.verticalScroll(rememberScrollState())
+        ) {
             SwitchToggle(
                 checked = debug,
                 onToggle = {
@@ -104,6 +118,45 @@ fun SettingsScreen() {
                     }
                 }
             }
+
+            Text(
+                text = "LLM Diagnostics",
+                style = MaterialTheme.typography.titleMedium,
+                color = Brutal.textBright,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+
+            SwitchToggle(
+                checked = llmLogging,
+                onToggle = {
+                    llmLogging = it
+                    SettingsManager.setLlmLoggingEnabled(context, it)
+                },
+                label = "Enable Structured Logging"
+            )
+
+            SwitchToggle(
+                checked = llmExperiments,
+                onToggle = {
+                    llmExperiments = it
+                    SettingsManager.setLlmExperimentsEnabled(context, it)
+                },
+                label = "Enable Experiments"
+            )
+
+            TextField(
+                value = contextCap,
+                onValueChange = {
+                    contextCap = it
+                    val cap = it.toIntOrNull()
+                    if (cap != null) {
+                        SettingsManager.setContextTokenCapUi(context, cap)
+                    }
+                },
+                label = { Text("Context Token Cap (UI)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
 
             val scope = rememberCoroutineScope()
             VersionPlate(version = versionName, onClick = {

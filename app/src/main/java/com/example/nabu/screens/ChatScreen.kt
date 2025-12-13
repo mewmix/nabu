@@ -84,10 +84,12 @@ fun ChatScreen(
     var showConversationSettings by remember { mutableStateOf(true) }
     var conversationMenuExpanded by remember { mutableStateOf(false) }
     var modelMenuExpanded by remember { mutableStateOf(false) }
+    var experimentMenuExpanded by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Long?>(null) }
     var renameText by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<Long?>(null) }
     val activeConversation = conversationSummaries.firstOrNull { it.id == activeConversationId }
+    val showExperiments = remember { SettingsManager.isLlmExperimentsEnabled(viewModel.styleLoader.context) } // accessing context via styleLoader as workaround
 
     LaunchedEffect(chatMessages.size) {
         if (chatMessages.isNotEmpty()) {
@@ -267,6 +269,43 @@ fun ChatScreen(
                                         }
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    if (showExperiments) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Experiments",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Brutal.textBright
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            BrutalButton(
+                                onClick = { experimentMenuExpanded = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Run Experiment", color = Brutal.textBright)
+                            }
+                            DropdownMenu(
+                                expanded = experimentMenuExpanded,
+                                onDismissRequest = { experimentMenuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Run Context Sweep") },
+                                    onClick = {
+                                        experimentMenuExpanded = false
+                                        viewModel.runContextSweep()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Run Output Sweep") },
+                                    onClick = {
+                                        experimentMenuExpanded = false
+                                        viewModel.runOutputSweep()
+                                    }
+                                )
                             }
                         }
                     }

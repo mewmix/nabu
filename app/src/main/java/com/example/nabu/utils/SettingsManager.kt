@@ -49,4 +49,30 @@ object SettingsManager {
         DatabaseManager.getSetting(context, "kokoro_ep")?.let {
             runCatching { RunEp.valueOf(it) }.getOrNull()
         } ?: default
+
+    // LLM Diagnostics
+    fun setLlmLoggingEnabled(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, "llm_logging_enabled", if (enabled) "1" else "0")
+        if (enabled) {
+            LlmStructuredLogger.initialize(context)
+        }
+    }
+
+    fun isLlmLoggingEnabled(context: Context): Boolean =
+        (DatabaseManager.getSetting(context, "llm_logging_enabled") ?: "0") == "1"
+
+    fun setLlmExperimentsEnabled(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, "llm_experiments_enabled", if (enabled) "1" else "0")
+    }
+
+    fun isLlmExperimentsEnabled(context: Context): Boolean =
+        (DatabaseManager.getSetting(context, "llm_experiments_enabled") ?: "0") == "1"
+
+    fun setContextTokenCapUi(context: Context, cap: Int) {
+        DatabaseManager.setSetting(context, "context_token_cap_ui", cap.toString())
+    }
+
+    fun getContextTokenCapUi(context: Context, default: Int = 1024): Int {
+        return DatabaseManager.getSetting(context, "context_token_cap_ui")?.toIntOrNull() ?: default
+    }
 }
