@@ -26,17 +26,21 @@ import com.example.nabu.kokoro.RunEp
 import com.example.nabu.components.VersionPlate
 import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.OnnxRuntimeManager
+import com.example.nabu.utils.ThemeManager
 import com.example.nabu.utils.getAppVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
+import com.mewmix.nabu.ui.brutalist.BrutalButton
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.nabu.utils.UpdateChecker
 import com.example.nabu.BuildConfig
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.compose.material3.HorizontalDivider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +51,7 @@ fun SettingsScreen() {
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
     var expanded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(runtime) {
         withContext(Dispatchers.IO) {
@@ -78,6 +83,47 @@ fun SettingsScreen() {
                 },
                 label = "Benchmark Mode"
             )
+
+            HorizontalDivider()
+
+            Text("Theme Customization", style = MaterialTheme.typography.titleMedium)
+
+            BrutalButton(onClick = {
+                // For now, just a button to export/import to prove persistence mechanism.
+                // A full color picker UI would be quite large, assuming manual edit for now or just proof of concept.
+                // But let's add a "Rotate Theme" button to show it works?
+                // Or "Export Current"
+                scope.launch(Dispatchers.IO) {
+                   val theme = ThemeManager.getTheme(context)
+                   val success = ThemeManager.exportTheme(context, theme, "exported_theme.json")
+                   withContext(Dispatchers.Main) {
+                       Toast.makeText(context, if(success) "Theme Exported to Documents/Nabu" else "Export Failed", Toast.LENGTH_SHORT).show()
+                   }
+                }
+            }) {
+                Text("Export Theme JSON")
+            }
+
+             BrutalButton(onClick = {
+                scope.launch(Dispatchers.IO) {
+                    // Try to import "current_theme.json" from export dir if user edited it
+                    // Or specific path
+                     val publicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS)
+                     val file = java.io.File(publicDir, "Nabu/Themes/current_theme.json")
+                     val theme = ThemeManager.importTheme(context, file.absolutePath)
+                     withContext(Dispatchers.Main) {
+                         if (theme != null) {
+                             Toast.makeText(context, "Theme Imported! Restart to apply.", Toast.LENGTH_LONG).show()
+                         } else {
+                             Toast.makeText(context, "Import failed or file not found.", Toast.LENGTH_SHORT).show()
+                         }
+                     }
+                }
+            }) {
+                Text("Import 'current_theme.json'")
+            }
+
+            HorizontalDivider()
 
             ExposedDropdownMenuBox(
                 expanded = expanded,
@@ -142,7 +188,6 @@ fun SettingsScreen() {
                 }
             }
 
-            val scope = rememberCoroutineScope()
             val commitHash = BuildConfig.GIT_COMMIT_HASH
             val versionText = "v$versionName ($commitHash)"
             VersionPlate(version = versionText, onClick = {

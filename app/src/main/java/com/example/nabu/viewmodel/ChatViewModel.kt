@@ -560,7 +560,15 @@ class ChatViewModel(
 
                     val ttsStart = SystemClock.elapsedRealtime()
 
-                    val (data, sampleRate) = if (engine is KokoroEngine) {
+                    val realEngine = if (engine is com.example.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+
+                    if (realEngine is KokoroEngine) {
+                        DebugLogger.log("ChatViewModel: Using KokoroEngine. Phonemizing '$text'...")
+                    } else {
+                        DebugLogger.log("ChatViewModel: Using ${realEngine.name}. Synthesizing '$text'...")
+                    }
+
+                    val (data, sampleRate) = if (realEngine is KokoroEngine) {
                         val mixedVector = mixStyles(
                             styleLoader,
                             _selectedStyles.value,
@@ -568,18 +576,21 @@ class ChatViewModel(
                             _interpolationMode.value
                         )
                         val phonemes = phonemeConverter.phonemize(text)
+                        DebugLogger.log("ChatViewModel: Phonemes generated: $phonemes")
+
                         createAudioFromStyleVector(
                             phonemes = phonemes,
                             voice = mixedVector,
                             speed = _speed.value,
-                            engine = engine
+                            engine = realEngine
                         )
                     } else {
                         // For Supertonic or other engines, use the interface directly
                         // Note: Supertonic does its own text normalization/phonemization internally or via TextProcessor
-                        if (engine is DebugSupertonicEngine) {
+                        if (realEngine is DebugSupertonicEngine) {
                             val styleName = _selectedStyles.value.firstOrNull() ?: "F1"
-                            engine.setStyle(styleName)
+                            DebugLogger.log("ChatViewModel: Setting Supertonic style to '$styleName'")
+                            realEngine.setStyle(styleName)
                         }
                         val result = engine.synthesize(text, _speed.value)
                         result.wav to result.sampleRate

@@ -15,7 +15,9 @@ class BenchmarkingTTSEngine(val delegate: TTSEngine) : TTSEngine {
 
     override suspend fun synthesize(text: String, speed: Float): AudioResult {
         val start = System.currentTimeMillis()
-        DebugLogger.log("BenchmarkingTTSEngine: Starting synthesis for '$name' on '$provider'")
+        DebugLogger.log("BenchmarkingTTSEngine: Requesting synthesis. Engine: '$name', Provider: '$provider'")
+        DebugLogger.log("BenchmarkingTTSEngine: Input text (length=${text.length}): \"${text.take(50)}${if (text.length > 50) "..." else ""}\"")
+        DebugLogger.log("BenchmarkingTTSEngine: Parameters - Speed: $speed")
         
         try {
             val result = delegate.synthesize(text, speed)
@@ -24,13 +26,17 @@ class BenchmarkingTTSEngine(val delegate: TTSEngine) : TTSEngine {
             val rtf = if (audioDurationSecs > 0) duration / (audioDurationSecs * 1000) else 0f
             
             DebugLogger.log(
-                "BenchmarkingTTSEngine: Synthesis complete. " +
-                "Time: ${duration}ms, Audio: ${"%.2f".format(audioDurationSecs)}s, RTF: ${"%.2f".format(rtf)}"
+                "BenchmarkingTTSEngine: Synthesis success. " +
+                "Wall Time: ${duration}ms, Audio Duration: ${"%.2f".format(audioDurationSecs)}s, RTF: ${"%.4f".format(rtf)}"
             )
+            DebugLogger.log("BenchmarkingTTSEngine: Output stats - Sample Rate: ${result.sampleRate}, Samples: ${result.wav.size}")
+
             return result
         } catch (e: Exception) {
             val duration = System.currentTimeMillis() - start
-            DebugLogger.log("BenchmarkingTTSEngine: Synthesis failed after ${duration}ms: ${e.message}")
+            DebugLogger.log("BenchmarkingTTSEngine: Synthesis FAILED after ${duration}ms")
+            DebugLogger.log("BenchmarkingTTSEngine: Error details: ${e.message}")
+            e.printStackTrace() // Ensure stacktrace is printed to standard error stream too
             throw e
         }
     }
