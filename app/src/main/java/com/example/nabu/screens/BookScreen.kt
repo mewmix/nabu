@@ -50,6 +50,8 @@ import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import androidx.compose.ui.unit.dp
 import com.example.nabu.ChatActivity
 import java.util.Locale
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -61,8 +63,19 @@ fun BookScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        val ttsEngine = SettingsManager.getTtsEngine(context)
+        if (ttsEngine == "kokoro") {
+            withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
+        }
+    }
+
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+             // Permission granted, notification will show on next update or if forced.
         }
     }
 
@@ -235,6 +248,11 @@ fun BookScreen(
     }
 
     fun startPlaybackFromLine(index: Int) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         bookViewModel.setCurrentUnitIndex(index)
         bookViewModel.startPlayback(
             phonemeConverter = phonemeConverter,
@@ -539,6 +557,11 @@ fun BookScreen(
                     Text("FOCUS")
                 }
                 val startPlaybackAction = {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                         requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+
                     if (playerState == PlayerState.PAUSED) {
                         bookViewModel.audioPlayer.stop()
                     }

@@ -10,6 +10,7 @@ import com.example.nabu.screens.MoreScreen
 import com.example.nabu.screens.ModelsScreen
 import com.example.nabu.screens.DebugLogScreen
 import com.example.nabu.screens.CreditsConstellationScreen
+import com.example.nabu.screens.ThemeEditorScreen
 import com.example.kokoro.galleryport.PerfHud
 import android.app.Application
 import android.app.NotificationChannel
@@ -104,8 +105,18 @@ class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         DynamicColors.applyToActivitiesIfAvailable(this)
+
+        // Background initialization without blocking
         preloadScope.launch {
-            OnnxRuntimeManager.initialize(applicationContext)
+            if (SettingsManager.getTtsEngine(applicationContext) == "kokoro") {
+                 OnnxRuntimeManager.initialize(applicationContext)
+            } else {
+                 // Even if not selected, if we want to preload in background as requested:
+                 // We can fire it off but ensure it doesn't block UI.
+                 // OnnxRuntimeManager.initialize uses a mutex so it's safe to call.
+                 // We just won't wait for it in the UI unless needed.
+                 OnnxRuntimeManager.initialize(applicationContext)
+            }
         }
     }
 
@@ -119,6 +130,7 @@ private sealed interface ModelState {
     data object Loading : ModelState
     data object Ready : ModelState
     data class Error(val message: String) : ModelState
+    data object Skipped : ModelState // For when we don't need Kokoro loaded
 }
 
 private fun showPlaybackNotification(context: Context) {
@@ -170,6 +182,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         userPreferencesRepository = UserPreferencesRepository(this)
 
+        // Removed automatic permission request on start
+
         val startScreen = screenFromString(intent.getStringExtra(EXTRA_START_SCREEN))
 
         setContent {
@@ -181,7 +195,7 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     phonemeConverter = phonemeConverter,
                     onGenerateAudio = { text, style, speed, shouldSave, onComplete ->
-                        maybeRequestNotificationPermission()
+                        // Removed permission request from basic generation
                         generateAudio(
                             phonemeConverter,
                             text,
@@ -238,7 +252,7 @@ private fun generateAudio(
         val engine = com.example.nabu.tts.TTSManager.getEngine(context, modelManager)
         if (engine == null) {
              withContext(Dispatchers.Main) {
-                Toast.makeText(context, "No TTS engine available", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "No TTS engine available or ready", Toast.LENGTH_LONG).show()
                 onComplete()
             }
             return@launch
@@ -249,9 +263,6 @@ private fun generateAudio(
             val ttsStart = SystemClock.elapsedRealtime()
             val phonemes = phonemeConverter.phonemize(text)
             DebugLogger.log("Phonemes: $phonemes")
-            withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
-            }
 
             val rawEngine = if (engine is com.example.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
 
@@ -266,8 +277,6 @@ private fun generateAudio(
                     )
                 }
             } else {
-                // Supertonic and others are suspend functions, so we can't use PerfHud.record (which expects non-suspend)
-                // We can manually measure if needed, but for now just call directly.
                 if (rawEngine is com.example.nabu.supertonic.DebugSupertonicEngine) {
                     rawEngine.setStyle(style)
                     val result = rawEngine.synthesize(text, speed)
@@ -292,7 +301,12 @@ private fun generateAudio(
                 onComplete = onComplete
             )
 
-            showPlaybackNotification(context)
+            // Only show notification if permission granted, do not request it here.
+            // showPlaybackNotification(context)
+            // Actually, for Basic screen (short utterances), we might not want notification spam at all.
+            // The request was "don't request it from the basic screen".
+            // If the permission is already granted, showing it is fine, but if not, don't ask.
+            // showPlaybackNotification checks permission before showing.
 
             if (shouldSave) {
                 saveAudio(audioData, context, style, sampleRate)
@@ -320,6 +334,7 @@ private fun screenFromString(name: String?): Screen = when (name) {
     "Settings" -> Screen.Settings
     "Models" -> Screen.Models
     "DebugLog" -> Screen.DebugLog
+    "ThemeEditor" -> Screen.ThemeEditor
     else -> Screen.Basic
 }
 
@@ -334,19 +349,21 @@ private fun screenToString(screen: Screen): String = when (screen) {
     Screen.Models -> "Models"
     Screen.DebugLog -> "DebugLog"
     Screen.Credits -> "Credits"
+    Screen.ThemeEditor -> "ThemeEditor"
 }
 
 sealed class Screen {
     object Basic : Screen()
     object Mixer : Screen()
     object Book : Screen()
-    object Chat : Screen() // New screen state for ChatActivity if needed for selection
+    object Chat : Screen()
     object More : Screen()
     object Creations : Screen()
     object Settings : Screen()
     object Models : Screen()
     object DebugLog : Screen()
     object Credits : Screen()
+    object ThemeEditor : Screen()
 }
 
 private val featureScreens = listOf(Screen.Basic, Screen.Mixer, Screen.Book, Screen.More)
@@ -355,7 +372,7 @@ private fun Screen.asFeature(): Screen? = when (this) {
     Screen.Basic -> Screen.Basic
     Screen.Mixer -> Screen.Mixer
     Screen.Book -> Screen.Book
-    Screen.More, Screen.Creations, Screen.Settings, Screen.Models, Screen.Credits, Screen.DebugLog -> Screen.More
+    Screen.More, Screen.Creations, Screen.Settings, Screen.Models, Screen.Credits, Screen.DebugLog, Screen.ThemeEditor -> Screen.More
     Screen.Chat -> null
 }
 
@@ -475,8 +492,7 @@ fun MainScreen(
                     phonemeConverter = phonemeConverter
                 )
                 Screen.Chat -> {
-                    // No-op, handled by onClick which starts ChatActivity
-                    // This case is primarily for the 'selected' state of the NavigationBarItem
+                    // No-op
                 }
                 Screen.More -> MoreScreen { screen ->
                     val destination = when (screen) {
@@ -485,15 +501,21 @@ fun MainScreen(
                         "Models" -> Screen.Models
                         "Credits" -> Screen.Credits
                         "DebugLog" -> Screen.DebugLog
+                        "ThemeEditor" -> Screen.ThemeEditor
                         else -> null
                     }
                     destination?.let { navigateTo(it) }
                 }
                 Screen.Creations -> CreationsScreen()
-                Screen.Settings -> SettingsScreen()
+                Screen.Settings -> SettingsScreen(onNavigate = { dest ->
+                    if (dest == "ThemeEditor") navigateTo(Screen.ThemeEditor)
+                })
                 Screen.Models -> ModelsScreen(userPreferencesRepository)
                 Screen.Credits -> CreditsConstellationScreen()
                 Screen.DebugLog -> DebugLogScreen()
+                Screen.ThemeEditor -> ThemeEditorScreen(onBack = {
+                     if (screenStack.size > 1) screenStack.removeAt(screenStack.lastIndex)
+                })
             }
         }
     }
@@ -521,28 +543,43 @@ fun BasicScreen(
     var expanded by remember { mutableStateOf(false) }
     var initTrigger by remember { mutableStateOf(0) }
     var modelState by remember { mutableStateOf<ModelState>(ModelState.Loading) }
+
+    val ttsEngine = remember { SettingsManager.getTtsEngine(context) }
+    val isKokoro = ttsEngine == "kokoro"
+
     var hasLocalModels by remember {
         mutableStateOf(
-            Downloader.modelsAvailable(
-                context.applicationContext,
-                OnnxRuntimeManager.currentManifest()
-            )
+            if (isKokoro) {
+                Downloader.modelsAvailable(
+                    context.applicationContext,
+                    OnnxRuntimeManager.currentManifest()
+                )
+            } else true
         )
     }
 
-    LaunchedEffect(initTrigger) {
+    LaunchedEffect(initTrigger, ttsEngine) {
         modelState = ModelState.Loading
-        hasLocalModels = Downloader.modelsAvailable(
-            context.applicationContext,
-            OnnxRuntimeManager.currentManifest()
-        )
-        val result = withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        if (isKokoro) {
+            hasLocalModels = Downloader.modelsAvailable(
+                context.applicationContext,
+                OnnxRuntimeManager.currentManifest()
+            )
+            val result = withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
+            modelState = result.fold(
+                onSuccess = { ModelState.Ready },
+                onFailure = { ModelState.Error(it?.message ?: "Unable to prepare Kokoro models") }
+            )
+        } else {
+            // Supertonic or other engine.
+            // We assume it's ready or handled by TTSManager lazily.
+            // But we still want to ensure Kokoro loads in background if requested by user logic (bug fix)
+            // The Application class already kicks off background load.
+            modelState = ModelState.Skipped
         }
-        modelState = result.fold(
-            onSuccess = { ModelState.Ready },
-            onFailure = { ModelState.Error(it?.message ?: "Unable to prepare Kokoro models") }
-        )
+
         if (style.isEmpty() && names.isNotEmpty()) {
             style = names.first()
             SettingsManager.setStyle(context, style)
@@ -561,32 +598,35 @@ fun BasicScreen(
             .fillMaxSize()
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            when (val state = modelState) {
-                ModelState.Loading -> {
-                    val runtimePreference = SettingsManager.getRuntimePreference(context)
-                    val runtimeLabel = runtimePreference.displayName()
-                    val loadingMessage = if (hasLocalModels) {
-                        "Loading $runtimeLabel runtime…"
-                    } else {
-                        "Downloading voice models…"
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
-                        Text(loadingMessage, color = Brutal.textBright)
-                    }
-                }
-                is ModelState.Error -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = state.message,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        BrutalButton(onClick = { initTrigger++ }) {
-                            Text("Retry download")
+            if (modelState !is ModelState.Skipped) {
+                when (val state = modelState) {
+                    ModelState.Loading -> {
+                        val runtimePreference = SettingsManager.getRuntimePreference(context)
+                        val runtimeLabel = runtimePreference.displayName()
+                        val loadingMessage = if (hasLocalModels) {
+                            "Loading $runtimeLabel runtime…"
+                        } else {
+                            "Downloading voice models…"
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                            Text(loadingMessage, color = Brutal.textBright)
                         }
                     }
+                    is ModelState.Error -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = state.message,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            BrutalButton(onClick = { initTrigger++ }) {
+                                Text("Retry download")
+                            }
+                        }
+                    }
+                    ModelState.Ready -> Unit
+                    ModelState.Skipped -> Unit
                 }
-                ModelState.Ready -> Unit
             }
 
             TextField(
@@ -653,7 +693,7 @@ fun BasicScreen(
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                val playEnabled = !isProcessing && style.isNotEmpty() && modelState is ModelState.Ready
+                val playEnabled = !isProcessing && style.isNotEmpty() && (modelState is ModelState.Ready || modelState is ModelState.Skipped)
 
                 BrutalButton(
                     onClick = {

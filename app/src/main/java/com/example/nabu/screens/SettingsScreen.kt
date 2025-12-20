@@ -44,7 +44,7 @@ import androidx.compose.material3.HorizontalDivider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onNavigate: (String) -> Unit = {}) {
     val context = LocalContext.current
     val versionName = remember { getAppVersion(context) }
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
@@ -54,8 +54,14 @@ fun SettingsScreen() {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(runtime) {
-        withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext, runtime)
+        // Only trigger initialization if we are actually using Kokoro, or check if necessary.
+        // But users might change runtime preference here, so we might want to reload.
+        // For now we keep it but it should probably be async/non-blocking if not already.
+        // However, OnnxRuntimeManager.initialize is suspend.
+        if (SettingsManager.getTtsEngine(context) == "kokoro") {
+            withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext, runtime)
+            }
         }
     }
 
@@ -89,10 +95,12 @@ fun SettingsScreen() {
             Text("Theme Customization", style = MaterialTheme.typography.titleMedium)
 
             BrutalButton(onClick = {
-                // For now, just a button to export/import to prove persistence mechanism.
-                // A full color picker UI would be quite large, assuming manual edit for now or just proof of concept.
-                // But let's add a "Rotate Theme" button to show it works?
-                // Or "Export Current"
+                onNavigate("ThemeEditor")
+            }) {
+                Text("Theme Editor")
+            }
+
+            BrutalButton(onClick = {
                 scope.launch(Dispatchers.IO) {
                    val theme = ThemeManager.getTheme(context)
                    val success = ThemeManager.exportTheme(context, theme, "exported_theme.json")
@@ -106,8 +114,6 @@ fun SettingsScreen() {
 
              BrutalButton(onClick = {
                 scope.launch(Dispatchers.IO) {
-                    // Try to import "current_theme.json" from export dir if user edited it
-                    // Or specific path
                      val publicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS)
                      val file = java.io.File(publicDir, "Nabu/Themes/current_theme.json")
                      val theme = ThemeManager.importTheme(context, file.absolutePath)

@@ -73,11 +73,21 @@ fun MixerScreen(
     var runtimeStatus by remember { mutableStateOf(OnnxRuntimeManager.runtimeStatus()) }
 
     LaunchedEffect(Unit) {
-        val result = withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        // As per requirements: "download the kokoro models in the background too" but don't block UI if not using it.
+        // We trigger init. OnnxRuntimeManager.initialize is suspend but safe.
+        // We do not await it if engine is not kokoro.
+        val ttsEngine = SettingsManager.getTtsEngine(context)
+        if (ttsEngine == "kokoro") {
+            val result = withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            }
+            runtimeStatus = OnnxRuntimeManager.runtimeStatus()
+            result.onFailure { DebugLogger.log("Mixer failed to init runtime: ${it.message}") }
+        } else {
+             // Just trigger background init if not already done? Application scope handles it.
+             // But we can check status if we want to show it.
+             runtimeStatus = OnnxRuntimeManager.runtimeStatus()
         }
-        runtimeStatus = OnnxRuntimeManager.runtimeStatus()
-        result.onFailure { DebugLogger.log("Mixer failed to init runtime: ${it.message}") }
     }
 
     var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
@@ -108,7 +118,7 @@ fun MixerScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "RUNTIME: ${runtimeStatus?.toString() ?: "Loading…"}",
+                text = "RUNTIME: ${runtimeStatus?.toString() ?: "Loading (Background) or Ready"}",
                 style = MaterialTheme.typography.labelLarge,
                 color = Brutal.textDim
             )

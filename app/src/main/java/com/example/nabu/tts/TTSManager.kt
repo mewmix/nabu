@@ -16,22 +16,12 @@ import com.example.nabu.utils.SettingsManager
 
 object TTSManager {
     private var activeEngine: TTSEngine? = null
-    private var activeType: ModelType = ModelType.LLM // default to LLM/Kokoro logic
-    // Wait, ModelType.LLM is confusing here. I should use a specific TTS type enum or just check.
-    // Let's use string id or a separate enum.
 
     suspend fun getEngine(context: Context, modelManager: ModelManager): TTSEngine? {
         val preferredEngine = SettingsManager.getTtsEngine(context)
 
+        // If we have an active engine, check if it matches the preference.
         if (activeEngine != null) {
-            // Check if active engine matches preference.
-            // This is a bit tricky since we don't store the type on the engine instance easily.
-            // For now, if preference changed, we might need to close and reload.
-            // But getEngine is usually called per synthesis or session.
-            // Let's assume for now if it's initialized we re-use it, unless we force reload.
-            // Actually, if the user switches engine, we should probably close the old one.
-            // But getEngine doesn't know if preference JUST changed.
-            // Let's rely on the caller or just check type if possible.
             val isSupertonic = activeEngine?.name == "Supertonic"
             if (preferredEngine == "supertonic" && !isSupertonic) {
                 activeEngine?.close()
@@ -44,6 +34,7 @@ object TTSManager {
             }
         }
 
+        // Initialize based on preference. Do NOT fallback silently.
         if (preferredEngine == "supertonic") {
              val ttsModels = modelManager.models.filter { it.type == ModelType.TTS && it.isDownloaded }
              if (ttsModels.isNotEmpty()) {
@@ -56,24 +47,27 @@ object TTSManager {
                      return activeEngine
                  } catch (e: Exception) {
                      DebugLogger.log("TTSManager: Failed to load Supertonic: ${e.message}")
-                     // Fallback to Kokoro? Or just return null?
-                     // Let's fall back to Kokoro to be safe.
+                     return null // Explicit failure
                  }
              } else {
                  DebugLogger.log("TTSManager: Supertonic selected but no model found.")
+                 return null // Explicit failure
              }
-        }
-
-        // Fallback or default to Kokoro
-        try {
-            val bundle = OnnxRuntimeManager.initialize(context).getOrNull()
-            if (bundle != null) {
-                 activeEngine = BenchmarkingTTSEngine(OnnxRuntimeManager.getEngine())
-                 DebugLogger.log("TTSManager: Switched to Kokoro")
-                 return activeEngine
+        } else {
+            // Default to Kokoro
+            try {
+                // Ensure initialized. If it fails or returns null, we fail.
+                val bundle = OnnxRuntimeManager.initialize(context).getOrNull()
+                if (bundle != null) {
+                     activeEngine = BenchmarkingTTSEngine(OnnxRuntimeManager.getEngine())
+                     DebugLogger.log("TTSManager: Switched to Kokoro")
+                     return activeEngine
+                } else {
+                    DebugLogger.log("TTSManager: Kokoro bundle not available.")
+                }
+            } catch (e: Exception) {
+                 DebugLogger.log("TTSManager: Failed to load Kokoro: ${e.message}")
             }
-        } catch (e: Exception) {
-             DebugLogger.log("TTSManager: Failed to load Kokoro: ${e.message}")
         }
 
         return null

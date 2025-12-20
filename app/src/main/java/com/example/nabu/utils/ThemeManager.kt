@@ -14,20 +14,36 @@ object ThemeManager {
     private val gson = Gson()
 
     // Default themes
-    val DEFAULT_LIGHT = AppTheme()
+    val DEFAULT_LIGHT = AppTheme() // Uses default values from AppTheme constructor
     val DEFAULT_DARK = AppTheme(
         primary = 0xFF899190,
+        onPrimary = 0xFFFFFFFF, // Inferred default
         primaryContainer = 0xFFDDE2FF,
         onPrimaryContainer = 0xFF001257,
         secondary = 0xFF212121,
+        onSecondary = 0xFFFFFFFF, // Inferred default
         secondaryContainer = 0xFFF1F2F6,
-        onSecondaryContainer = 0xFF1B1B1F
+        onSecondaryContainer = 0xFF1B1B1F,
+        tertiary = 0xFFCCC2DC,
+        onTertiary = 0xFF332D41,
+        tertiaryContainer = 0xFF4A4458,
+        onTertiaryContainer = 0xFFE8DEF8,
+        error = 0xFFF2B8B5,
+        onError = 0xFF601410,
+        errorContainer = 0xFF8C1D18,
+        onErrorContainer = 0xFFF9DEDC,
+        background = 0xFF1B1B1F,
+        onBackground = 0xFFE3E2E6,
+        surface = 0xFF1B1B1F,
+        onSurface = 0xFFE3E2E6,
+        surfaceVariant = 0xFF444746,
+        onSurfaceVariant = 0xFFC4C7C5,
+        outline = 0xFF8E9099
     )
 
     fun saveTheme(context: Context, theme: AppTheme) {
         val json = gson.toJson(theme)
         SettingsManager.setSetting(context, PREF_KEY_THEME, json)
-        // Also auto-export for persistence outside app data
         exportTheme(context, theme, "current_theme.json")
     }
 
@@ -48,11 +64,9 @@ object ThemeManager {
     fun exportTheme(context: Context, theme: AppTheme, filename: String): Boolean {
         return try {
             val json = gson.toJson(theme)
-            // Try public Documents first if possible, else external files dir
             val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
             val nabuDir = File(publicDir, EXPORT_DIR_NAME)
 
-            // Fallback to app external dir if public one is not writable (though on 10+ we might need SAF for public, let's try getExternalFilesDir first for guaranteed access)
             val targetDir = if (nabuDir.exists() || nabuDir.mkdirs()) {
                 nabuDir
             } else {
@@ -72,9 +86,6 @@ object ThemeManager {
     }
 
     fun importTheme(context: Context, uri: String): AppTheme? {
-        // This is a simplified import that expects a file path.
-        // For real URI handling (SAF), we'd need ContentResolver.
-        // Assuming user puts file in the export dir for now.
         return try {
             val file = File(uri)
             if (file.exists()) {
@@ -89,5 +100,9 @@ object ThemeManager {
             DebugLogger.log("ThemeManager: Failed to import theme: ${e.message}")
             null
         }
+    }
+
+    fun resetToDefault(context: Context) {
+        saveTheme(context, DEFAULT_LIGHT)
     }
 }
