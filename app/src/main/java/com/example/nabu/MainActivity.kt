@@ -729,8 +729,7 @@ fun BasicScreen(
                     value = speed,
                     onValueChange = { viewModel.updateSpeed(it) },
                     range = 0.5f..2.0f,
-                    modifier = Modifier.weight(1f),
-                    enabled = isIdle
+                    modifier = Modifier.weight(1f)
                 )
                 Text("%.2f".format(speed))
             }
