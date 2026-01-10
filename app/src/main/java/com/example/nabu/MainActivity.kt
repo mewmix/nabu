@@ -200,9 +200,14 @@ class MainActivity : ComponentActivity() {
         userPreferencesRepository = UserPreferencesRepository(this)
         phonemeConverter = PhonemeConverter(this)
 
-        // Bind to SpeechForegroundService
+        // Start SpeechForegroundService properly (not just bind)
         val serviceIntent = Intent(this, SpeechForegroundService::class.java)
-        bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+        bindService(serviceIntent, serviceConnection, 0)
 
         val startScreen = screenFromString(intent.getStringExtra(EXTRA_START_SCREEN))
 
@@ -598,7 +603,11 @@ fun BasicScreen(
     speechService: SpeechForegroundService?
 ) {
     val context = LocalContext.current
+    val activity = context as? ComponentActivity
+
+    // Scope ViewModel to Activity so it persists across navigation
     val viewModel: com.example.nabu.viewmodel.BasicViewModel = viewModel(
+        viewModelStoreOwner = activity ?: error("Context must be a ComponentActivity"),
         factory = com.example.nabu.viewmodel.BasicViewModel.Factory(context)
     )
 
@@ -825,6 +834,47 @@ fun BasicScreen(
                     ) {
                         Text("STOP")
                     }
+                }
+            }
+
+            // Status info box at bottom
+            PanelBox(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "STATUS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Brutal.textDim
+                    )
+                    Text(
+                        text = when {
+                            speechState is SpeechState.Idle -> "Ready to generate speech"
+                            speechState is SpeechState.PreparingModels -> "Initializing TTS models..."
+                            speechState is SpeechState.Chunking -> "Splitting text into ${(speechState as SpeechState.Chunking).totalChunks} chunks..."
+                            speechState is SpeechState.Synthesizing -> {
+                                val s = speechState as SpeechState.Synthesizing
+                                "Generating audio chunk ${s.currentChunk}/${s.totalChunks}..."
+                            }
+                            speechState is SpeechState.Buffering -> "Buffering audio..."
+                            speechState is SpeechState.Playing -> {
+                                val s = speechState as SpeechState.Playing
+                                "Playing chunk ${s.currentChunk}/${s.totalChunks}"
+                            }
+                            speechState is SpeechState.Paused -> {
+                                val s = speechState as SpeechState.Paused
+                                "Paused at chunk ${s.currentChunk}/${s.totalChunks}"
+                            }
+                            speechState is SpeechState.Error -> "Error: ${(speechState as SpeechState.Error).message}"
+                            else -> "Unknown state"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (speechState is SpeechState.Error) MaterialTheme.colorScheme.error else Brutal.textBright
+                    )
                 }
             }
         }

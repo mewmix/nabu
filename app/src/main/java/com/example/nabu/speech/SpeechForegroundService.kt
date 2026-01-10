@@ -57,24 +57,28 @@ class SpeechForegroundService : Service(), SpeechController {
 
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    
+
     private lateinit var phonemeConverter: PhonemeConverter
     private lateinit var styleLoader: StyleLoader
     private lateinit var audioFocusManager: AudioFocusManager
-    
+
     private val _state = MutableStateFlow<SpeechState>(SpeechState.Idle)
     override val state: StateFlow<SpeechState> = _state.asStateFlow()
-    
+
     // Bounded channel for audio chunks (max 4 chunks buffered)
     private val audioChannel = Channel<AudioChunk>(capacity = 4)
-    
+
     private var synthJob: Job? = null
     private var playbackJob: Job? = null
-    
+
     private var currentAudioTrack: AudioTrack? = null
     private val playbackMutex = Mutex()
     private var isUserPaused = false
     private var currentRequest: SpeechRequest? = null
+
+    // Cache TTS engine to avoid "closed OrtSession" errors
+    private var cachedEngine: TTSEngine? = null
+    private val engineMutex = Mutex()
     
     inner class LocalBinder : Binder() {
         fun getService(): SpeechForegroundService = this@SpeechForegroundService
@@ -220,18 +224,26 @@ class SpeechForegroundService : Service(), SpeechController {
         DebugLogger.log("SpeechService: Starting synthesis")
         _state.value = SpeechState.PreparingModels
         updateNotification("Preparing models...")
-        
+
         // Initialize models if needed
         withContext(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(applicationContext)
         }
-        
-        // Get TTS engine
-        val modelManager = ModelManager(applicationContext)
-        val engine = withContext(Dispatchers.IO) {
-            TTSManager.getEngine(applicationContext, modelManager)
+
+        // Get or reuse cached TTS engine to avoid "closed OrtSession" errors
+        val engine = engineMutex.withLock {
+            if (cachedEngine == null) {
+                DebugLogger.log("SpeechService: Creating new TTS engine (first use)")
+                val modelManager = ModelManager(applicationContext)
+                cachedEngine = withContext(Dispatchers.IO) {
+                    TTSManager.getEngine(applicationContext, modelManager)
+                }
+            } else {
+                DebugLogger.log("SpeechService: Reusing cached TTS engine")
+            }
+            cachedEngine
         }
-        
+
         if (engine == null) {
             _state.value = SpeechState.Error("No TTS engine available")
             updateNotification("Error: No engine")
@@ -289,15 +301,17 @@ class SpeechForegroundService : Service(), SpeechController {
                 }
                 
                 val genMs = SystemClock.elapsedRealtime() - ttsStart
-                DebugLogger.log("SpeechService: Chunk ${index + 1} synthesized in ${genMs}ms")
-                
+                val audioMs = audioData.size * 1000L / sampleRate
+                DebugLogger.log("SpeechService: Chunk ${index + 1}/${chunks.size} synthesized in ${genMs}ms (${audioMs}ms audio)")
+
                 if (SettingsManager.isBenchmark(applicationContext)) {
-                    val audioMs = audioData.size * 1000L / sampleRate
                     BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
                 }
-                
+
                 // Enqueue for playback
+                DebugLogger.log("SpeechService: Sending chunk ${index + 1} to playback queue...")
                 audioChannel.send(AudioChunk(index + 1, chunks.size, audioData, sampleRate, request.shouldSave, request.style))
+                DebugLogger.log("SpeechService: Chunk ${index + 1} queued successfully")
                 
             } catch (e: Exception) {
                 DebugLogger.log("SpeechService: Error synthesizing chunk ${index + 1}: ${e.message}")
@@ -312,21 +326,26 @@ class SpeechForegroundService : Service(), SpeechController {
     
     private fun startPlaybackWorker() {
         playbackJob = serviceScope.launch {
-            DebugLogger.log("SpeechService: Playback worker started")
-            
+            DebugLogger.log("SpeechService: ▶ Playback worker started and waiting for chunks...")
+
             for (chunk in audioChannel) {
-                DebugLogger.log("SpeechService: Received chunk ${chunk.index}/${chunk.totalChunks} for playback")
-                
+                val startTime = SystemClock.elapsedRealtime()
+                DebugLogger.log("SpeechService: ▶ Received chunk ${chunk.index}/${chunk.totalChunks} for playback")
+
                 // Wait if user paused
                 while (isUserPaused) {
                     kotlinx.coroutines.delay(100)
                 }
-                
+
                 _state.value = SpeechState.Playing(chunk.index, chunk.totalChunks)
                 updateNotification("Playing ${chunk.index}/${chunk.totalChunks}")
-                
+
+                DebugLogger.log("SpeechService: ▶ Starting playback of chunk ${chunk.index}...")
                 playAudioChunk(chunk)
-                
+
+                val playTime = SystemClock.elapsedRealtime() - startTime
+                DebugLogger.log("SpeechService: ▶ Finished playing chunk ${chunk.index} (took ${playTime}ms)")
+
                 // Save if needed (only on last chunk)
                 if (chunk.shouldSave && chunk.index == chunk.totalChunks) {
                     withContext(Dispatchers.IO) {
@@ -334,6 +353,8 @@ class SpeechForegroundService : Service(), SpeechController {
                     }
                 }
             }
+
+            DebugLogger.log("SpeechService: ▶ Playback worker finished (channel closed)")
         }
     }
     
