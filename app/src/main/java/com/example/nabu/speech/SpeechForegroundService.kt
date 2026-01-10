@@ -20,6 +20,7 @@ import com.example.nabu.data.ModelManager
 import com.example.nabu.kokoro.KokoroEngine
 import com.example.nabu.supertonic.DebugSupertonicEngine
 import com.example.nabu.tts.BenchmarkingTTSEngine
+import com.example.nabu.tts.TTSEngine
 import com.example.nabu.tts.TTSManager
 import com.example.nabu.utils.BenchmarkManager
 import com.example.nabu.utils.DebugLogger
@@ -281,7 +282,7 @@ class SpeechForegroundService : Service(), SpeechController {
                     phonemeConverter.phonemize(chunk)
                 }
                 
-                val (audioData, sampleRate) = withContext(Dispatchers.IO) {
+                val audioResult: Pair<FloatArray, Int> = withContext(Dispatchers.IO) {
                     if (rawEngine is KokoroEngine) {
                         createAudio(
                             phonemes = phonemes,
@@ -299,6 +300,9 @@ class SpeechForegroundService : Service(), SpeechController {
                         result.wav to result.sampleRate
                     }
                 }
+
+                val audioData = audioResult.first
+                val sampleRate = audioResult.second
                 
                 val genMs = SystemClock.elapsedRealtime() - ttsStart
                 val audioMs = audioData.size * 1000L / sampleRate
