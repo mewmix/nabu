@@ -93,19 +93,32 @@ class SpeechForegroundService : Service(), SpeechController {
     override fun onCreate() {
         super.onCreate()
         DebugLogger.log("SpeechService: Service created")
-        
+
         phonemeConverter = PhonemeConverter(this)
         styleLoader = StyleLoader(this)
-        
+
         audioFocusManager = AudioFocusManager(
             context = this,
             onFocusLost = { handleAudioFocusLost() },
             onFocusGained = { handleAudioFocusGained() }
         )
-        
+
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification("Ready"))
-        
+
+        // Initialize ONNX Runtime ONCE when service is created
+        serviceScope.launch {
+            try {
+                DebugLogger.log("SpeechService: Initializing ONNX Runtime (one-time setup)")
+                withContext(Dispatchers.IO) {
+                    OnnxRuntimeManager.initialize(applicationContext)
+                }
+                DebugLogger.log("SpeechService: ONNX Runtime initialized successfully")
+            } catch (e: Exception) {
+                DebugLogger.log("SpeechService: Failed to initialize ONNX Runtime: ${e.message}")
+            }
+        }
+
         // Start playback worker
         startPlaybackWorker()
     }
@@ -114,6 +127,12 @@ class SpeechForegroundService : Service(), SpeechController {
         DebugLogger.log("SpeechService: Service destroyed")
         stop()
         audioFocusManager.abandonAudioFocus()
+
+        // Close the cached engine properly
+        cachedEngine?.close()
+        cachedEngine = null
+        DebugLogger.log("SpeechService: Closed TTS engine")
+
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -226,32 +245,22 @@ class SpeechForegroundService : Service(), SpeechController {
         _state.value = SpeechState.PreparingModels
         updateNotification("Preparing models...")
 
-        // Initialize models if needed
-        withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(applicationContext)
-        }
-
         // Get or create cached TTS engine - bypass TTSManager to avoid session closure
+        // NOTE: ONNX Runtime is initialized once in onCreate(), NOT here
         val engine = engineMutex.withLock {
             if (cachedEngine == null) {
                 DebugLogger.log("SpeechService: Creating new TTS engine (first use)")
                 try {
-                    // Initialize engine directly, bypassing TTSManager to prevent it from closing our engine
-                    val bundle = withContext(Dispatchers.IO) {
-                        OnnxRuntimeManager.initialize(applicationContext).getOrNull()
-                    }
-                    if (bundle != null) {
-                        val kokoroEngine = OnnxRuntimeManager.getEngine()
-                        cachedEngine = BenchmarkingTTSEngine(kokoroEngine)
-                        DebugLogger.log("SpeechService: Created Kokoro engine directly (bypassed TTSManager)")
-                    } else {
-                        DebugLogger.log("SpeechService: Failed to initialize ONNX bundle")
-                    }
+                    // Get engine directly without reinitializing (already done in onCreate)
+                    val kokoroEngine = OnnxRuntimeManager.getEngine()
+                    cachedEngine = BenchmarkingTTSEngine(kokoroEngine)
+                    DebugLogger.log("SpeechService: Created Kokoro engine (session will persist)")
                 } catch (e: Exception) {
                     DebugLogger.log("SpeechService: Failed to create engine: ${e.message}")
+                    DebugLogger.log("SpeechService: Stack trace: ${e.stackTraceToString()}")
                 }
             } else {
-                DebugLogger.log("SpeechService: Reusing cached TTS engine (session preserved)")
+                DebugLogger.log("SpeechService: Reusing cached TTS engine (session intact)")
             }
             cachedEngine
         }
