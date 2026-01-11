@@ -26,13 +26,13 @@ object ThemeManager {
 
     fun saveTheme(context: Context, theme: AppTheme) {
         val json = gson.toJson(theme)
-        SettingsManager.setSetting(context, PREF_KEY_THEME, json)
+        DatabaseManager.setSetting(context, PREF_KEY_THEME, json)
         // Also auto-export for persistence outside app data
         exportTheme(context, theme, "current_theme.json")
     }
 
     fun getTheme(context: Context): AppTheme {
-        val json = SettingsManager.getSetting(context, PREF_KEY_THEME)
+        val json = DatabaseManager.getSetting(context, PREF_KEY_THEME)
         return if (json != null) {
             try {
                 gson.fromJson(json, AppTheme::class.java)
