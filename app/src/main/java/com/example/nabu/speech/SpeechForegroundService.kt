@@ -231,16 +231,27 @@ class SpeechForegroundService : Service(), SpeechController {
             OnnxRuntimeManager.initialize(applicationContext)
         }
 
-        // Get or reuse cached TTS engine to avoid "closed OrtSession" errors
+        // Get or create cached TTS engine - bypass TTSManager to avoid session closure
         val engine = engineMutex.withLock {
             if (cachedEngine == null) {
                 DebugLogger.log("SpeechService: Creating new TTS engine (first use)")
-                val modelManager = ModelManager(applicationContext)
-                cachedEngine = withContext(Dispatchers.IO) {
-                    TTSManager.getEngine(applicationContext, modelManager)
+                try {
+                    // Initialize engine directly, bypassing TTSManager to prevent it from closing our engine
+                    val bundle = withContext(Dispatchers.IO) {
+                        OnnxRuntimeManager.initialize(applicationContext).getOrNull()
+                    }
+                    if (bundle != null) {
+                        val kokoroEngine = OnnxRuntimeManager.getEngine()
+                        cachedEngine = BenchmarkingTTSEngine(kokoroEngine)
+                        DebugLogger.log("SpeechService: Created Kokoro engine directly (bypassed TTSManager)")
+                    } else {
+                        DebugLogger.log("SpeechService: Failed to initialize ONNX bundle")
+                    }
+                } catch (e: Exception) {
+                    DebugLogger.log("SpeechService: Failed to create engine: ${e.message}")
                 }
             } else {
-                DebugLogger.log("SpeechService: Reusing cached TTS engine")
+                DebugLogger.log("SpeechService: Reusing cached TTS engine (session preserved)")
             }
             cachedEngine
         }
@@ -312,10 +323,12 @@ class SpeechForegroundService : Service(), SpeechController {
                     BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
                 }
 
-                // Enqueue for playback
-                DebugLogger.log("SpeechService: Sending chunk ${index + 1} to playback queue...")
+                // Enqueue for playback (non-blocking - synthesis continues in parallel)
+                DebugLogger.log("SpeechService: [SYNTH] Sending chunk ${index + 1}/${chunks.size} to playback queue...")
                 audioChannel.send(AudioChunk(index + 1, chunks.size, audioData, sampleRate, request.shouldSave, request.style))
-                DebugLogger.log("SpeechService: Chunk ${index + 1} queued successfully")
+                DebugLogger.log("SpeechService: [SYNTH] Chunk ${index + 1} queued, continuing synthesis...")
+
+                // NOTE: Synthesis continues immediately - playback worker runs in parallel coroutine
                 
             } catch (e: Exception) {
                 DebugLogger.log("SpeechService: Error synthesizing chunk ${index + 1}: ${e.message}")
@@ -328,13 +341,18 @@ class SpeechForegroundService : Service(), SpeechController {
         DebugLogger.log("SpeechService: All chunks synthesized")
     }
     
+    /**
+     * Playback worker runs in parallel with synthesis worker.
+     * It consumes chunks from audioChannel as they become available.
+     * This allows synthesis to continue while previous chunks are playing.
+     */
     private fun startPlaybackWorker() {
         playbackJob = serviceScope.launch {
-            DebugLogger.log("SpeechService: ▶ Playback worker started and waiting for chunks...")
+            DebugLogger.log("SpeechService: [PLAYBACK] Worker started and waiting for chunks...")
 
             for (chunk in audioChannel) {
                 val startTime = SystemClock.elapsedRealtime()
-                DebugLogger.log("SpeechService: ▶ Received chunk ${chunk.index}/${chunk.totalChunks} for playback")
+                DebugLogger.log("SpeechService: [PLAYBACK] ▶ Received chunk ${chunk.index}/${chunk.totalChunks}")
 
                 // Wait if user paused
                 while (isUserPaused) {
@@ -344,11 +362,11 @@ class SpeechForegroundService : Service(), SpeechController {
                 _state.value = SpeechState.Playing(chunk.index, chunk.totalChunks)
                 updateNotification("Playing ${chunk.index}/${chunk.totalChunks}")
 
-                DebugLogger.log("SpeechService: ▶ Starting playback of chunk ${chunk.index}...")
+                DebugLogger.log("SpeechService: [PLAYBACK] ▶ Playing chunk ${chunk.index} (synthesis continues in parallel)...")
                 playAudioChunk(chunk)
 
                 val playTime = SystemClock.elapsedRealtime() - startTime
-                DebugLogger.log("SpeechService: ▶ Finished playing chunk ${chunk.index} (took ${playTime}ms)")
+                DebugLogger.log("SpeechService: [PLAYBACK] ▶ Finished chunk ${chunk.index} (took ${playTime}ms, ready for next)")
 
                 // Save if needed (only on last chunk)
                 if (chunk.shouldSave && chunk.index == chunk.totalChunks) {
@@ -358,7 +376,7 @@ class SpeechForegroundService : Service(), SpeechController {
                 }
             }
 
-            DebugLogger.log("SpeechService: ▶ Playback worker finished (channel closed)")
+            DebugLogger.log("SpeechService: [PLAYBACK] Worker finished - all chunks played")
         }
     }
     
@@ -394,7 +412,8 @@ class SpeechForegroundService : Service(), SpeechController {
                 val chunkSize = 4096
                 var pos = 0
 
-                DebugLogger.log("SpeechService: Writing ${pcmBytes.size} bytes to AudioTrack...")
+                val writeStart = SystemClock.elapsedRealtime()
+                DebugLogger.log("SpeechService: [PLAYBACK] Writing ${pcmBytes.size} bytes to AudioTrack...")
 
                 while (pos < pcmBytes.size && !isUserPaused) {
                     val remaining = pcmBytes.size - pos
@@ -403,12 +422,13 @@ class SpeechForegroundService : Service(), SpeechController {
                     if (written > 0) {
                         pos += written
                     } else {
-                        DebugLogger.log("SpeechService: AudioTrack write returned $written, stopping")
+                        DebugLogger.log("SpeechService: [PLAYBACK] AudioTrack write failed (returned $written)")
                         break
                     }
                 }
 
-                DebugLogger.log("SpeechService: Finished writing $pos bytes, waiting for playback completion...")
+                val writeTime = SystemClock.elapsedRealtime() - writeStart
+                DebugLogger.log("SpeechService: [PLAYBACK] Wrote $pos/${pcmBytes.size} bytes in ${writeTime}ms, now waiting for playback...")
 
                 // Wait for all data to be played - use playback head position
                 if (!isUserPaused && currentAudioTrack != null) {
@@ -427,14 +447,18 @@ class SpeechForegroundService : Service(), SpeechController {
                     }
 
                     val actualWaitTime = SystemClock.elapsedRealtime() - startWaitTime
-                    DebugLogger.log("SpeechService: Playback completed after ${actualWaitTime}ms (expected ${expectedDurationMs}ms)")
+                    DebugLogger.log("SpeechService: [PLAYBACK] Playback wait completed: ${actualWaitTime}ms (expected ${expectedDurationMs}ms)")
                 }
 
                 currentAudioTrack?.stop()
                 currentAudioTrack?.release()
                 currentAudioTrack = null
-                
-                DebugLogger.log("SpeechService: Finished playing chunk ${chunk.index}/${chunk.totalChunks}")
+
+                DebugLogger.log("SpeechService: [PLAYBACK] AudioTrack released, chunk ${chunk.index}/${chunk.totalChunks} complete")
+
+                // NOTE: Audio data is held in memory during playback (byteBuffer).
+                // Writing happens in 4KB chunks which is fast (~1-5ms total).
+                // AudioTrack handles internal buffering, so this doesn't block synthesis.
                 
                 // If this was the last chunk, go back to idle
                 if (chunk.index == chunk.totalChunks && !isUserPaused) {
