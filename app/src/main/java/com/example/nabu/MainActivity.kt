@@ -165,8 +165,8 @@ class MainActivity : ComponentActivity() {
     private val scope = MainScope()
     private lateinit var userPreferencesRepository: UserPreferencesRepository
 
-    // Service binding
-    private var speechService: SpeechForegroundService? = null
+    // Service binding - using mutableStateOf for Compose reactivity
+    private var speechService by mutableStateOf<SpeechForegroundService?>(null)
     private var isBound = false
 
     private val serviceConnection = object : ServiceConnection {
@@ -175,6 +175,7 @@ class MainActivity : ComponentActivity() {
             val binder = service as SpeechForegroundService.LocalBinder
             speechService = binder.getService()
             isBound = true
+            DebugLogger.log("MainActivity: Service is now available for UI")
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -745,11 +746,22 @@ fun BasicScreen(
 
             // Player controls
             val modelReady = modelState is com.example.nabu.viewmodel.BasicViewModel.ModelState.Ready
-            val canPlay = isIdle && style.isNotEmpty() && modelReady && speechService != null
+            val serviceReady = speechService != null
+            val canPlay = isIdle && style.isNotEmpty() && modelReady && serviceReady
 
             when {
                 // Idle state - show PLAY and PLAY & SAVE buttons
                 isIdle -> {
+                    // Show service status if not ready
+                    if (!serviceReady && modelReady) {
+                        Text(
+                            text = "Connecting to speech service...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Brutal.textDim,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -759,7 +771,9 @@ fun BasicScreen(
                                 saveMode = false
                                 viewModel.updateShouldSaveFile(false)
                                 val request = viewModel.createSpeechRequest()
-                                speechService?.speak(request)
+                                speechService?.speak(request) ?: run {
+                                    DebugLogger.log("BasicScreen: Service not ready, cannot start TTS")
+                                }
                             },
                             modifier = Modifier.weight(1f),
                             enabled = canPlay
@@ -772,7 +786,9 @@ fun BasicScreen(
                                 saveMode = true
                                 viewModel.updateShouldSaveFile(true)
                                 val request = viewModel.createSpeechRequest()
-                                speechService?.speak(request)
+                                speechService?.speak(request) ?: run {
+                                    DebugLogger.log("BasicScreen: Service not ready, cannot start TTS")
+                                }
                             },
                             modifier = Modifier.weight(1f),
                             enabled = canPlay

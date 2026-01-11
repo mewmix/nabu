@@ -388,11 +388,14 @@ class SpeechForegroundService : Service(), SpeechController {
                 }
                 
                 currentAudioTrack?.play()
-                
+
                 val pcmBytes = byteBuffer.array()
+                val totalFrames = chunk.audioData.size
                 val chunkSize = 4096
                 var pos = 0
-                
+
+                DebugLogger.log("SpeechService: Writing ${pcmBytes.size} bytes to AudioTrack...")
+
                 while (pos < pcmBytes.size && !isUserPaused) {
                     val remaining = pcmBytes.size - pos
                     val toWrite = min(chunkSize, remaining)
@@ -400,19 +403,33 @@ class SpeechForegroundService : Service(), SpeechController {
                     if (written > 0) {
                         pos += written
                     } else {
+                        DebugLogger.log("SpeechService: AudioTrack write returned $written, stopping")
                         break
                     }
                 }
-                
-                // Wait for playback to finish if not paused
-                if (!isUserPaused) {
-                    currentAudioTrack?.let { track ->
-                        while (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                            kotlinx.coroutines.delay(50)
+
+                DebugLogger.log("SpeechService: Finished writing $pos bytes, waiting for playback completion...")
+
+                // Wait for all data to be played - use playback head position
+                if (!isUserPaused && currentAudioTrack != null) {
+                    val track = currentAudioTrack!!
+                    val expectedDurationMs = (chunk.audioData.size * 1000L / chunk.sampleRate)
+                    val startWaitTime = SystemClock.elapsedRealtime()
+                    val maxWaitTime = expectedDurationMs + 2000 // Add 2s buffer
+
+                    while (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                        val elapsed = SystemClock.elapsedRealtime() - startWaitTime
+                        if (elapsed > maxWaitTime) {
+                            DebugLogger.log("SpeechService: Playback wait timeout after ${elapsed}ms (expected ${expectedDurationMs}ms)")
+                            break
                         }
+                        kotlinx.coroutines.delay(50)
                     }
+
+                    val actualWaitTime = SystemClock.elapsedRealtime() - startWaitTime
+                    DebugLogger.log("SpeechService: Playback completed after ${actualWaitTime}ms (expected ${expectedDurationMs}ms)")
                 }
-                
+
                 currentAudioTrack?.stop()
                 currentAudioTrack?.release()
                 currentAudioTrack = null
