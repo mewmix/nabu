@@ -4,6 +4,9 @@ import android.content.Context
 import com.example.nabu.kokoro.RunEp
 
 object SettingsManager {
+    private const val KEY_INIT_COMPLETE = "init_complete"
+    private const val KEY_KOKORO_AUTO_DOWNLOAD = "kokoro_auto_download"
+
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
     }
@@ -56,4 +59,20 @@ object SettingsManager {
 
     fun getTtsEngine(context: Context, default: String = "kokoro"): String =
         DatabaseManager.getSetting(context, "tts_engine") ?: default
+
+    fun setInitComplete(context: Context, complete: Boolean) {
+        DatabaseManager.setSetting(context, KEY_INIT_COMPLETE, if (complete) "1" else "0")
+    }
+
+    fun isInitComplete(context: Context): Boolean =
+        (DatabaseManager.getSetting(context, KEY_INIT_COMPLETE) ?: "0") == "1"
+
+    fun setKokoroAutoDownload(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, KEY_KOKORO_AUTO_DOWNLOAD, if (enabled) "1" else "0")
+    }
+
+    fun isKokoroAutoDownloadEnabled(context: Context, default: Boolean = true): Boolean {
+        val fallback = if (default) "1" else "0"
+        return (DatabaseManager.getSetting(context, KEY_KOKORO_AUTO_DOWNLOAD) ?: fallback) == "1"
+    }
 }

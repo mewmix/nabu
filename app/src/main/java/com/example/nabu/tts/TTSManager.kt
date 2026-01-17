@@ -13,15 +13,18 @@ import java.io.File
 import com.example.nabu.data.ModelManager
 import ai.onnxruntime.OrtEnvironment
 import com.example.nabu.utils.SettingsManager
+import com.example.nabu.kokoro.RunEp
 
 object TTSManager {
     private var activeEngine: TTSEngine? = null
     private var activeType: ModelType = ModelType.LLM // default to LLM/Kokoro logic
+    private var activeRuntimePreference: RunEp? = null
     // Wait, ModelType.LLM is confusing here. I should use a specific TTS type enum or just check.
     // Let's use string id or a separate enum.
 
     suspend fun getEngine(context: Context, modelManager: ModelManager): TTSEngine? {
         val preferredEngine = SettingsManager.getTtsEngine(context)
+        val preferredRuntime = SettingsManager.getRuntimePreference(context)
 
         if (activeEngine != null) {
             // Check if active engine matches preference.
@@ -36,9 +39,15 @@ object TTSManager {
             if (preferredEngine == "supertonic" && !isSupertonic) {
                 activeEngine?.close()
                 activeEngine = null
+                activeRuntimePreference = null
             } else if (preferredEngine == "kokoro" && isSupertonic) {
                 activeEngine?.close()
                 activeEngine = null
+                activeRuntimePreference = null
+            } else if (preferredEngine == "kokoro" && activeRuntimePreference != preferredRuntime) {
+                activeEngine?.close()
+                activeEngine = null
+                activeRuntimePreference = null
             } else {
                 return activeEngine
             }
@@ -52,6 +61,7 @@ object TTSManager {
                  try {
                      val engine = DebugSupertonicEngine(modelDir)
                      activeEngine = BenchmarkingTTSEngine(engine)
+                     activeRuntimePreference = null
                      DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
                      return activeEngine
                  } catch (e: Exception) {
@@ -69,6 +79,7 @@ object TTSManager {
             val bundle = OnnxRuntimeManager.initialize(context).getOrNull()
             if (bundle != null) {
                  activeEngine = BenchmarkingTTSEngine(OnnxRuntimeManager.getEngine())
+                 activeRuntimePreference = preferredRuntime
                  DebugLogger.log("TTSManager: Switched to Kokoro")
                  return activeEngine
             }

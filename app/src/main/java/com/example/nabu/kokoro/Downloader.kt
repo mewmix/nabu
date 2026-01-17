@@ -14,6 +14,12 @@ import java.time.Duration
 object Downloader {
     private const val TAG = "KokoroDownloader"
 
+    data class DownloadProgress(
+        val fileId: String,
+        val downloadedBytes: Long,
+        val totalBytes: Long
+    )
+
     private val client: OkHttpClient = OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)
@@ -22,24 +28,43 @@ object Downloader {
         .readTimeout(Duration.ofMinutes(10))
         .build()
 
-    suspend fun ensureModels(ctx: Context, manifest: Manifest): Result<Unit> =
+    suspend fun ensureModels(
+        ctx: Context,
+        manifest: Manifest,
+        onProgress: (DownloadProgress) -> Unit = {}
+    ): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val root = File(ctx.filesDir, "")
-                manifest.files.forEach { file ->
+                val filesToDownload = manifest.files.filter { file ->
+                    val outFile = File(root, file.dest)
+                    if (!outFile.exists()) {
+                        return@filter true
+                    }
+                    val digest = runCatching { Hash.sha256(outFile) }.getOrNull()
+                    digest == null || !digest.equals(file.sha256, ignoreCase = true)
+                }
+                val totalBytes = filesToDownload.sumOf { it.sizeBytes }
+                var completedBytes = 0L
+
+                filesToDownload.forEach { file ->
                     val outFile = File(root, file.dest)
                     if (outFile.exists()) {
-                        val digest = runCatching { Hash.sha256(outFile) }.getOrNull()
-                        if (digest != null && digest.equals(file.sha256, ignoreCase = true)) {
-                            return@forEach
-                        }
                         Log.w(TAG, "Existing ${file.id} failed verification, redownloading")
                     }
 
                     val tmpFile = File(outFile.absolutePath + ".part")
                     tmpFile.parentFile?.mkdirs()
 
-                    rangeDownload(file.url, tmpFile)
+                    val startingBytes = if (tmpFile.exists()) tmpFile.length() else 0L
+                    if (totalBytes > 0L) {
+                        onProgress(DownloadProgress(file.id, completedBytes + startingBytes, totalBytes))
+                    }
+                    rangeDownload(file.url, tmpFile) { currentBytes ->
+                        if (totalBytes > 0L) {
+                            onProgress(DownloadProgress(file.id, completedBytes + currentBytes, totalBytes))
+                        }
+                    }
 
                     if (!Size.check(tmpFile.length(), file.sizeBytes, tolerance = 0.05)) {
                         throw IllegalStateException(
@@ -58,6 +83,7 @@ object Downloader {
                     if (!tmpFile.renameTo(outFile)) {
                         throw IllegalStateException("Failed to atomically promote ${file.dest}")
                     }
+                    completedBytes += file.sizeBytes
                 }
             }
         }
@@ -71,7 +97,7 @@ object Downloader {
     }
 
     @Throws(IOException::class)
-    private fun rangeDownload(url: String, target: File) {
+    private fun rangeDownload(url: String, target: File, onProgress: (Long) -> Unit) {
         var existingBytes = if (target.exists()) target.length() else 0L
 
         val requestBuilder = Request.Builder()
@@ -79,7 +105,7 @@ object Downloader {
             .header("User-Agent", "Nabu/1.0 KokoroDownloader")
             .header("Accept-Encoding", "identity")
 
-        if (existingBytes > 0) {
+        if (existingBytes > 0L) {
             requestBuilder.header("Range", "bytes=$existingBytes-")
         }
 
@@ -95,11 +121,17 @@ object Downloader {
             }
 
             val body = response.body ?: throw IOException("Empty body for $url")
-            val append = response.code == 206 && existingBytes > 0
+            val append = response.code == 206 && existingBytes > 0L
 
-            if (!append && existingBytes > 0) {
+            if (!append && existingBytes > 0L) {
                 // Server ignored range, restart download.
                 existingBytes = 0
+            }
+
+            var writtenBytes = existingBytes
+            if (!append) {
+                writtenBytes = 0L
+                onProgress(0L)
             }
 
             FileOutputStream(target, append).use { output ->
@@ -109,6 +141,8 @@ object Downloader {
                         val read = input.read(buffer)
                         if (read == -1) break
                         output.write(buffer, 0, read)
+                        writtenBytes += read.toLong()
+                        onProgress(writtenBytes)
                     }
                 }
             }

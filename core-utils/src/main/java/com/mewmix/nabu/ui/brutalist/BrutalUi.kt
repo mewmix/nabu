@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -205,6 +206,18 @@ fun BrutalButton(
             }
         }
     }
+}
+
+@Composable
+fun BrutalButtonText(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        modifier = modifier.fillMaxWidth(),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        softWrap = false,
+        textAlign = TextAlign.Center
+    )
 }
 
 /* ---------- LED Indicator ---------- */

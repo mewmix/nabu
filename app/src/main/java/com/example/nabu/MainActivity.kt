@@ -43,12 +43,14 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalButtonText
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.mewmix.nabu.ui.brutalist.Brutal
@@ -59,6 +61,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -81,6 +84,7 @@ import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
+import com.example.nabu.utils.formatBytes
 import com.example.nabu.kokoro.Downloader
 import com.example.nabu.kokoro.RunEp
 import com.google.android.material.color.DynamicColors
@@ -93,6 +97,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import java.util.Locale
+import com.example.nabu.data.ModelManager
+import com.example.nabu.data.ModelType
+import com.example.nabu.screens.InitScreen
 
 const val EXTRA_START_SCREEN = "start_screen"
 private const val PLAYBACK_CHANNEL_ID = "playback_channel"
@@ -105,7 +112,14 @@ class MyApplication : Application() {
         super.onCreate()
         DynamicColors.applyToActivitiesIfAvailable(this)
         preloadScope.launch {
-            OnnxRuntimeManager.initialize(applicationContext)
+            if (SettingsManager.isInitComplete(this@MyApplication) &&
+                SettingsManager.getTtsEngine(this@MyApplication) == "kokoro"
+            ) {
+                OnnxRuntimeManager.initialize(
+                    applicationContext,
+                    allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(this@MyApplication)
+                )
+            }
         }
     }
 
@@ -177,28 +191,37 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     WindowCompat.setDecorFitsSystemWindows(window, false)
                 }
+                val context = LocalContext.current
+                var needsInit by remember { mutableStateOf(!SettingsManager.isInitComplete(context)) }
 
-                MainScreen(
-                    phonemeConverter = phonemeConverter,
-                    onGenerateAudio = { text, style, speed, shouldSave, onComplete ->
-                        maybeRequestNotificationPermission()
-                        generateAudio(
-                            phonemeConverter,
-                            text,
-                            style,
-                            speed,
-                            this@MainActivity,
-                            scope,
-                            shouldSave,
-                            onComplete
-                        )
-                    },
-                    userPreferencesRepository = userPreferencesRepository,
-                    initialScreen = startScreen
-                )
+                if (needsInit) {
+                    InitScreen(
+                        userPreferencesRepository = userPreferencesRepository,
+                        onComplete = { needsInit = false }
+                    )
+                } else {
+                    MainScreen(
+                        phonemeConverter = phonemeConverter,
+                        onGenerateAudio = { text, style, speed, shouldSave, onComplete ->
+                            maybeRequestNotificationPermission()
+                            generateAudio(
+                                phonemeConverter,
+                                text,
+                                style,
+                                speed,
+                                this@MainActivity,
+                                scope,
+                                shouldSave,
+                                onComplete
+                            )
+                        },
+                        userPreferencesRepository = userPreferencesRepository,
+                        initialScreen = startScreen
+                    )
 
-                if (SettingsManager.isBenchmark(this@MainActivity)) {
-                    PerfHud.Overlay()
+                    if (SettingsManager.isBenchmark(this@MainActivity)) {
+                        PerfHud.Overlay()
+                    }
                 }
             }
         }
@@ -416,28 +439,28 @@ fun MainScreen(
                     onClick = { navigateTo(Screen.Basic) },
                     modifier = Modifier.weight(1f),
                     enabled = currentFeature != Screen.Basic
-                ) { Text("BASIC") }
+                ) { BrutalButtonText("BASIC") }
                 BrutalButton(
                     onClick = { navigateTo(Screen.Mixer) },
                     modifier = Modifier.weight(1f),
                     enabled = currentFeature != Screen.Mixer
-                ) { Text("MIXER") }
+                ) { BrutalButtonText("MIXER") }
                 BrutalButton(
                     onClick = { navigateTo(Screen.Book) },
                     modifier = Modifier.weight(1f),
                     enabled = currentFeature != Screen.Book
-                ) { Text("BOOK") }
+                ) { BrutalButtonText("BOOK") }
                 BrutalButton(
                     onClick = {
                         context.startActivity(Intent(context, ChatActivity::class.java))
                     },
                     modifier = Modifier.weight(1f)
-                ) { Text("CHAT") }
+                ) { BrutalButtonText("CHAT") }
                 BrutalButton(
                     onClick = { navigateTo(Screen.More) },
                     modifier = Modifier.weight(1f),
                     enabled = currentFeature != Screen.More
-                ) { Text("MORE") }
+                ) { BrutalButtonText("MORE") }
             }
         }
     ) { innerPadding ->
@@ -521,6 +544,10 @@ fun BasicScreen(
     var expanded by remember { mutableStateOf(false) }
     var initTrigger by remember { mutableStateOf(0) }
     var modelState by remember { mutableStateOf<ModelState>(ModelState.Loading) }
+    var downloadProgress by remember { mutableStateOf<Downloader.DownloadProgress?>(null) }
+    var isSupertonic by remember { mutableStateOf(false) }
+    var hasSupertonicModels by remember { mutableStateOf(false) }
+    val uiScope = rememberCoroutineScope()
     var hasLocalModels by remember {
         mutableStateOf(
             Downloader.modelsAvailable(
@@ -532,17 +559,32 @@ fun BasicScreen(
 
     LaunchedEffect(initTrigger) {
         modelState = ModelState.Loading
-        hasLocalModels = Downloader.modelsAvailable(
-            context.applicationContext,
-            OnnxRuntimeManager.currentManifest()
-        )
-        val result = withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        downloadProgress = null
+        val preferredEngine = SettingsManager.getTtsEngine(context)
+        isSupertonic = preferredEngine == "supertonic"
+        if (isSupertonic) {
+            val modelManager = ModelManager(context)
+            hasSupertonicModels = modelManager.models.any { model ->
+                model.type == ModelType.TTS && model.isDownloaded
+            }
+            modelState = ModelState.Ready
+        } else {
+            hasLocalModels = Downloader.modelsAvailable(
+                context.applicationContext,
+                OnnxRuntimeManager.currentManifest()
+            )
+            val result = withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(
+                    context.applicationContext,
+                    allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(context),
+                    onProgress = { progress -> uiScope.launch { downloadProgress = progress } }
+                )
+            }
+            modelState = result.fold(
+                onSuccess = { ModelState.Ready },
+                onFailure = { ModelState.Error(it?.message ?: "Unable to prepare Kokoro models") }
+            )
         }
-        modelState = result.fold(
-            onSuccess = { ModelState.Ready },
-            onFailure = { ModelState.Error(it?.message ?: "Unable to prepare Kokoro models") }
-        )
         if (style.isEmpty() && names.isNotEmpty()) {
             style = names.first()
             SettingsManager.setStyle(context, style)
@@ -570,23 +612,51 @@ fun BasicScreen(
                     } else {
                         "Downloading voice models…"
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
-                        Text(loadingMessage, color = Brutal.textBright)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                            Text(loadingMessage, color = Brutal.textBright)
+                        }
+                        downloadProgress?.let { progress ->
+                            if (progress.totalBytes > 0L) {
+                                val ratio = progress.downloadedBytes.toFloat() / progress.totalBytes.toFloat()
+                                LinearProgressIndicator(
+                                    progress = { ratio.coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(
+                                    "${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}",
+                                    color = Brutal.textDim
+                                )
+                            }
+                        }
                     }
                 }
                 is ModelState.Error -> {
+                    val downloadEnabled = SettingsManager.isKokoroAutoDownloadEnabled(context)
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = state.message,
                             color = MaterialTheme.colorScheme.error
                         )
-                        BrutalButton(onClick = { initTrigger++ }) {
-                            Text("Retry download")
+                        BrutalButton(onClick = {
+                            if (!downloadEnabled) {
+                                SettingsManager.setKokoroAutoDownload(context, true)
+                            }
+                            initTrigger++
+                        }) {
+                            BrutalButtonText(if (downloadEnabled) "Retry download" else "Download voice models")
                         }
                     }
                 }
                 ModelState.Ready -> Unit
+            }
+
+            if (isSupertonic && !hasSupertonicModels) {
+                Text(
+                    text = "No Supertonic voice models found. Open Models to download one.",
+                    color = MaterialTheme.colorScheme.error
+                )
             }
 
             TextField(
@@ -653,7 +723,10 @@ fun BasicScreen(
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                val playEnabled = !isProcessing && style.isNotEmpty() && modelState is ModelState.Ready
+                val playEnabled = !isProcessing &&
+                    style.isNotEmpty() &&
+                    modelState is ModelState.Ready &&
+                    (!isSupertonic || hasSupertonicModels)
 
                 BrutalButton(
                     onClick = {
@@ -668,7 +741,7 @@ fun BasicScreen(
                         .weight(1f),
                     enabled = playEnabled
                 ) {
-                    Text(if (isProcessing) "PROCESSING..." else "PLAY")
+                    BrutalButtonText(if (isProcessing) "PROCESSING..." else "PLAY")
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -686,7 +759,7 @@ fun BasicScreen(
                         .weight(1f),
                     enabled = playEnabled
                 ) {
-                    Text(if (isProcessing) "PROCESSING..." else "PLAY & SAVE")
+                    BrutalButtonText(if (isProcessing) "PROCESSING..." else "PLAY & SAVE")
                 }
             }
         }

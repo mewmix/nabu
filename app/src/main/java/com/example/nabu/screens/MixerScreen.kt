@@ -50,6 +50,7 @@ import com.example.nabu.utils.createAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
 import com.example.nabu.utils.SettingsManager
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalButtonText
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.example.nabu.utils.playAudio
@@ -57,6 +58,8 @@ import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.OnnxRuntimeManager
 import com.example.nabu.utils.buildStyleFileName
+import com.example.nabu.data.ModelManager
+import com.example.nabu.data.ModelType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -69,15 +72,30 @@ fun MixerScreen(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val modelManager = remember { ModelManager(context) }
     val scrollState = rememberScrollState()
     var runtimeStatus by remember { mutableStateOf(OnnxRuntimeManager.runtimeStatus()) }
+    var isSupertonic by remember { mutableStateOf(false) }
+    var hasSupertonicModels by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        val result = withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+        val preferredEngine = SettingsManager.getTtsEngine(context)
+        isSupertonic = preferredEngine == "supertonic"
+        if (isSupertonic) {
+            hasSupertonicModels = modelManager.models.any { model ->
+                model.type == ModelType.TTS && model.isDownloaded
+            }
+            runtimeStatus = null
+        } else {
+            val result = withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(
+                    context.applicationContext,
+                    allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(context)
+                )
+            }
+            runtimeStatus = OnnxRuntimeManager.runtimeStatus()
+            result.onFailure { DebugLogger.log("Mixer failed to init runtime: ${it.message}") }
         }
-        runtimeStatus = OnnxRuntimeManager.runtimeStatus()
-        result.onFailure { DebugLogger.log("Mixer failed to init runtime: ${it.message}") }
     }
 
     var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
@@ -108,10 +126,16 @@ fun MixerScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "RUNTIME: ${runtimeStatus?.toString() ?: "Loading…"}",
+                text = if (isSupertonic) "RUNTIME: SUPERTONIC" else "RUNTIME: ${runtimeStatus?.toString() ?: "Loading…"}",
                 style = MaterialTheme.typography.labelLarge,
                 color = Brutal.textDim
             )
+            if (isSupertonic && !hasSupertonicModels) {
+                Text(
+                    text = "No Supertonic voice models found. Open Models to download one.",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
             TextField(
             value = text,
@@ -195,8 +219,8 @@ fun MixerScreen(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = !isProcessing
-            ) { Text(if (isProcessing) "MIXING..." else "PLAY") }
+                enabled = !isProcessing && (!isSupertonic || hasSupertonicModels)
+            ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY") }
 
             BrutalButton(
                 onClick = {
@@ -221,8 +245,8 @@ fun MixerScreen(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = !isProcessing
-            ) { Text(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
+                enabled = !isProcessing && (!isSupertonic || hasSupertonicModels)
+            ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
         }
 
         // Debug logs moved to dedicated screen

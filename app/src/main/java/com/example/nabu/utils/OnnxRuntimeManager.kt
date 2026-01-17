@@ -31,16 +31,31 @@ object OnnxRuntimeManager {
     @Volatile
     private var status: RuntimeStatus? = null
 
-    suspend fun initialize(context: Context, preferred: RunEp? = null): Result<KokoroBundle> =
+    suspend fun initialize(
+        context: Context,
+        preferred: RunEp? = null,
+        allowDownload: Boolean? = null,
+        onProgress: (Downloader.DownloadProgress) -> Unit = {}
+    ): Result<KokoroBundle> =
         mutex.withLock {
             val appContext = context.applicationContext
             manifest = ManifestProvider.kokoroV1()
             val choice = preferred ?: SettingsManager.getRuntimePreference(appContext)
+            val downloadEnabled = allowDownload ?: SettingsManager.isKokoroAutoDownloadEnabled(appContext)
 
-            val fetchResult = Downloader.ensureModels(appContext, manifest)
-            if (fetchResult.isFailure) {
-                Log.w(TAG, "Failed to download Kokoro models", fetchResult.exceptionOrNull())
+            if (downloadEnabled) {
+                val fetchResult = Downloader.ensureModels(appContext, manifest, onProgress)
+                if (fetchResult.isFailure) {
+                    Log.w(TAG, "Failed to download Kokoro models", fetchResult.exceptionOrNull())
+                    ensureBundledFallback(appContext, manifest)
+                }
+            } else if (!Downloader.modelsAvailable(appContext, manifest)) {
                 ensureBundledFallback(appContext, manifest)
+                if (!Downloader.modelsAvailable(appContext, manifest)) {
+                    return@withLock Result.failure(
+                        IllegalStateException("Kokoro voice models are not downloaded yet.")
+                    )
+                }
             }
 
             val loadResult = runCatching {

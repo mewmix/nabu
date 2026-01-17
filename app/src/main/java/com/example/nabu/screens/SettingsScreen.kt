@@ -33,6 +33,7 @@ import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalButtonText
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.nabu.utils.UpdateChecker
@@ -55,7 +56,11 @@ fun SettingsScreen() {
 
     LaunchedEffect(runtime) {
         withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext, runtime)
+            OnnxRuntimeManager.initialize(
+                context.applicationContext,
+                runtime,
+                allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(context)
+            )
         }
     }
 
@@ -101,7 +106,7 @@ fun SettingsScreen() {
                    }
                 }
             }) {
-                Text("Export Theme JSON")
+                BrutalButtonText("Export Theme JSON")
             }
 
              BrutalButton(onClick = {
@@ -120,7 +125,7 @@ fun SettingsScreen() {
                      }
                 }
             }) {
-                Text("Import 'current_theme.json'")
+                BrutalButtonText("Import 'current_theme.json'")
             }
 
             HorizontalDivider()

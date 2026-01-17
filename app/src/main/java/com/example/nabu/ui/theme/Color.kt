@@ -1,8 +1,8 @@
+package com.example.nabu.ui.theme
+
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
-
-import com.example.nabu.ui.theme.AppTheme
 
 fun createLightColorScheme(theme: AppTheme) = lightColorScheme(
     primary = Color(theme.primary),
