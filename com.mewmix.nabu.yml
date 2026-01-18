@@ -1,0 +1,45 @@
+Categories:
+  - System
+  - Multimedia
+License: GPL-3.0-only
+SourceCode: https://github.com/mewmix/nabu
+IssueTracker: https://github.com/mewmix/nabu/issues
+Summary: Private, on-device TTS, LLM Chat, and Audio Book Reader
+Description: |
+  Nabu is an advanced, privacy-focused application for on-device Text-to-Speech (TTS), 
+  Large Language Model (LLM) Chat, and immersive document reading. It runs 
+  entirely offline, ensuring your data never leaves your device.
+
+  Key Features:
+  * High-Quality TTS: Utilizes Kokoro-82M and Supertonic engines for natural-sounding 
+    speech with real-time performance.
+  * Voice Mixer: Create custom voice blends by mixing multiple styles with 
+    adjustable weights and interpolation modes.
+  * LLM Chat: Engage in private conversations with on-device models like Gemma or 
+    Qwen. Responses can be read aloud automatically using the TTS engine.
+  * Advanced eBook Reader: Supports EPUB and TXT formats with automatic bookmarks, 
+    progress tracking, and focus mode.
+  * Pre-generation: Generate and cache audio for entire books for seamless, 
+    uninterrupted offline listening.
+  * Dynamic Model Management: Download and manage voice and chat models directly 
+    within the app, with support for Hugging Face gated models.
+  * Project-Based Workflow: Save reading sessions as "projects" that remember 
+    your document, voice settings, speed, and position.
+  * Modern Brutalist UI: A fast, efficient, and visually unique interface 
+    designed for high productivity.
+
+RepoType: git
+Repo: https://github.com/mewmix/nabu.git
+
+Builds:
+  - versionName: 0.5.0
+    versionCode: 4
+    commit: af9958117ab3c2149c5e1b4855d2f0e2885d4f33
+    subdir: app
+    gradle:
+      - yes
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.5.0
+CurrentVersionCode: 4

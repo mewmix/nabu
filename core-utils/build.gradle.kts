@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.nabu.utils"
+    namespace = "com.mewmix.nabu.utils"
     compileSdk = 34
 
     defaultConfig {

@@ -45,4 +45,4 @@
 -dontwarn com.google.mediapipe.proto.GraphTemplateProto$CalculatorGraphTemplate
 
 # Keep BuildConfig
--keep class com.example.nabu.BuildConfig { *; }
+-keep class com.mewmix.nabu.BuildConfig { *; }

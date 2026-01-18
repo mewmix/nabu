@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.nabu"
+    namespace = "com.mewmix.nabu"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.nabu"
+        applicationId = "com.mewmix.nabu"
         minSdk = 29
         targetSdk = 35
         versionCode = 4
@@ -37,12 +37,13 @@ android {
             if (propFile.exists()) {
                 props.load(FileInputStream(propFile))
             }
-            val storeFilePath = props.getProperty("RELEASE_STORE_FILE")
+            
+            val storeFilePath = System.getenv("RELEASE_STORE_FILE") ?: props.getProperty("RELEASE_STORE_FILE")
             if (storeFilePath != null) {
                 storeFile = file(storeFilePath)
-                storePassword = props.getProperty("RELEASE_STORE_PASSWORD")
-                keyAlias = props.getProperty("RELEASE_KEY_ALIAS")
-                keyPassword = props.getProperty("RELEASE_KEY_PASSWORD")
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: props.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: props.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: props.getProperty("RELEASE_KEY_PASSWORD")
             }
         }
     }
@@ -101,6 +102,7 @@ dependencies {
     implementation(libs.androidx.media)
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.junit)
     testImplementation(libs.mockito.core)
     testImplementation(libs.mockito.inline)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")

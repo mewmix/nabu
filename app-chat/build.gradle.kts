@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.app_chat"
+    namespace = "com.mewmix.nabu.chat"
     compileSdk = 34
 
     defaultConfig {
