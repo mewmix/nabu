@@ -18,16 +18,10 @@ android {
         versionCode = 4
         versionName = "0.5.0"
 
-        val gitCommitHash = try {
-            val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
-                .redirectOutput(ProcessBuilder.Redirect.PIPE)
-                .redirectError(ProcessBuilder.Redirect.PIPE)
-                .start()
-            process.inputStream.bufferedReader().readText().trim()
-        } catch (e: Exception) {
-            "unknown"
-        }
-        buildConfigField("String", "GIT_COMMIT_HASH", "\"$gitCommitHash\"")
+        val gitCommitHashProvider = providers.exec {
+            commandLine("git", "rev-parse", "--short=7", "HEAD")
+        }.standardOutput.asText.map { it.trim() }.orElse("unknown")
+        buildConfigField("String", "GIT_COMMIT_HASH", "\"${gitCommitHashProvider.get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -72,6 +66,13 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+tasks.matching { it.name.startsWith("generate") && it.name.endsWith("BuildConfig") }.configureEach {
+    val gitCommitHashProvider = providers.exec {
+        commandLine("git", "rev-parse", "--short=7", "HEAD")
+    }.standardOutput.asText.map { it.trim() }.orElse("unknown")
+    inputs.property("gitCommitHash", gitCommitHashProvider)
 }
 
 dependencies {
