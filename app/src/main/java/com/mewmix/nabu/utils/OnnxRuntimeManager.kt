@@ -69,13 +69,19 @@ object OnnxRuntimeManager {
             }
 
             loadResult.onSuccess { newBundle ->
-                bundle?.session?.close()
+                val previousBundle = bundle
                 bundle = newBundle
-                engine = KokoroEngine(newBundle, manifest)
+                val currentEngine = engine
+                if (currentEngine == null) {
+                    engine = KokoroEngine(newBundle, manifest)
+                } else {
+                    currentEngine.updateBundle(newBundle, manifest)
+                }
                 status = RuntimeStatus(newBundle.ep, newBundle.graphId, manifest.sampleRate)
                 DebugLogger.log(
                     "Kokoro runtime ready ep=${newBundle.ep} graph=${newBundle.graphId} sampleRate=${manifest.sampleRate}"
                 )
+                previousBundle?.session?.close()
             }.onFailure { error ->
                 Log.e(TAG, "Unable to load Kokoro session", error)
                 DebugLogger.log("Kokoro runtime failed: ${error.message}")

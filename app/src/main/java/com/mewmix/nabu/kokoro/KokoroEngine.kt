@@ -9,17 +9,22 @@ import com.mewmix.nabu.utils.DebugLogger
 import java.util.Locale
 
 class KokoroEngine(
-    private val bundle: KokoroBundle,
+    private var bundle: KokoroBundle,
     manifest: Manifest
 ) : TTSEngine {
     private val tag = "KokoroEngine"
     private val env = OrtFactory.env
-    private val session = bundle.session
+    @Volatile
+    private var session = bundle.session
 
-    private val inputNames = session.inputNames
-    private val styleName = inputNames.firstOrNull { it.equals("style", ignoreCase = true) }
-    private val speedName = inputNames.firstOrNull { it.equals("speed", ignoreCase = true) }
-    private val primaryInput: String = resolvePrimaryInput(manifest)
+    @Volatile
+    private var inputNames = session.inputNames
+    @Volatile
+    private var styleName = inputNames.firstOrNull { it.equals("style", ignoreCase = true) }
+    @Volatile
+    private var speedName = inputNames.firstOrNull { it.equals("speed", ignoreCase = true) }
+    @Volatile
+    private var primaryInput: String = resolvePrimaryInput(manifest)
 
     override val sampleRate: Int
         get() = bundle.sampleRate
@@ -40,34 +45,47 @@ class KokoroEngine(
         // bundle is managed externally usually but we can implement close if needed or leave empty if managed by loader
     }
 
+    fun updateBundle(newBundle: KokoroBundle, manifest: Manifest) {
+        bundle = newBundle
+        session = newBundle.session
+        inputNames = session.inputNames
+        styleName = inputNames.firstOrNull { it.equals("style", ignoreCase = true) }
+        speedName = inputNames.firstOrNull { it.equals("speed", ignoreCase = true) }
+        primaryInput = resolvePrimaryInput(manifest)
+    }
+
     fun synth(
         tokens: LongArray,
         style: Array<FloatArray>? = null,
         speed: Float? = null
     ): FloatArray {
+        val sessionSnapshot = session
+        val styleInput = styleName
+        val speedInput = speedName
+        val primaryInputName = primaryInput
         require(tokens.isNotEmpty()) { "Input tokens empty" }
-        if (styleName != null && style == null) {
-            throw IllegalArgumentException("Model requires style input '$styleName'")
+        if (styleInput != null && style == null) {
+            throw IllegalArgumentException("Model requires style input '$styleInput'")
         }
-        if (speedName != null && speed == null) {
-            throw IllegalArgumentException("Model requires speed input '$speedName'")
+        if (speedInput != null && speed == null) {
+            throw IllegalArgumentException("Model requires speed input '$speedInput'")
         }
 
         OnnxTensor.createTensor(env, arrayOf(tokens)).use { ids ->
-            val styleTensor = if (styleName != null) {
+            val styleTensor = if (styleInput != null) {
                 OnnxTensor.createTensor(env, style!!)
             } else null
-            val speedTensor = if (speedName != null) {
+            val speedTensor = if (speedInput != null) {
                 OnnxTensor.createTensor(env, floatArrayOf(speed!!))
             } else null
 
             try {
                 val feeds = mutableMapOf<String, OnnxTensor>()
-                feeds[primaryInput] = ids
-                styleTensor?.let { feeds[styleName!!] = it }
-                speedTensor?.let { feeds[speedName!!] = it }
+                feeds[primaryInputName] = ids
+                styleTensor?.let { feeds[styleInput!!] = it }
+                speedTensor?.let { feeds[speedInput!!] = it }
 
-                session.run(feeds).use { outputs ->
+                sessionSnapshot.run(feeds).use { outputs ->
                     val tensor = outputs[0] as OnnxTensor
                     val buffer = tensor.floatBuffer
                     val pcm = FloatArray(buffer.remaining())
@@ -79,9 +97,9 @@ class KokoroEngine(
                 val speedShape = speedTensor?.info?.shape?.joinToString(prefix = "[", postfix = "]")
                 val message = buildString {
                     append("Kokoro synth failed ep=${bundle.ep} graph=${bundle.graphId}")
-                    append(" tokens=${tokens.size} primary=$primaryInput")
-                    styleName?.let { append(" style=$it shape=$styleShape") }
-                    speedName?.let { append(" speed=$it shape=$speedShape value=$speed") }
+                    append(" tokens=${tokens.size} primary=$primaryInputName")
+                    styleInput?.let { append(" style=$it shape=$styleShape") }
+                    speedInput?.let { append(" speed=$it shape=$speedShape value=$speed") }
                     append(" error=${err.message}")
                 }
                 DebugLogger.log(message)
