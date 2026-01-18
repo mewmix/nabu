@@ -1,0 +1,29 @@
+Categories:
+  - System
+  - Multimedia
+License: GPL-3.0-only
+SourceCode: https://github.com/mewmix/nabu
+IssueTracker: https://github.com/mewmix/nabu/issues
+Summary: Local TTS engine using Kokoro and Supertonic
+Description: |
+  Nabu is an on-device Text-to-Speech (TTS) engine.
+  It supports:
+  * Kokoro models (high quality)
+  * Supertonic models (fast, controllable)
+  
+  It runs entirely offline.
+RepoType: git
+Repo: https://github.com/mewmix/nabu.git
+
+Builds:
+  - versionName: 0.5.0
+    versionCode: 4
+    commit: 5d64ed4d0b3fa29dbbf7128d8c861696c6ecbc03
+    subdir: app
+    gradle:
+      - yes
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.5.0
+CurrentVersionCode: 4

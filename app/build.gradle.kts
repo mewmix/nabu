@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.nabu"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.4.9"
+        versionCode = 4
+        versionName = "0.5.0"
 
         val gitCommitHash = try {
             val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
