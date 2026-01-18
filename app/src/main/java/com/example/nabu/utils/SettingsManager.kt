@@ -87,4 +87,13 @@ object SettingsManager {
 
     fun getSupertonicModelId(context: Context): String? =
         DatabaseManager.getSetting(context, KEY_SUPERTONIC_MODEL_ID)?.ifBlank { null }
+
+    fun setVibrationsEnabled(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, "vibrations_enabled", if (enabled) "1" else "0")
+    }
+
+    fun isVibrationsEnabled(context: Context, default: Boolean = true): Boolean {
+        val fallback = if (default) "1" else "0"
+        return (DatabaseManager.getSetting(context, "vibrations_enabled") ?: fallback) == "1"
+    }
 }

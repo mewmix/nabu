@@ -19,3 +19,20 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+-dontwarn com.gemalto.jp2.JP2Decoder
+-dontwarn org.tensorflow.lite.gpu.**
+-dontwarn org.apache.pdfbox.rendering.PDFRenderer
+-dontwarn org.apache.pdfbox.pdmodel.font.FileSystemFontProvider
+
+# ONNX Runtime rules
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
+
+# Gson rules
+-keep class com.google.gson.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+
+# Keep BuildConfig
+-keep class com.example.nabu.BuildConfig { *; }
