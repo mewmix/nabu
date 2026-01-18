@@ -97,45 +97,6 @@ fun SettingsScreen() {
 
             HorizontalDivider()
 
-            Text("Theme Customization", style = MaterialTheme.typography.titleMedium)
-
-            BrutalButton(onClick = {
-                // For now, just a button to export/import to prove persistence mechanism.
-                // A full color picker UI would be quite large, assuming manual edit for now or just proof of concept.
-                // But let's add a "Rotate Theme" button to show it works?
-                // Or "Export Current"
-                scope.launch(Dispatchers.IO) {
-                   val theme = ThemeManager.getTheme(context)
-                   val success = ThemeManager.exportTheme(context, theme, "exported_theme.json")
-                   withContext(Dispatchers.Main) {
-                       Toast.makeText(context, if(success) "Theme Exported to Documents/Nabu" else "Export Failed", Toast.LENGTH_SHORT).show()
-                   }
-                }
-            }) {
-                BrutalButtonText("Export Theme JSON")
-            }
-
-             BrutalButton(onClick = {
-                scope.launch(Dispatchers.IO) {
-                    // Try to import "current_theme.json" from export dir if user edited it
-                    // Or specific path
-                     val publicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS)
-                     val file = java.io.File(publicDir, "Nabu/Themes/current_theme.json")
-                     val theme = ThemeManager.importTheme(context, file.absolutePath)
-                     withContext(Dispatchers.Main) {
-                         if (theme != null) {
-                             Toast.makeText(context, "Theme Imported! Restart to apply.", Toast.LENGTH_LONG).show()
-                         } else {
-                             Toast.makeText(context, "Import failed or file not found.", Toast.LENGTH_SHORT).show()
-                         }
-                     }
-                }
-            }) {
-                BrutalButtonText("Import 'current_theme.json'")
-            }
-
-            HorizontalDivider()
-
             ExposedDropdownMenuBox(
                 expanded = expanded,
                 onExpandedChange = { expanded = it }
