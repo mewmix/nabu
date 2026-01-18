@@ -37,16 +37,20 @@ android {
             if (propFile.exists()) {
                 props.load(FileInputStream(propFile))
             }
-            storeFile = props.getProperty("RELEASE_STORE_FILE")?.let { file(it) }
-            storePassword = props.getProperty("RELEASE_STORE_PASSWORD")
-            keyAlias = props.getProperty("RELEASE_KEY_ALIAS")
-            keyPassword = props.getProperty("RELEASE_KEY_PASSWORD")
+            val storeFilePath = props.getProperty("RELEASE_STORE_FILE")
+            if (storeFilePath != null) {
+                storeFile = file(storeFilePath)
+                storePassword = props.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = props.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = props.getProperty("RELEASE_KEY_PASSWORD")
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            val releaseSigning = signingConfigs.getByName("release")
+            signingConfig = if (releaseSigning.storeFile != null) releaseSigning else signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
