@@ -49,6 +49,8 @@ We have taken the original demo and expanded it with several key features:
 
 *   **🚀 Accelerated Kokoro FP16:** Runs the Kokoro-82M ONNX graph with NNAPI acceleration when available, while keeping the legacy INT8 CPU path as a fallback.
 
+*   **🎛 Supertonic 1 & 2 Support:** Works with both Supertonic v1 and v2 TTS models, selectable in-app.
+
 *   **📖 Advanced Audio Book Reader:**
     *   Open local text (`.txt`) and EPUB (`.epub`) files.
     *   Listen to documents with your customized TTS voice mix and speed settings.

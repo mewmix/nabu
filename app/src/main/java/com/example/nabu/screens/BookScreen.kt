@@ -1,8 +1,12 @@
 package com.example.nabu.screens
 
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -29,6 +33,7 @@ import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import com.example.nabu.R
 import com.example.nabu.utils.*
 import com.example.nabu.ui.components.ProgressDialog
@@ -59,6 +64,9 @@ fun BookScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -168,6 +176,16 @@ fun BookScreen(
 
     LaunchedEffect(Unit) {
         projects = ProjectManager.list(context)
+        if (bookUri == null) {
+            val lastUri = SettingsManager.getLastBookUri(context)
+            if (!lastUri.isNullOrBlank()) {
+                runCatching {
+                    bookViewModel.loadBook(context, Uri.parse(lastUri))
+                }.onFailure {
+                    DebugLogger.log("BookScreen: failed to load last book: ${it.localizedMessage}")
+                }
+            }
+        }
     }
 
     LaunchedEffect(bookUri) {
@@ -235,6 +253,7 @@ fun BookScreen(
     }
 
     fun startPlaybackFromLine(index: Int) {
+        maybeRequestNotificationPermission(context, notificationPermissionLauncher)
         bookViewModel.setCurrentUnitIndex(index)
         bookViewModel.startPlayback(
             phonemeConverter = phonemeConverter,
@@ -539,6 +558,7 @@ fun BookScreen(
                     Text("FOCUS")
                 }
                 val startPlaybackAction = {
+                    maybeRequestNotificationPermission(context, notificationPermissionLauncher)
                     if (playerState == PlayerState.PAUSED) {
                         bookViewModel.audioPlayer.stop()
                     }
@@ -811,6 +831,7 @@ fun BookScreen(
                                 selectedLines.remove(index)
                             } else {
                                 bookViewModel.setCurrentUnitIndex(index)
+                                maybeRequestNotificationPermission(context, notificationPermissionLauncher)
                                 bookViewModel.startPlayback(
                                     phonemeConverter = phonemeConverter,
                                     styleLoader = styleLoader,
@@ -892,6 +913,20 @@ fun BookScreen(
             message = "Pre-generating ${(preGenProgress * 100).toInt()}%",
             progress = preGenProgress
         )
+    }
+}
+
+private fun maybeRequestNotificationPermission(
+    context: Context,
+    launcher: androidx.activity.result.ActivityResultLauncher<String>
+) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 

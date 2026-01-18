@@ -12,16 +12,12 @@ import com.example.nabu.screens.DebugLogScreen
 import com.example.nabu.screens.CreditsConstellationScreen
 import com.example.kokoro.galleryport.PerfHud
 import android.app.Application
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -73,8 +69,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import com.example.nabu.data.UserPreferencesRepository
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.StyleLoader
@@ -103,9 +97,7 @@ import com.example.nabu.data.ModelType
 import com.example.nabu.screens.InitScreen
 
 const val EXTRA_START_SCREEN = "start_screen"
-private const val PLAYBACK_CHANNEL_ID = "playback_channel"
-private const val PLAYBACK_NOTIFICATION_ID = 1
-
+const val EXTRA_BOOK_URI = "book_uri"
 class MyApplication : Application() {
     private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -136,47 +128,11 @@ private sealed interface ModelState {
     data class Error(val message: String) : ModelState
 }
 
-private fun showPlaybackNotification(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-        ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.POST_NOTIFICATIONS
-        ) != PackageManager.PERMISSION_GRANTED
-    ) {
-        return
-    }
-
-    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val channel = NotificationChannel(
-            PLAYBACK_CHANNEL_ID,
-            "Playback",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        manager.createNotificationChannel(channel)
-    }
-
-    val notification = NotificationCompat.Builder(context, PLAYBACK_CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_media_play)
-        .setContentTitle("Playback")
-        .setContentText("Audio playback in progress")
-        .setOngoing(true)
-        .build()
-
-    manager.notify(PLAYBACK_NOTIFICATION_ID, notification)
-}
-
 class MainActivity : ComponentActivity() {
     private lateinit var phonemeConverter: PhonemeConverter
     private val scope = MainScope()
     private lateinit var userPreferencesRepository: UserPreferencesRepository
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            showPlaybackNotification(this)
-        }
-    }
+    private val requestedScreen = mutableStateOf<Screen?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -185,7 +141,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         userPreferencesRepository = UserPreferencesRepository(this)
 
-        val startScreen = screenFromString(intent.getStringExtra(EXTRA_START_SCREEN))
+        val startScreen = handleStartIntent(intent)
+        requestedScreen.value = startScreen
 
         setContent {
             NabuTheme {
@@ -204,7 +161,6 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         phonemeConverter = phonemeConverter,
                         onGenerateAudio = { text, style, speed, shouldSave, onComplete ->
-                            maybeRequestNotificationPermission()
                             generateAudio(
                                 phonemeConverter,
                                 text,
@@ -217,7 +173,9 @@ class MainActivity : ComponentActivity() {
                             )
                         },
                         userPreferencesRepository = userPreferencesRepository,
-                        initialScreen = startScreen
+                        initialScreen = startScreen,
+                        requestedScreen = requestedScreen.value,
+                        onRequestedScreenHandled = { requestedScreen.value = null }
                     )
 
                     if (SettingsManager.isBenchmark(this@MainActivity)) {
@@ -230,21 +188,26 @@ class MainActivity : ComponentActivity() {
         phonemeConverter = PhonemeConverter(this)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val screen = handleStartIntent(intent)
+        requestedScreen.value = screen
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel()
     }
 
-    private fun maybeRequestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    private fun handleStartIntent(intent: Intent?): Screen {
+        val screen = screenFromString(intent?.getStringExtra(EXTRA_START_SCREEN))
+        val bookUri = intent?.getStringExtra(EXTRA_BOOK_URI)
+        if (!bookUri.isNullOrBlank()) {
+            SettingsManager.setLastBookUri(this, bookUri)
         }
+        return screen
     }
+
 }
 
 private fun generateAudio(
@@ -315,8 +278,6 @@ private fun generateAudio(
                 scope,
                 onComplete = onComplete
             )
-
-            showPlaybackNotification(context)
 
             if (shouldSave) {
                 saveAudio(audioData, context, style, sampleRate)
@@ -389,7 +350,9 @@ fun MainScreen(
     phonemeConverter: PhonemeConverter,
     onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
     userPreferencesRepository: UserPreferencesRepository,
-    initialScreen: Screen = Screen.Basic
+    initialScreen: Screen = Screen.Basic,
+    requestedScreen: Screen? = null,
+    onRequestedScreenHandled: () -> Unit = {}
 ) {
     val screenStack = rememberSaveable(
         saver = listSaver(
@@ -417,6 +380,13 @@ fun MainScreen(
     val navigateTo: (Screen) -> Unit = { screen ->
         if (screenStack.lastOrNull() != screen) {
             screenStack.add(screen)
+        }
+    }
+
+    LaunchedEffect(requestedScreen) {
+        requestedScreen?.let {
+            navigateTo(it)
+            onRequestedScreenHandled()
         }
     }
 

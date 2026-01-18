@@ -9,6 +9,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.nabu.MainActivity
+import com.example.nabu.EXTRA_BOOK_URI
+import com.example.nabu.EXTRA_START_SCREEN
 import com.example.nabu.R
 
 object PlaybackNotification {
@@ -16,8 +18,15 @@ object PlaybackNotification {
     private const val NOTIFICATION_ID = 1001
     private var target: String = ""
     private var style: String = ""
+    private var bookUri: String? = null
 
-    fun show(context: Context, playing: Boolean, target: String? = null, style: String? = null) {
+    fun show(
+        context: Context,
+        playing: Boolean,
+        target: String? = null,
+        style: String? = null,
+        bookUri: String? = null
+    ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 return
@@ -25,6 +34,7 @@ object PlaybackNotification {
         }
         if (target != null) this.target = target
         if (style != null) this.style = style
+        if (bookUri != null) this.bookUri = bookUri
         createChannel(context)
         val notification = buildNotification(context, playing)
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
@@ -55,7 +65,11 @@ object PlaybackNotification {
                 PendingIntent.getActivity(
                     context,
                     0,
-                    Intent(context, MainActivity::class.java),
+                    Intent(context, MainActivity::class.java).apply {
+                        putExtra(EXTRA_START_SCREEN, "Book")
+                        bookUri?.let { putExtra(EXTRA_BOOK_URI, it) }
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             )

@@ -240,8 +240,9 @@ fun SettingsScreen() {
                 )
             }
 
-            val commitHash = BuildConfig.GIT_COMMIT_HASH
-            val versionText = "v$versionName ($commitHash)"
+            val commitHash = BuildConfig.GIT_COMMIT_HASH.ifBlank { "unknown" }
+            val shortHash = commitHash.take(7)
+            val versionText = "v$versionName ($shortHash)"
             VersionPlate(version = versionText, onClick = {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mewmix/nabu/commit/$commitHash"))
                 context.startActivity(intent)

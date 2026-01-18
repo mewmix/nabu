@@ -23,6 +23,8 @@ import com.example.nabu.utils.playBook
 import com.example.nabu.tts.TTSManager
 import com.example.nabu.data.ModelManager
 import com.example.nabu.utils.DebugLogger
+import com.example.nabu.utils.BookmarkManager
+import com.example.nabu.utils.SettingsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +69,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
     fun loadBook(context: Context, uri: Uri) {
         _bookUri.value = uri
         _bookDisplayName.value = resolveDisplayName(context, uri)
+        SettingsManager.setLastBookUri(context, uri.toString())
         viewModelScope.launch(Dispatchers.IO) {
             val units = DocumentReader
                 .asPlayableUnits(context, uri)
@@ -105,7 +108,7 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val modelManager = ModelManager(context)
             val engine = TTSManager.getEngine(context, modelManager)
-            
+
             if (engine == null) {
                 DebugLogger.log("BookViewModel: No TTS engine available")
                 return@launch
@@ -117,7 +120,10 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
                 bookUri?.lastPathSegment ?: "unknown"
             }
             val style = selectedStyles.joinToString("+") { it.uppercase() }
-            PlaybackNotification.show(appContext!!, true, target, style)
+            if (bookUri != null) {
+                SettingsManager.setLastBookUri(context, bookUri.toString())
+            }
+            PlaybackNotification.show(appContext!!, true, target, style, bookUri?.toString())
             playJob = playBook(
                 scope = viewModelScope,
                 engine = engine,
@@ -132,7 +138,12 @@ class BookViewModel(private val app: Application) : AndroidViewModel(app) {
                 bookUri = bookUri,
                 audioPlayer = audioPlayer,
                 context = context,
-                onLineChanged = { setCurrentUnitIndex(it) },
+                onLineChanged = { line ->
+                    setCurrentUnitIndex(line)
+                    if (bookUri != null) {
+                        BookmarkManager.save(context, bookUri.toString(), line)
+                    }
+                },
                 onFinished = onFinished,
                 usePregenerated = usePregenerated,
             )

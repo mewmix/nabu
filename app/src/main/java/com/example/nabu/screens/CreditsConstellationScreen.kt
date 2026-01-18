@@ -47,8 +47,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import com.mewmix.nabu.ui.brutalist.PanelBox
-import com.example.nabu.components.VersionPlate
-import com.example.nabu.utils.getAppVersion
 
 // Data classes representing credits hierarchy
 
@@ -123,7 +121,6 @@ fun CreditsConstellationScreen() {
 
     var expandedGroup by remember { mutableStateOf<CreditGroup?>(null) }
     val context = LocalContext.current
-    val versionName = remember { getAppVersion(context) }
 
     PanelBox(
         title = "Credits",
@@ -167,11 +164,6 @@ fun CreditsConstellationScreen() {
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            VersionPlate(
-                version = versionName,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }

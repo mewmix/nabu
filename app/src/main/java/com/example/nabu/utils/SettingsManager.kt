@@ -7,6 +7,7 @@ object SettingsManager {
     private const val KEY_INIT_COMPLETE = "init_complete"
     private const val KEY_KOKORO_AUTO_DOWNLOAD = "kokoro_auto_download"
     private const val KEY_SUPERTONIC_MODEL_ID = "supertonic_model_id"
+    private const val KEY_LAST_BOOK_URI = "last_book_uri"
 
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
@@ -87,6 +88,13 @@ object SettingsManager {
 
     fun getSupertonicModelId(context: Context): String? =
         DatabaseManager.getSetting(context, KEY_SUPERTONIC_MODEL_ID)?.ifBlank { null }
+
+    fun setLastBookUri(context: Context, uri: String?) {
+        DatabaseManager.setSetting(context, KEY_LAST_BOOK_URI, uri ?: "")
+    }
+
+    fun getLastBookUri(context: Context): String? =
+        DatabaseManager.getSetting(context, KEY_LAST_BOOK_URI)?.ifBlank { null }
 
     fun setVibrationsEnabled(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "vibrations_enabled", if (enabled) "1" else "0")
