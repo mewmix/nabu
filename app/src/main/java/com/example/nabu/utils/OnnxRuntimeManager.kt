@@ -43,6 +43,12 @@ object OnnxRuntimeManager {
             val choice = preferred ?: SettingsManager.getRuntimePreference(appContext)
             val downloadEnabled = allowDownload ?: SettingsManager.isKokoroAutoDownloadEnabled(appContext)
 
+            val currentBundle = bundle
+            val currentStatus = status
+            if (currentBundle != null && currentStatus != null && currentStatus.ep == choice) {
+                return@withLock Result.success(currentBundle)
+            }
+
             if (downloadEnabled) {
                 val fetchResult = Downloader.ensureModels(appContext, manifest, onProgress)
                 if (fetchResult.isFailure) {
