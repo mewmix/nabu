@@ -221,16 +221,18 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                                     BrutalButton(onClick = {
                                         kokoroDownloading = true
                                         scope.launch(Dispatchers.IO) {
+                                            DebugLogger.log("ModelsScreen: Starting Kokoro download")
                                             OnnxRuntimeManager.initialize(
                                                 contextCtx,
                                                 allowDownload = true,
                                                 onProgress = { p -> kokoroProgress = p }
                                             ).onSuccess {
+                                                DebugLogger.log("ModelsScreen: Kokoro download complete")
                                                 kokoroDownloaded = true
                                                 kokoroDownloading = false
                                             }.onFailure {
                                                 kokoroDownloading = false
-                                                DebugLogger.log("Failed to download Kokoro: ${it.message}")
+                                                DebugLogger.log("ModelsScreen: Failed to download Kokoro: ${it.message}")
                                             }
                                         }
                                     }, enabled = !kokoroDownloading) {

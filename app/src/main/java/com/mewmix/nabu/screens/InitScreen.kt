@@ -38,6 +38,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalButtonText
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
+import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -200,6 +201,7 @@ fun InitScreen(
                         isDownloading = true
                         progress = null
                         scope.launch(Dispatchers.IO) {
+                            DebugLogger.log("InitScreen: Starting Kokoro download")
                             val result = OnnxRuntimeManager.initialize(
                                 context.applicationContext,
                                 allowDownload = true,
@@ -208,9 +210,11 @@ fun InitScreen(
                             withContext(Dispatchers.Main) {
                                 isDownloading = false
                                 result.onSuccess {
+                                    DebugLogger.log("InitScreen: Kokoro download complete")
                                     SettingsManager.setInitComplete(context, true)
                                     onComplete()
                                 }.onFailure { error ->
+                                    DebugLogger.log("InitScreen: Kokoro download failed: ${error.message}")
                                     Toast.makeText(
                                         context,
                                         error.message ?: "Failed to download models",
@@ -234,6 +238,7 @@ fun InitScreen(
                             onComplete()
                             return@BrutalButton
                         }
+                        DebugLogger.log("InitScreen: Starting Supertonic download for ${model.name}")
                         isDownloading = true
                         downloadTargetId = model.id
                         modelDownloader.downloadModel(model)
