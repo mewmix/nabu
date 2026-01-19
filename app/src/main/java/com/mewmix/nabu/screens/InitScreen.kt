@@ -74,8 +74,10 @@ fun InitScreen(
     LaunchedEffect(progressMap) {
         val targetId = downloadTargetId
         if (targetId != null && !progressMap.containsKey(targetId)) {
-            val completed = modelManager.models.firstOrNull { it.id == targetId }?.isDownloaded == true
+            val completedModel = modelManager.models.firstOrNull { it.id == targetId }
+            val completed = completedModel?.isDownloaded == true
             if (completed) {
+                DebugLogger.log("InitScreen: Supertonic download complete for ${completedModel?.name ?: targetId}")
                 SettingsManager.setInitComplete(context, true)
                 isDownloading = false
                 downloadTargetId = null
