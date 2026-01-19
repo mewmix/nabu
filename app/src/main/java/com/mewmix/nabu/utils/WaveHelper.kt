@@ -18,10 +18,15 @@ import java.io.File
 
 fun saveAudio(audioData: FloatArray, context: Context, name: String, sampleRate: Int): Uri? {
     val safeName = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")
+    val enginePrefix = if (SettingsManager.getTtsEngine(context) == "supertonic") {
+        "SUPERTONIC"
+    } else {
+        "KOKORO"
+    }
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 
     val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, "KOKORO_${safeName}_$timeStamp.wav")
+        put(MediaStore.MediaColumns.DISPLAY_NAME, "${enginePrefix}_${safeName}_$timeStamp.wav")
         put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
         put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
     }

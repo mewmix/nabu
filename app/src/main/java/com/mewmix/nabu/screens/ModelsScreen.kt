@@ -255,6 +255,11 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                         val progress = progressMap[model.id]
                         if (progress != null) {
                             LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                            Text(
+                                text = "${(progress * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         } else {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),

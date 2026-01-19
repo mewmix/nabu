@@ -117,6 +117,16 @@ fun BookScreen(
     var pendingSaveDisplayName by remember { mutableStateOf<String?>(null) }
     var isImmersiveReader by remember { mutableStateOf(false) }
 
+    fun buildSaveFileName(isKokoro: Boolean, suffix: String = ""): String {
+        val baseName = if (isKokoro) {
+            buildStyleFileName(selectedStyles, weights, interpolationMode)
+        } else {
+            val styleLabel = selectedStyles.joinToString("-").ifBlank { "supertonic" }
+            "supertonic_$styleLabel"
+        }
+        return baseName + suffix
+    }
+
     fun buildEditedDisplayName(name: String): String {
         val currentBookDisplayName = bookDisplayName
         val trimmed = name.trim().ifBlank {
@@ -643,26 +653,31 @@ fun BookScreen(
                         scope.launch {
                             try {
                                 debugMessage = null
-                                val mixedVector = mixStyles(
-                                    styleLoader = styleLoader,
-                                    styles = selectedStyles,
-                                    weights = weights,
-                                    mode = interpolationMode
-                                )
-                                val (audioData, sampleRate) = withContext(Dispatchers.IO) {
+                                val (audioData, sampleRate, isKokoro) = withContext(Dispatchers.IO) {
                                     val modelManager = ModelManager(context)
                                     val engineInstance = TTSManager.getEngine(context, modelManager)
                                         ?: throw IllegalStateException("TTS engine not ready")
                                     
                                     val collected = mutableListOf<Float>()
                                     val rawEngine = if (engineInstance is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engineInstance.delegate else engineInstance
-                                    
-                                    if (rawEngine is KokoroEngine) {
+
+                                    val kokoroVector = if (rawEngine is KokoroEngine) {
+                                        mixStyles(
+                                            styleLoader = styleLoader,
+                                            styles = selectedStyles,
+                                            weights = weights,
+                                            mode = interpolationMode
+                                        )
+                                    } else {
+                                        null
+                                    }
+
+                                    if (rawEngine is KokoroEngine && kokoroVector != null) {
                                         for (line in lines) {
                                             val phonemes = phonemeConverter.phonemize(line)
                                             val (audio, _) = createAudioFromStyleVector(
                                                 phonemes = phonemes,
-                                                voice = mixedVector,
+                                                voice = kokoroVector,
                                                 speed = speed,
                                                 engine = rawEngine
                                             )
@@ -678,9 +693,9 @@ fun BookScreen(
                                             collected.addAll(result.wav.toList())
                                         }
                                     }
-                                    collected.toFloatArray() to engineInstance.sampleRate
+                                    Triple(collected.toFloatArray(), engineInstance.sampleRate, rawEngine is KokoroEngine)
                                 }
-                                val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
+                                val fileName = buildSaveFileName(isKokoro = isKokoro)
                                 val uri = saveAudio(audioData, context, fileName, sampleRate)
                                 uri?.let { openAudioFile(context, it) }
                             } catch (e: Exception) {
@@ -701,13 +716,7 @@ fun BookScreen(
                             scope.launch {
                                 try {
                                     debugMessage = null
-                                    val mixedVector = mixStyles(
-                                        styleLoader = styleLoader,
-                                        styles = selectedStyles,
-                                        weights = weights,
-                                        mode = interpolationMode
-                                    )
-                                    val (audioData, sampleRate) = withContext(Dispatchers.IO) {
+                                    val (audioData, sampleRate, isKokoro) = withContext(Dispatchers.IO) {
                                     val modelManager = ModelManager(context)
                                     val engineInstance = TTSManager.getEngine(context, modelManager)
                                         ?: throw IllegalStateException("TTS engine not ready")
@@ -715,12 +724,23 @@ fun BookScreen(
                                     val collected = mutableListOf<Float>()
                                     val rawEngine = if (engineInstance is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engineInstance.delegate else engineInstance
 
-                                    if (rawEngine is KokoroEngine) {
+                                    val kokoroVector = if (rawEngine is KokoroEngine) {
+                                        mixStyles(
+                                            styleLoader = styleLoader,
+                                            styles = selectedStyles,
+                                            weights = weights,
+                                            mode = interpolationMode
+                                        )
+                                    } else {
+                                        null
+                                    }
+
+                                    if (rawEngine is KokoroEngine && kokoroVector != null) {
                                         for (i in selectedLines.sorted()) {
                                             val phonemes = phonemeConverter.phonemize(lines[i])
                                             val (audio, _) = createAudioFromStyleVector(
                                                 phonemes = phonemes,
-                                                voice = mixedVector,
+                                                voice = kokoroVector,
                                                 speed = speed,
                                                 engine = rawEngine
                                             )
@@ -736,9 +756,9 @@ fun BookScreen(
                                             collected.addAll(result.wav.toList())
                                         }
                                     }
-                                    collected.toFloatArray() to engineInstance.sampleRate
+                                    Triple(collected.toFloatArray(), engineInstance.sampleRate, rawEngine is KokoroEngine)
                                 }
-                                val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode) + "_clip"
+                                val fileName = buildSaveFileName(isKokoro = isKokoro, suffix = "_clip")
                                 val uri = saveAudio(audioData, context, fileName, sampleRate)
                                 uri?.let { openAudioFile(context, it) }
                                 selectedLines.clear()

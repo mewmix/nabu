@@ -28,6 +28,7 @@ import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.formatBytes
 import com.mewmix.nabu.kokoro.Downloader
+import com.mewmix.nabu.kokoro.ManifestProvider
 import com.mewmix.nabu.data.ModelDownloader
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
@@ -37,7 +38,6 @@ import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalButtonText
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.PanelBox
-import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -53,11 +53,11 @@ fun InitScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
-    var downloadNow by remember { mutableStateOf(SettingsManager.isKokoroAutoDownloadEnabled(context)) }
     var engineExpanded by remember { mutableStateOf(false) }
     var modelExpanded by remember { mutableStateOf(false) }
-    var isDownloading by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf<Downloader.DownloadProgress?>(null) }
+    var kokoroDownloading by remember { mutableStateOf(false) }
+    var kokoroProgress by remember { mutableStateOf<Downloader.DownloadProgress?>(null) }
+    var kokoroDownloaded by remember { mutableStateOf(false) }
     var downloadTargetId by remember { mutableStateOf<String?>(null) }
 
     val modelManager = remember { ModelManager(context) }
@@ -66,9 +66,9 @@ fun InitScreen(
     val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
     var selectedModel by remember { mutableStateOf<Model?>(ttsModels.firstOrNull()) }
 
-    LaunchedEffect(engine) {
-        if (engine != "kokoro") {
-            downloadNow = false
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            kokoroDownloaded = Downloader.modelsAvailable(context.applicationContext, ManifestProvider.kokoroV1())
         }
     }
     LaunchedEffect(progressMap) {
@@ -78,13 +78,11 @@ fun InitScreen(
             val completed = completedModel?.isDownloaded == true
             if (completed) {
                 DebugLogger.log("InitScreen: Supertonic download complete for ${completedModel?.name ?: targetId}")
-                SettingsManager.setInitComplete(context, true)
-                isDownloading = false
                 downloadTargetId = null
-                onComplete()
             }
         }
     }
+    val isDownloading = kokoroDownloading || progressMap.isNotEmpty()
 
     PanelBox(
         title = "Welcome",
@@ -126,18 +124,7 @@ fun InitScreen(
                 }
             }
 
-            if (engine == "kokoro") {
-                SwitchToggle(
-                    checked = downloadNow,
-                    onToggle = { downloadNow = it },
-                    label = "Download Kokoro voice models now"
-                )
-            } else {
-                SwitchToggle(
-                    checked = downloadNow,
-                    onToggle = { downloadNow = it },
-                    label = "Download Supertonic voice models now"
-                )
+            if (engine == "supertonic") {
                 if (ttsModels.isNotEmpty()) {
                     ExposedDropdownMenuBox(
                         expanded = modelExpanded,
@@ -173,19 +160,115 @@ fun InitScreen(
                 }
             }
 
-            if (engine == "kokoro") {
-                progress?.let { current ->
-                    if (current.totalBytes > 0L) {
-                        val ratio = current.downloadedBytes.toFloat() / current.totalBytes.toFloat()
-                        LinearProgressIndicator(
-                            progress = { ratio.coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth()
+            Text(
+                text = "Downloads",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column {
+                    Text(
+                        text = "Kokoro (Default)",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "The default text-to-speech engine.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (kokoroDownloading && kokoroProgress != null) {
+                        kokoroProgress?.let { current ->
+                            if (current.totalBytes > 0L) {
+                                val ratio = current.downloadedBytes.toFloat() / current.totalBytes.toFloat()
+                                LinearProgressIndicator(
+                                    progress = { ratio.coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(
+                                    "${formatBytes(current.downloadedBytes)} / ${formatBytes(current.totalBytes)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Brutal.textBright
+                                )
+                            }
+                        }
+                    } else {
+                        val kokoroButtonLabel = if (kokoroDownloaded) "Downloaded" else "Download"
+                        BrutalButton(
+                            onClick = {
+                                if (!kokoroDownloaded) {
+                                    kokoroDownloading = true
+                                    kokoroProgress = null
+                                    scope.launch(Dispatchers.IO) {
+                                        DebugLogger.log("InitScreen: Starting Kokoro download")
+                                        val result = OnnxRuntimeManager.initialize(
+                                            context.applicationContext,
+                                            allowDownload = true,
+                                            onProgress = { update -> scope.launch { kokoroProgress = update } }
+                                        )
+                                        withContext(Dispatchers.Main) {
+                                            kokoroDownloading = false
+                                            result.onSuccess {
+                                                DebugLogger.log("InitScreen: Kokoro download complete")
+                                                kokoroDownloaded = true
+                                            }.onFailure { error ->
+                                                DebugLogger.log("InitScreen: Kokoro download failed: ${error.message}")
+                                                Toast.makeText(
+                                                    context,
+                                                    error.message ?: "Failed to download models",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !kokoroDownloaded && !isDownloading
+                        ) {
+                            BrutalButtonText(kokoroButtonLabel)
+                        }
+                    }
+                }
+
+                ttsModels.forEach { model ->
+                    Column {
+                        Text(
+                            text = model.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            "${formatBytes(current.downloadedBytes)} / ${formatBytes(current.totalBytes)}",
+                            text = model.description,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Brutal.textBright
+                            color = MaterialTheme.colorScheme.onSurface
                         )
+                        val modelProgress = progressMap[model.id]
+                        if (modelProgress != null) {
+                            LinearProgressIndicator(
+                                progress = { modelProgress.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                "${(modelProgress * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Brutal.textBright
+                            )
+                        } else {
+                            val supertonicLabel = if (model.isDownloaded) "Downloaded" else "Download"
+                            BrutalButton(
+                                onClick = {
+                                    if (!model.isDownloaded) {
+                                        DebugLogger.log("InitScreen: Starting Supertonic download for ${model.name}")
+                                        downloadTargetId = model.id
+                                        modelDownloader.downloadModel(model)
+                                    }
+                                },
+                                enabled = !model.isDownloaded && !isDownloading
+                            ) {
+                                BrutalButtonText(supertonicLabel)
+                            }
+                        }
                     }
                 }
             }
@@ -196,62 +279,12 @@ fun InitScreen(
                     if (engine == "supertonic") {
                         SettingsManager.setSupertonicModelId(context, selectedModel?.id)
                     }
-                    if (engine == "kokoro") {
-                        SettingsManager.setKokoroAutoDownload(context, downloadNow)
-                    }
-                    if (engine == "kokoro" && downloadNow) {
-                        isDownloading = true
-                        progress = null
-                        scope.launch(Dispatchers.IO) {
-                            DebugLogger.log("InitScreen: Starting Kokoro download")
-                            val result = OnnxRuntimeManager.initialize(
-                                context.applicationContext,
-                                allowDownload = true,
-                                onProgress = { update -> scope.launch { progress = update } }
-                            )
-                            withContext(Dispatchers.Main) {
-                                isDownloading = false
-                                result.onSuccess {
-                                    DebugLogger.log("InitScreen: Kokoro download complete")
-                                    SettingsManager.setInitComplete(context, true)
-                                    onComplete()
-                                }.onFailure { error ->
-                                    DebugLogger.log("InitScreen: Kokoro download failed: ${error.message}")
-                                    Toast.makeText(
-                                        context,
-                                        error.message ?: "Failed to download models",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                        }
-                    } else if (engine == "supertonic" && downloadNow) {
-                        val model = selectedModel
-                        if (model == null) {
-                            Toast.makeText(
-                                context,
-                                "Select a Supertonic model to download.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            return@BrutalButton
-                        }
-                        if (model.isDownloaded) {
-                            SettingsManager.setInitComplete(context, true)
-                            onComplete()
-                            return@BrutalButton
-                        }
-                        DebugLogger.log("InitScreen: Starting Supertonic download for ${model.name}")
-                        isDownloading = true
-                        downloadTargetId = model.id
-                        modelDownloader.downloadModel(model)
-                    } else {
-                        SettingsManager.setInitComplete(context, true)
-                        onComplete()
-                    }
+                    SettingsManager.setInitComplete(context, true)
+                    onComplete()
                 },
                 enabled = !isDownloading
             ) {
-                BrutalButtonText(if (isDownloading) "Downloading..." else "Continue")
+                BrutalButtonText("Continue")
             }
         }
     }

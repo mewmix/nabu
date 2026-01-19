@@ -40,16 +40,13 @@ object KokoroLoader {
                 RunEp.AUTO -> {
                     add(Attempt(RunEp.NNAPI, fp16Entry, fp16, cacheable = false))
                     add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = shouldCache(int8Entry)))
-                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = shouldCache(fp16Entry)))
                 }
                 RunEp.NNAPI -> {
                     add(Attempt(RunEp.NNAPI, fp16Entry, fp16, cacheable = false))
                     add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = shouldCache(int8Entry)))
-                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = shouldCache(fp16Entry)))
                 }
                 RunEp.CPU -> {
                     add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = shouldCache(int8Entry)))
-                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = shouldCache(fp16Entry)))
                 }
             }
         }
