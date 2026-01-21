@@ -46,8 +46,14 @@ import com.mewmix.nabu.data.UserPreferencesRepository
 import com.mewmix.nabu.utils.DebugLogger
 import java.io.File
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.PanelBox
+import com.mewmix.nabu.utils.OnnxRuntimeManager
+import com.mewmix.nabu.kokoro.Downloader
+import com.mewmix.nabu.kokoro.ManifestProvider
+import com.mewmix.nabu.utils.formatBytes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +68,18 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
     var showDialog by remember { mutableStateOf(false) }
     var selectedModel by remember { mutableStateOf<Model?>(null) }
     var hfToken by remember { mutableStateOf("") }
+
+    // Kokoro specific state
+    val contextCtx = context.applicationContext
+    var kokoroDownloaded by remember { mutableStateOf(false) }
+    var kokoroDownloading by remember { mutableStateOf(false) }
+    var kokoroProgress by remember { mutableStateOf<Downloader.DownloadProgress?>(null) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            kokoroDownloaded = Downloader.modelsAvailable(contextCtx, ManifestProvider.kokoroV1())
+        }
+    }
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -125,7 +143,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                 BrutalButton(
                     onClick = {
                         selectedModel?.let {
-                            DebugLogger.log("ModelsScreen: Downloading ${it.name}")
+                            DebugLogger.log("ModelsScreen: Starting Supertonic download for ${it.name}")
                             modelDownloader.downloadModel(it)
                         }
                         showDialog = false
@@ -159,6 +177,76 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
+
+                // Kokoro entry
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(text = "Kokoro (Default)", style = MaterialTheme.typography.titleMedium)
+                        Text(text = "The default text-to-speech engine.", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (kokoroDownloading && kokoroProgress != null) {
+                            kokoroProgress?.let { current ->
+                                if (current.totalBytes > 0L) {
+                                    val ratio = current.downloadedBytes.toFloat() / current.totalBytes.toFloat()
+                                    LinearProgressIndicator(
+                                        progress = { ratio.coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Text(
+                                        "${formatBytes(current.downloadedBytes)} / ${formatBytes(current.totalBytes)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (kokoroDownloaded) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = "Downloaded",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    BrutalButton(onClick = {
+                                         // Deleting Kokoro logic if needed, but for now we just show downloaded
+                                    }, enabled = false) { // Disabled delete for safety/simplicity as per request just to add it
+                                        Icon(Icons.Filled.Delete, contentDescription = "Delete model")
+                                    }
+                                } else {
+                                    BrutalButton(onClick = {
+                                        kokoroDownloading = true
+                                        scope.launch(Dispatchers.IO) {
+                                            DebugLogger.log("ModelsScreen: Starting Kokoro download")
+                                            OnnxRuntimeManager.initialize(
+                                                contextCtx,
+                                                allowDownload = true,
+                                                onProgress = { p -> kokoroProgress = p }
+                                            ).onSuccess {
+                                                DebugLogger.log("ModelsScreen: Kokoro download complete")
+                                                kokoroDownloaded = true
+                                                kokoroDownloading = false
+                                            }.onFailure {
+                                                kokoroDownloading = false
+                                                DebugLogger.log("ModelsScreen: Failed to download Kokoro: ${it.message}")
+                                            }
+                                        }
+                                    }, enabled = !kokoroDownloading) {
+                                        Icon(
+                                            Icons.Filled.CloudDownload,
+                                            contentDescription = "Download model",
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 items(models) { model ->
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(text = model.name, style = MaterialTheme.typography.titleMedium)
@@ -167,6 +255,11 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                         val progress = progressMap[model.id]
                         if (progress != null) {
                             LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                            Text(
+                                text = "${(progress * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         } else {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -192,7 +285,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                                             showDialog = true
                                             DebugLogger.log("ModelsScreen: Prompting token for ${model.name}")
                                         } else {
-                                            DebugLogger.log("ModelsScreen: Downloading ${model.name}")
+                                            DebugLogger.log("ModelsScreen: Starting Supertonic download for ${model.name}")
                                             modelDownloader.downloadModel(model)
                                         }
                                     }) {

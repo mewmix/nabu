@@ -229,7 +229,13 @@ fun MixerScreen(
                     isProcessing = true
                     scope.launch {
                         val mixed = if (isSupertonic) emptyArray<FloatArray>() else mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
-                        val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
+                        val fileName = if (isSupertonic) {
+                             val modelId = SettingsManager.getSupertonicModelId(context)
+                             val modelName = modelManager.models.find { it.id == modelId }?.name ?: "supertonic"
+                             "${modelName}_${System.currentTimeMillis()}"
+                        } else {
+                             buildStyleFileName(selectedStyles, weights, interpolationMode)
+                        }
                         generateAudio(
                             text,
                             mixed,
