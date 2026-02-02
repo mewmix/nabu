@@ -58,12 +58,12 @@ fun SettingsScreen() {
     val scope = rememberCoroutineScope()
     val modelManager = remember { ModelManager(context) }
     val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
-    val ttsEngineOptions = listOf("kokoro", "supertonic")
+    val ttsEngineOptions = listOf("kokoro", "supertonic", "soprano")
     var supertonicExpanded by remember { mutableStateOf(false) }
     var supertonicModelId by remember { mutableStateOf(SettingsManager.getSupertonicModelId(context)) }
-    val runtimeOptions = if (ttsEngine == "supertonic") listOf(RunEp.CPU) else RunEp.values().toList()
+    val runtimeOptions = if (ttsEngine == "supertonic" || ttsEngine == "soprano") listOf(RunEp.CPU) else RunEp.values().toList()
     val allowRuntimeSelection = runtimeOptions.size > 1
-    val displayRuntime = if (ttsEngine == "supertonic") RunEp.CPU else runtime
+    val displayRuntime = if (ttsEngine == "supertonic" || ttsEngine == "soprano") RunEp.CPU else runtime
 
     LaunchedEffect(runtime) {
         withContext(Dispatchers.IO) {

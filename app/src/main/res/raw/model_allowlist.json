@@ -46,5 +46,13 @@
     "downloadUrl": "https://huggingface.co/Supertone/supertonic-2/resolve/main/onnx/",
     "gated": false,
     "type": "TTS"
+  },
+  "soprano-80m-onnx": {
+    "name": "Soprano 80M TTS",
+    "description": "Ultra-lightweight autoregressive TTS model",
+    "repo": "KevinAHM/soprano-onnx",
+    "downloadUrl": "https://huggingface.co/KevinAHM/soprano-onnx/resolve/main/",
+    "gated": false,
+    "type": "TTS"
   }
 }
