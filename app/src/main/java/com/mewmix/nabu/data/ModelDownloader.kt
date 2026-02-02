@@ -48,34 +48,46 @@ class ModelDownloader(
         if (!tempDir.exists()) tempDir.mkdirs()
         model.hasPartial = true
 
-        val onnxFiles = listOf(
-            "duration_predictor.onnx",
-            "text_encoder.onnx",
-            "vector_estimator.onnx",
-            "vocoder.onnx",
-            "tts.json",
-            "unicode_indexer.json"
-        )
+        val filesToDownload: List<String>
+        val baseUrl: String
 
-        // Add voice styles
-        // The base URL for onnx is: https://huggingface.co/Supertone/supertonic/resolve/main/onnx/
-        // The voices are in: https://huggingface.co/Supertone/supertonic/resolve/main/voice_styles/
-        // We need to handle this URL difference.
-        // I will hardcode the logic for now based on the file list, assuming model.downloadUrl points to the onnx folder.
-        // A cleaner way would be to put the root url in the model and append paths.
-        // Current downloadUrl: https://huggingface.co/Supertone/supertonic/resolve/main/onnx/
-        // Root: https://huggingface.co/Supertone/supertonic/resolve/main/
-
-        val baseUrl = model.downloadUrl.removeSuffix("onnx/")
-        val voiceStyles = when (model.id) {
-            "supertonic-2-onnx" -> listOf(
-                "F1.json", "F2.json", "F3.json", "F4.json", "F5.json",
-                "M1.json", "M2.json", "M3.json", "M4.json", "M5.json"
+        if (model.id == "soprano-80m-onnx") {
+            baseUrl = model.downloadUrl
+            filesToDownload = listOf(
+                "onnx/soprano_backbone_kv.onnx",
+                "onnx/soprano_decoder.onnx",
+                "tokenizer.json"
             )
-            else -> listOf("F1.json", "F2.json", "M1.json", "M2.json")
-        }
+        } else {
+            val onnxFiles = listOf(
+                "duration_predictor.onnx",
+                "text_encoder.onnx",
+                "vector_estimator.onnx",
+                "vocoder.onnx",
+                "tts.json",
+                "unicode_indexer.json"
+            )
 
-        val filesToDownload = onnxFiles.map { "onnx/$it" } + voiceStyles.map { "voice_styles/$it" }
+            // Add voice styles
+            // The base URL for onnx is: https://huggingface.co/Supertone/supertonic/resolve/main/onnx/
+            // The voices are in: https://huggingface.co/Supertone/supertonic/resolve/main/voice_styles/
+            // We need to handle this URL difference.
+            // I will hardcode the logic for now based on the file list, assuming model.downloadUrl points to the onnx folder.
+            // A cleaner way would be to put the root url in the model and append paths.
+            // Current downloadUrl: https://huggingface.co/Supertone/supertonic/resolve/main/onnx/
+            // Root: https://huggingface.co/Supertone/supertonic/resolve/main/
+
+            baseUrl = model.downloadUrl.removeSuffix("onnx/")
+            val voiceStyles = when (model.id) {
+                "supertonic-2-onnx" -> listOf(
+                    "F1.json", "F2.json", "F3.json", "F4.json", "F5.json",
+                    "M1.json", "M2.json", "M3.json", "M4.json", "M5.json"
+                )
+                else -> listOf("F1.json", "F2.json", "M1.json", "M2.json")
+            }
+
+            filesToDownload = onnxFiles.map { "onnx/$it" } + voiceStyles.map { "voice_styles/$it" }
+        }
 
         DebugLogger.log("ModelDownloader: Starting download of ${model.name} (TTS)")
 
