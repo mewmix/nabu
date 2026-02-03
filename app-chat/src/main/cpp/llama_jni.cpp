@@ -14,8 +14,8 @@ namespace {
 constexpr const char * kLogTag = "LlamaJni";
 constexpr int kDefaultPredictTokens = 256;
 constexpr int64_t kMaxGenerateMs = 30000;
-constexpr int kDefaultCtx = 1024;
-constexpr int kDefaultBatch = 64;
+constexpr int kDefaultCtx = 512;
+constexpr int kDefaultBatch = 32;
 constexpr int kMaxThreads = 2;
 
 struct LlamaInstance {
@@ -157,17 +157,45 @@ Java_com_mewmix_nabu_chat_LlamaBridge_generate(JNIEnv * env, jobject /*thiz*/, j
         return env->NewStringUTF("");
     }
 
-    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
+    // Allocate batch
+    llama_batch batch = llama_batch_init(kDefaultBatch, 0, 1);
 
-    if (llama_model_has_encoder(model)) {
-        if (llama_encode(ctx, batch) != 0) {
-            return env->NewStringUTF("");
+    // Process prompt in chunks
+    int n_processed = 0;
+    int64_t t_start_prompt = now_ms();
+
+    while (n_processed < prompt_tokens.size()) {
+        if (now_ms() - t_start_prompt > kMaxGenerateMs) {
+             __android_log_print(ANDROID_LOG_WARN, kLogTag, "Prompt processing timed out");
+             llama_batch_free(batch);
+             return env->NewStringUTF("");
         }
-        llama_token decoder_start_token_id = llama_model_decoder_start_token(model);
-        if (decoder_start_token_id == LLAMA_TOKEN_NULL) {
-            decoder_start_token_id = llama_vocab_bos(vocab);
+
+        int n_chunk = std::min((int)prompt_tokens.size() - n_processed, kDefaultBatch);
+
+        // Populate batch
+        batch.n_tokens = n_chunk;
+        for (int i = 0; i < n_chunk; ++i) {
+             batch.token[i] = prompt_tokens[n_processed + i];
+             batch.pos[i] = n_processed + i;
+             batch.n_seq_id[i] = 1;
+             batch.seq_id[i][0] = 0;
+             batch.logits[i] = false;
         }
-        batch = llama_batch_get_one(&decoder_start_token_id, 1);
+
+        // Logits only for the very last token of the prompt
+        if (n_processed + n_chunk == prompt_tokens.size()) {
+            batch.logits[n_chunk - 1] = true;
+        }
+
+        __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "Decoding prompt batch: %d tokens (offset %d)", n_chunk, n_processed);
+        if (llama_decode(ctx, batch) != 0) {
+             __android_log_print(ANDROID_LOG_ERROR, kLogTag, "llama_decode failed during prompt processing at offset %d", n_processed);
+             llama_batch_free(batch);
+             return env->NewStringUTF("");
+        }
+        __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "Batch decode complete");
+        n_processed += n_chunk;
     }
 
     auto sparams = llama_sampler_chain_default_params();
@@ -177,7 +205,7 @@ Java_com_mewmix_nabu_chat_LlamaBridge_generate(JNIEnv * env, jobject /*thiz*/, j
     std::string output;
     output.reserve(1024);
 
-    int n_pos = 0;
+    int n_pos = n_processed;
     int64_t t_start = now_ms();
     int64_t t_first = -1;
     for (int i = 0; i < kDefaultPredictTokens; ++i) {
@@ -185,12 +213,8 @@ Java_com_mewmix_nabu_chat_LlamaBridge_generate(JNIEnv * env, jobject /*thiz*/, j
             __android_log_print(ANDROID_LOG_WARN, kLogTag, "Generation timed out after %lld ms", static_cast<long long>(now_ms() - t_start));
             break;
         }
-        if (llama_decode(ctx, batch) != 0) {
-            __android_log_print(ANDROID_LOG_ERROR, kLogTag, "llama_decode failed at token %d", i);
-            break;
-        }
 
-        n_pos += batch.n_tokens;
+        // Sample from the last token of previous decode
         llama_token token = llama_sampler_sample(sampler, ctx, -1);
         if (llama_vocab_is_eog(vocab, token)) {
             __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "Reached EOG at token %d", i);
@@ -206,10 +230,25 @@ Java_com_mewmix_nabu_chat_LlamaBridge_generate(JNIEnv * env, jobject /*thiz*/, j
         if ((i + 1) % 16 == 0) {
             __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "Generated %d tokens", i + 1);
         }
-        batch = llama_batch_get_one(&token, 1);
+
+        // Decode next token
+        batch.n_tokens = 1;
+        batch.token[0] = token;
+        batch.pos[0] = n_pos;
+        batch.n_seq_id[0] = 1;
+        batch.seq_id[0][0] = 0;
+        batch.logits[0] = true;
+
+        if (llama_decode(ctx, batch) != 0) {
+            __android_log_print(ANDROID_LOG_ERROR, kLogTag, "llama_decode failed at token %d", i);
+            break;
+        }
+
+        n_pos++;
     }
 
     llama_sampler_free(sampler);
+    llama_batch_free(batch);
     __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "Generation complete, output bytes=%zu", output.size());
 
     return env->NewStringUTF(output.c_str());
