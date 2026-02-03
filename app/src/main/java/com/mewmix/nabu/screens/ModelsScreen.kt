@@ -87,27 +87,31 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
         uri?.let {
             val document = DocumentFile.fromSingleUri(context, it)
             val name = document?.name ?: return@let
-            if (name.endsWith(".task")) {
+            val isTask = name.endsWith(".task")
+            val isGguf = name.endsWith(".gguf")
+            if (isTask || isGguf) {
                 val modelDir = File(context.filesDir, "models").apply { if (!exists()) mkdirs() }
                 context.contentResolver.openInputStream(it)?.use { inputStream ->
                     File(modelDir, name).outputStream().use { output ->
                         inputStream.copyTo(output)
                     }
                 }
-                val id = name.removeSuffix(".task")
+                val id = if (isTask) name.removeSuffix(".task") else name.removeSuffix(".gguf")
+                val backend = if (isGguf) "llama" else "mediapipe"
                 val model = Model(
                     id = id,
                     name = id,
-                    description = "Local model",
+                    description = "Local model ($backend)",
                     repo = "",
                     downloadUrl = "",
                     gated = false,
-                    isDownloaded = true
+                    isDownloaded = true,
+                    backend = backend
                 )
                 modelManager.addLocalModel(model)
                 DebugLogger.log("ModelsScreen: Imported $name")
             } else {
-                DebugLogger.log("ModelsScreen: Selected file is not a .task file")
+                DebugLogger.log("ModelsScreen: Selected file is not a .task or .gguf file")
             }
         }
     }

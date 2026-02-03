@@ -39,3 +39,4 @@ app/release/output-metadata.json
 
 # Build output
 build/
+.cxx/

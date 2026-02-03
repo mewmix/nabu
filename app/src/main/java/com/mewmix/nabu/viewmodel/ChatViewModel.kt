@@ -415,8 +415,10 @@ class ChatViewModel(
                 return
             }
             val backend = LlamaCppBackend(context, ggufFile.absolutePath)
-            backend.initialize()
             llmBackend = backend
+            viewModelScope.launch(Dispatchers.IO) {
+                backend.initialize()
+            }
         } else {
             if (!taskFile.exists()) {
                 DebugLogger.log("Task Model file not found: ${taskFile.absolutePath}")
