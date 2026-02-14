@@ -30,6 +30,7 @@ import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.ThemeManager
 import com.mewmix.nabu.utils.getAppVersion
+import com.mewmix.nabu.api.ApiServerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.PanelBox
@@ -55,6 +56,7 @@ fun SettingsScreen() {
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var methodTracing by remember { mutableStateOf(SettingsManager.isMethodTracingEnabled(context)) }
+    var apiEnabled by remember { mutableStateOf(SettingsManager.isApiEnabled(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
     val storedTtsEngine = SettingsManager.getTtsEngine(context)
     var ttsEngine by remember { mutableStateOf(storedTtsEngine) }
@@ -130,6 +132,24 @@ fun SettingsScreen() {
                 },
                 label = "Method Tracing"
             )
+
+            SwitchToggle(
+                checked = apiEnabled,
+                onToggle = { enabled ->
+                    apiEnabled = enabled
+                    SettingsManager.setApiEnabled(context, enabled)
+                    ApiServerManager.syncWithSettings(context.applicationContext)
+                },
+                label = "Local API Server"
+            )
+
+            if (apiEnabled) {
+                Text(
+                    text = "Listening on http://${ApiServerManager.HOST}:${ApiServerManager.PORT}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
 
             // Trace status line
             run {

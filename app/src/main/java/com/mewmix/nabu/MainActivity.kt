@@ -11,6 +11,7 @@ import com.mewmix.nabu.screens.ModelsScreen
 import com.mewmix.nabu.screens.DebugLogScreen
 import com.mewmix.nabu.screens.CreditsConstellationScreen
 import com.mewmix.nabu.galleryport.PerfHud
+import com.mewmix.nabu.api.ApiServerManager
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -125,6 +126,13 @@ class MyApplication : Application() {
         if (com.mewmix.nabu.utils.SettingsManager.isMethodTracingEnabled(this)) {
             com.mewmix.nabu.utils.MethodTraceManager.start(this)
         }
+
+        ApiServerManager.syncWithSettings(this)
+    }
+
+    override fun onTerminate() {
+        ApiServerManager.stop()
+        super.onTerminate()
     }
 }
 

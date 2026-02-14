@@ -88,6 +88,8 @@ dependencies {
     implementation("com.google.mediapipe:tasks-core:latest.release")
     implementation("com.google.mediapipe:tasks-genai:latest.release")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("io.ktor:ktor-server-core:2.3.12")
+    implementation("io.ktor:ktor-server-cio:2.3.12")
 
     implementation(libs.androidx.core.ktx)
     implementation("androidx.core:core-splashscreen:1.0.1")
