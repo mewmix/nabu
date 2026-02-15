@@ -3,6 +3,8 @@ package com.mewmix.nabu.utils
 import android.content.Context
 import com.mewmix.nabu.chat.LlmRuntimeConfig
 import com.mewmix.nabu.chat.LlmRuntimeOverrides
+import com.mewmix.nabu.chat.MediaPipeRuntimeConfig
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.mewmix.nabu.kokoro.RunEp
 import kotlin.math.max
 import kotlin.math.min
@@ -20,6 +22,18 @@ object SettingsManager {
     private const val KEY_LLM_N_BATCH = "llm_n_batch"
     private const val KEY_LLM_TTFT_TIMEOUT_MS = "llm_ttft_timeout_ms"
     private const val KEY_LLM_TOTAL_TIMEOUT_MS = "llm_total_timeout_ms"
+    private const val KEY_MEDIAPIPE_MAX_TOKENS = "mediapipe_max_tokens"
+    private const val KEY_MEDIAPIPE_MAX_TOP_K = "mediapipe_max_top_k"
+    private const val KEY_MEDIAPIPE_TOP_K = "mediapipe_top_k"
+    private const val KEY_MEDIAPIPE_TOP_P = "mediapipe_top_p"
+    private const val KEY_MEDIAPIPE_TEMPERATURE = "mediapipe_temperature"
+    private const val KEY_MEDIAPIPE_RANDOM_SEED = "mediapipe_random_seed"
+    private const val KEY_MEDIAPIPE_BACKEND = "mediapipe_backend"
+    private const val KEY_SOPRANO_TOP_K = "soprano_top_k"
+    private const val KEY_SOPRANO_TOP_P = "soprano_top_p"
+    private const val KEY_SOPRANO_TEMPERATURE = "soprano_temperature"
+    private const val KEY_SOPRANO_REP_PENALTY = "soprano_rep_penalty"
+    private const val KEY_SUPERTONIC_TOTAL_STEP = "supertonic_total_step"
     private const val KEY_METHOD_TRACING = "method_tracing"
     private const val KEY_API_ENABLED = "api_enabled"
     private const val KEY_API_LAN_ENABLED = "api_lan_enabled"
@@ -160,6 +174,10 @@ object SettingsManager {
         return value.coerceIn(minValue, maxValue)
     }
 
+    private fun clampFloat(value: Float, minValue: Float, maxValue: Float): Float {
+        return value.coerceIn(minValue, maxValue)
+    }
+
     fun setLlmThreadsAuto(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, KEY_LLM_THREADS_AUTO, if (enabled) "1" else "0")
     }
@@ -223,6 +241,131 @@ object SettingsManager {
 
     fun getLlmTotalTimeoutMs(context: Context, default: Long = 60_000L): Long {
         return DatabaseManager.getSetting(context, KEY_LLM_TOTAL_TIMEOUT_MS)?.toLongOrNull() ?: default
+    }
+
+    fun setMediaPipeMaxTokens(context: Context, value: Int) {
+        DatabaseManager.setSetting(context, KEY_MEDIAPIPE_MAX_TOKENS, value.toString())
+    }
+
+    fun getMediaPipeMaxTokens(context: Context, default: Int = 1024): Int {
+        val parsed = DatabaseManager.getSetting(context, KEY_MEDIAPIPE_MAX_TOKENS)?.toIntOrNull() ?: default
+        return clampInt(parsed, 128, 16384)
+    }
+
+    fun setMediaPipeMaxTopK(context: Context, value: Int) {
+        DatabaseManager.setSetting(context, KEY_MEDIAPIPE_MAX_TOP_K, value.toString())
+    }
+
+    fun getMediaPipeMaxTopK(context: Context, default: Int = 100): Int {
+        val parsed = DatabaseManager.getSetting(context, KEY_MEDIAPIPE_MAX_TOP_K)?.toIntOrNull() ?: default
+        return clampInt(parsed, 1, 512)
+    }
+
+    fun setMediaPipeTopK(context: Context, value: Int) {
+        DatabaseManager.setSetting(context, KEY_MEDIAPIPE_TOP_K, value.toString())
+    }
+
+    fun getMediaPipeTopK(context: Context, default: Int = 64): Int {
+        val parsed = DatabaseManager.getSetting(context, KEY_MEDIAPIPE_TOP_K)?.toIntOrNull() ?: default
+        return clampInt(parsed, 1, getMediaPipeMaxTopK(context))
+    }
+
+    fun setMediaPipeTopP(context: Context, value: Float) {
+        DatabaseManager.setSetting(context, KEY_MEDIAPIPE_TOP_P, value.toString())
+    }
+
+    fun getMediaPipeTopP(context: Context, default: Float = 0.95f): Float {
+        val parsed = DatabaseManager.getSetting(context, KEY_MEDIAPIPE_TOP_P)?.toFloatOrNull() ?: default
+        return clampFloat(parsed, 0f, 1f)
+    }
+
+    fun setMediaPipeTemperature(context: Context, value: Float) {
+        DatabaseManager.setSetting(context, KEY_MEDIAPIPE_TEMPERATURE, value.toString())
+    }
+
+    fun getMediaPipeTemperature(context: Context, default: Float = 1.0f): Float {
+        val parsed = DatabaseManager.getSetting(context, KEY_MEDIAPIPE_TEMPERATURE)?.toFloatOrNull() ?: default
+        return clampFloat(parsed, 0f, 2f)
+    }
+
+    fun setMediaPipeRandomSeed(context: Context, value: Int) {
+        DatabaseManager.setSetting(context, KEY_MEDIAPIPE_RANDOM_SEED, value.toString())
+    }
+
+    fun getMediaPipeRandomSeed(context: Context, default: Int = -1): Int {
+        val parsed = DatabaseManager.getSetting(context, KEY_MEDIAPIPE_RANDOM_SEED)?.toIntOrNull() ?: default
+        return parsed.coerceAtLeast(-1)
+    }
+
+    fun setMediaPipeBackend(context: Context, value: String?) {
+        DatabaseManager.setSetting(context, KEY_MEDIAPIPE_BACKEND, value?.lowercase().orEmpty())
+    }
+
+    fun getMediaPipeBackend(context: Context): String {
+        val value = DatabaseManager.getSetting(context, KEY_MEDIAPIPE_BACKEND)?.lowercase().orEmpty()
+        return if (value in setOf("default", "cpu", "gpu")) value else "default"
+    }
+
+    fun getMediaPipeRuntimeConfig(context: Context): MediaPipeRuntimeConfig {
+        val preferredBackend = when (getMediaPipeBackend(context)) {
+            "cpu" -> LlmInference.Backend.CPU
+            "gpu" -> LlmInference.Backend.GPU
+            else -> null
+        }
+        return MediaPipeRuntimeConfig(
+            maxTokens = getMediaPipeMaxTokens(context),
+            maxTopK = getMediaPipeMaxTopK(context),
+            topK = getMediaPipeTopK(context),
+            topP = getMediaPipeTopP(context),
+            temperature = getMediaPipeTemperature(context),
+            randomSeed = getMediaPipeRandomSeed(context),
+            preferredBackend = preferredBackend
+        )
+    }
+
+    fun setSopranoTopK(context: Context, value: Int) {
+        DatabaseManager.setSetting(context, KEY_SOPRANO_TOP_K, value.toString())
+    }
+
+    fun getSopranoTopK(context: Context, default: Int = 50): Int {
+        val parsed = DatabaseManager.getSetting(context, KEY_SOPRANO_TOP_K)?.toIntOrNull() ?: default
+        return clampInt(parsed, 1, 256)
+    }
+
+    fun setSopranoTopP(context: Context, value: Float) {
+        DatabaseManager.setSetting(context, KEY_SOPRANO_TOP_P, value.toString())
+    }
+
+    fun getSopranoTopP(context: Context, default: Float = 0.95f): Float {
+        val parsed = DatabaseManager.getSetting(context, KEY_SOPRANO_TOP_P)?.toFloatOrNull() ?: default
+        return clampFloat(parsed, 0f, 1f)
+    }
+
+    fun setSopranoTemperature(context: Context, value: Float) {
+        DatabaseManager.setSetting(context, KEY_SOPRANO_TEMPERATURE, value.toString())
+    }
+
+    fun getSopranoTemperature(context: Context, default: Float = 0.3f): Float {
+        val parsed = DatabaseManager.getSetting(context, KEY_SOPRANO_TEMPERATURE)?.toFloatOrNull() ?: default
+        return clampFloat(parsed, 0f, 2f)
+    }
+
+    fun setSopranoRepetitionPenalty(context: Context, value: Float) {
+        DatabaseManager.setSetting(context, KEY_SOPRANO_REP_PENALTY, value.toString())
+    }
+
+    fun getSopranoRepetitionPenalty(context: Context, default: Float = 1.2f): Float {
+        val parsed = DatabaseManager.getSetting(context, KEY_SOPRANO_REP_PENALTY)?.toFloatOrNull() ?: default
+        return clampFloat(parsed, 0.5f, 2f)
+    }
+
+    fun setSupertonicTotalStep(context: Context, value: Int) {
+        DatabaseManager.setSetting(context, KEY_SUPERTONIC_TOTAL_STEP, value.toString())
+    }
+
+    fun getSupertonicTotalStep(context: Context, default: Int = 5): Int {
+        val parsed = DatabaseManager.getSetting(context, KEY_SUPERTONIC_TOTAL_STEP)?.toIntOrNull() ?: default
+        return clampInt(parsed, 1, 12)
     }
 
     fun getLlmRuntimeConfig(

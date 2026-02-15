@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.clickable
@@ -60,10 +59,14 @@ import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.buildStyleFileName
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
+import com.mewmix.nabu.soprano.SopranoEngine
+import com.mewmix.nabu.soprano.SopranoSamplingConfig
+import com.mewmix.nabu.supertonic.DebugSupertonicEngine
 import com.mewmix.nabu.ui.components.RuntimeStatusLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /** Simplified mixer screen showing a static style configuration. */
 @Composable
@@ -75,20 +78,37 @@ fun MixerScreen(
     val context = LocalContext.current
     val modelManager = remember { ModelManager(context) }
     val scrollState = rememberScrollState()
-    var isSupertonic by remember { mutableStateOf(false) }
+    var preferredEngine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
+    var isKokoroLoaded by remember { mutableStateOf(false) }
+    var isSupertonicLoaded by remember { mutableStateOf(false) }
+    var isSopranoLoaded by remember { mutableStateOf(false) }
     var hasSupertonicModels by remember { mutableStateOf(false) }
+    var supertonicTotalStep by remember { mutableFloatStateOf(SettingsManager.getSupertonicTotalStep(context).toFloat()) }
+    var sopranoTopK by remember { mutableFloatStateOf(SettingsManager.getSopranoTopK(context).toFloat()) }
+    var sopranoTopP by remember { mutableFloatStateOf(SettingsManager.getSopranoTopP(context)) }
+    var sopranoTemperature by remember { mutableFloatStateOf(SettingsManager.getSopranoTemperature(context)) }
+    var sopranoRepPenalty by remember { mutableFloatStateOf(SettingsManager.getSopranoRepetitionPenalty(context)) }
 
     LaunchedEffect(Unit) {
-        val preferredEngine = SettingsManager.getTtsEngine(context)
-        isSupertonic = preferredEngine == "supertonic"
-        if (isSupertonic) {
+        preferredEngine = SettingsManager.getTtsEngine(context)
+        if (preferredEngine == "supertonic") {
             val selectedId = SettingsManager.getSupertonicModelId(context)
             val downloadedModels = modelManager.models.filter { model ->
                 model.type == ModelType.TTS && model.isDownloaded
             }
             val selectedModel = selectedId?.let { id -> downloadedModels.firstOrNull { it.id == id } }
             hasSupertonicModels = if (selectedId != null) selectedModel != null else downloadedModels.isNotEmpty()
-        } else if (preferredEngine == "kokoro") {
+        }
+
+        val engine = withContext(Dispatchers.IO) {
+            com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
+        }
+        val rawEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+        isKokoroLoaded = rawEngine is com.mewmix.nabu.kokoro.KokoroEngine
+        isSupertonicLoaded = rawEngine is DebugSupertonicEngine
+        isSopranoLoaded = rawEngine is SopranoEngine
+
+        if (preferredEngine == "kokoro" && !isKokoroLoaded) {
             val result = withContext(Dispatchers.IO) {
                 OnnxRuntimeManager.initialize(
                     context.applicationContext,
@@ -127,13 +147,19 @@ fun MixerScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             RuntimeStatusLine()
-            if (isSupertonic && !hasSupertonicModels) {
+            if (preferredEngine == "supertonic" && !hasSupertonicModels) {
                 Text(
                     text = if (SettingsManager.getSupertonicModelId(context) != null) {
                         "Selected Supertonic model is not downloaded yet. Open Models to download it."
                     } else {
                         "No Supertonic voice models found. Open Models to download one."
                     },
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            if (preferredEngine == "soprano" && !isSopranoLoaded) {
+                Text(
+                    text = "Soprano is selected but not loaded. Download the model, then reopen Mixer.",
                     color = MaterialTheme.colorScheme.error
                 )
             }
@@ -160,7 +186,7 @@ fun MixerScreen(
             Text("%.2f".format(speed))
         }
 
-        if (SettingsManager.getTtsEngine(context) == "kokoro") {
+        if (isKokoroLoaded) {
             StyleSelector(
                 styleNames = styleLoader.names,
                 selectedStyles = selectedStyles,
@@ -177,7 +203,7 @@ fun MixerScreen(
             )
         }
 
-        if (SettingsManager.getTtsEngine(context) == "kokoro") {
+        if (isKokoroLoaded) {
             WeightSliders(
                 selectedStyles = selectedStyles,
                 weights = weights,
@@ -196,7 +222,87 @@ fun MixerScreen(
             )
         }
 
-        // Use top-level isSupertonic computed in LaunchedEffect
+        val supertonicStyles = if (isSupertonicLoaded) styleLoader.names else emptyList()
+        LaunchedEffect(isSupertonicLoaded, supertonicStyles) {
+            if (isSupertonicLoaded && supertonicStyles.isNotEmpty() && selectedStyles.firstOrNull() !in supertonicStyles) {
+                selectedStyles = listOf(supertonicStyles.first())
+            }
+        }
+
+        if (isSupertonicLoaded) {
+            SingleStyleSelector(
+                styleNames = supertonicStyles,
+                selectedStyle = selectedStyles.firstOrNull(),
+                onSelected = { selectedStyles = listOf(it) }
+            )
+
+            PanelRow(name = "Supertonic Steps") {
+                BrutalSlider(
+                    value = supertonicTotalStep,
+                    onValueChange = { value ->
+                        val rounded = value.roundToInt().coerceIn(1, 12)
+                        supertonicTotalStep = rounded.toFloat()
+                        SettingsManager.setSupertonicTotalStep(context, rounded)
+                    },
+                    range = 1f..12f,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(supertonicTotalStep.roundToInt().toString())
+            }
+        }
+
+        if (isSopranoLoaded) {
+            Text("SOPRANO SAMPLING", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+            PanelRow(name = "Top P") {
+                BrutalSlider(
+                    value = sopranoTopP,
+                    onValueChange = { value ->
+                        sopranoTopP = value
+                        SettingsManager.setSopranoTopP(context, value)
+                    },
+                    range = 0f..1f,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("%.2f".format(sopranoTopP))
+            }
+            PanelRow(name = "Top K") {
+                BrutalSlider(
+                    value = sopranoTopK,
+                    onValueChange = { value ->
+                        val rounded = value.roundToInt().coerceIn(1, 256)
+                        sopranoTopK = rounded.toFloat()
+                        SettingsManager.setSopranoTopK(context, rounded)
+                    },
+                    range = 1f..256f,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(sopranoTopK.roundToInt().toString())
+            }
+            PanelRow(name = "Temperature") {
+                BrutalSlider(
+                    value = sopranoTemperature,
+                    onValueChange = { value ->
+                        sopranoTemperature = value
+                        SettingsManager.setSopranoTemperature(context, value)
+                    },
+                    range = 0f..2f,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("%.2f".format(sopranoTemperature))
+            }
+            PanelRow(name = "Rep Penalty") {
+                BrutalSlider(
+                    value = sopranoRepPenalty,
+                    onValueChange = { value ->
+                        sopranoRepPenalty = value
+                        SettingsManager.setSopranoRepetitionPenalty(context, value)
+                    },
+                    range = 0.5f..2f,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("%.2f".format(sopranoRepPenalty))
+            }
+        }
 
         Row(modifier = Modifier.fillMaxWidth()) {
             BrutalButton(
@@ -228,7 +334,9 @@ fun MixerScreen(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = !isProcessing && (!isSupertonic || hasSupertonicModels)
+                enabled = !isProcessing &&
+                    (preferredEngine != "supertonic" || hasSupertonicModels) &&
+                    (preferredEngine != "soprano" || isSopranoLoaded)
             ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY") }
 
             BrutalButton(
@@ -244,7 +352,7 @@ fun MixerScreen(
                         } else {
                             emptyArray()
                         }
-                        val fileName = if (isSupertonic) {
+                        val fileName = if (isSupertonicLoaded) {
                              val modelId = SettingsManager.getSupertonicModelId(context)
                              val modelName = modelManager.models.find { it.id == modelId }?.name ?: "supertonic"
                              "${modelName}_${System.currentTimeMillis()}"
@@ -267,7 +375,9 @@ fun MixerScreen(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = !isProcessing && (!isSupertonic || hasSupertonicModels)
+                enabled = !isProcessing &&
+                    (preferredEngine != "supertonic" || hasSupertonicModels) &&
+                    (preferredEngine != "soprano" || isSopranoLoaded)
             ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
         }
 
@@ -327,11 +437,23 @@ private fun generateAudio(
                     speed = speed,
                     engine = rawEngine
                 )
-            } else if (rawEngine is com.mewmix.nabu.supertonic.DebugSupertonicEngine) {
+            } else if (rawEngine is DebugSupertonicEngine) {
                 if (selectedStyleName != null) {
                     rawEngine.setStyle(selectedStyleName)
                 }
-                val result = rawEngine.synthesize(text, speed)
+                val totalStep = SettingsManager.getSupertonicTotalStep(context)
+                val result = rawEngine.synthesize(text = text, speed = speed, totalStep = totalStep)
+                result.wav to result.sampleRate
+            } else if (rawEngine is SopranoEngine) {
+                rawEngine.updateSamplingConfig(
+                    SopranoSamplingConfig(
+                        temperature = SettingsManager.getSopranoTemperature(context),
+                        topK = SettingsManager.getSopranoTopK(context),
+                        topP = SettingsManager.getSopranoTopP(context),
+                        repetitionPenalty = SettingsManager.getSopranoRepetitionPenalty(context)
+                    )
+                )
+                val result = engine.synthesize(text, speed)
                 result.wav to result.sampleRate
             } else {
                  val result = engine.synthesize(text, speed)
@@ -447,6 +569,68 @@ fun StyleSelector(
                         colors = MenuDefaults.itemColors(textColor = Brutal.textBright)
                     )
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SingleStyleSelector(
+    styleNames: List<String>,
+    selectedStyle: String?,
+    onSelected: (String) -> Unit
+) {
+    if (styleNames.isEmpty()) {
+        Text(
+            text = "No Supertonic styles found in the selected model.",
+            color = MaterialTheme.colorScheme.error
+        )
+        return
+    }
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        TextField(
+            value = selectedStyle ?: styleNames.first(),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Supertonic Style") },
+            trailingIcon = {
+                Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
+            },
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Brutal.panelBg,
+                unfocusedContainerColor = Brutal.panelBg,
+                focusedIndicatorColor = Brutal.hairline,
+                unfocusedIndicatorColor = Brutal.hairline,
+                cursorColor = Brutal.amber,
+                focusedTextColor = Brutal.textBright,
+                unfocusedTextColor = Brutal.textBright
+            ),
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+                .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .background(Brutal.panelBg)
+                .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
+        ) {
+            styleNames.forEach { style ->
+                DropdownMenuItem(
+                    text = { Text(style.uppercase(), color = Brutal.textBright) },
+                    onClick = {
+                        onSelected(style)
+                        expanded = false
+                    },
+                    colors = MenuDefaults.itemColors(textColor = Brutal.textBright)
+                )
             }
         }
     }

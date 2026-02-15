@@ -18,6 +18,13 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.random.Random
 
+data class SopranoSamplingConfig(
+    val temperature: Float = 0.3f,
+    val topK: Int = 50,
+    val topP: Float = 0.95f,
+    val repetitionPenalty: Float = 1.2f
+)
+
 class SopranoEngine(
     private val modelDir: File,
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
@@ -40,6 +47,7 @@ class SopranoEngine(
     private var numLayers: Int = 17
     private var vocabSize: Int = 8192
     private var stopTokenId: Long = 3L
+    @Volatile private var samplingConfig: SopranoSamplingConfig = SopranoSamplingConfig()
     private val MAX_NEW_TOKENS = 320
     private val TARGET_CHUNK_SIZE = 8
 
@@ -127,6 +135,13 @@ class SopranoEngine(
     override val sampleRate: Int = SAMPLE_RATE
     override val name: String = "Soprano"
     override val provider: String = "ONNX/CPU"
+
+    val currentSamplingConfig: SopranoSamplingConfig
+        get() = samplingConfig
+
+    fun updateSamplingConfig(config: SopranoSamplingConfig) {
+        samplingConfig = config
+    }
 
     override suspend fun synthesize(text: String, speed: Float): AudioResult = withContext(Dispatchers.Default) {
         DebugLogger.log("SopranoEngine.synthesize: textLen=${text.length} speed=$speed")
@@ -494,11 +509,11 @@ class SopranoEngine(
         val seqLen = shape[1].toInt()
         val vocabSize = shape[2].toInt()
 
-        // Settings (matching web ONNX reference)
-        val temp = 0.3f
-        val topK = 50
-        val topP = 0.95f
-        val repPenalty = 1.2f
+        val localSampling = samplingConfig
+        val temp = localSampling.temperature.coerceAtLeast(0f)
+        val topK = localSampling.topK.coerceAtLeast(1)
+        val topP = localSampling.topP.coerceIn(0f, 1f)
+        val repPenalty = localSampling.repetitionPenalty.coerceAtLeast(0f)
 
         val k = minOf(topK, vocabSize)
         val invTemp = if (temp > 0f && temp != 1f) 1f / temp else 1f

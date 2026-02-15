@@ -259,10 +259,18 @@ class ChatViewModel(
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
         val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
-        val backendMaxTokens = (backend as? LlamaCppBackend)?.let {
-            it.updateConfig(runtimeConfig)
-            it.currentConfig.nCtx
-        } ?: DEFAULT_MAX_CONTEXT_TOKENS
+        val backendMaxTokens = when (backend) {
+            is LlamaCppBackend -> {
+                backend.updateConfig(runtimeConfig)
+                backend.currentConfig.nCtx
+            }
+            is MediaPipeBackend -> {
+                val mediaPipeConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
+                backend.updateConfig(mediaPipeConfig)
+                mediaPipeConfig.maxTokens
+            }
+            else -> DEFAULT_MAX_CONTEXT_TOKENS
+        }
 
         val conversationForModel = prepareConversationForModel(backendMaxTokens)
 
@@ -438,7 +446,11 @@ class ChatViewModel(
                 llmBackend = null
                 return
             }
-            val backend = MediaPipeBackend(context, taskFile.absolutePath)
+            val backend = MediaPipeBackend(
+                context = context,
+                modelPath = taskFile.absolutePath,
+                initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
+            )
             backend.initialize()
             llmBackend = backend
         }

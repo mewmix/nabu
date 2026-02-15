@@ -458,6 +458,8 @@ class ApiServer(
             val (modelId, activeBackend) = getOrCreateBackend(requestedModel)
             if (activeBackend is LlamaCppBackend) {
                 activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
+            } else if (activeBackend is MediaPipeBackend) {
+                activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
             }
             val text = runGeneration { listener ->
                 activeBackend.sendMessage(prompt, listener)
@@ -475,6 +477,8 @@ class ApiServer(
             val (modelId, activeBackend) = getOrCreateBackend(requestedModel)
             if (activeBackend is LlamaCppBackend) {
                 activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
+            } else if (activeBackend is MediaPipeBackend) {
+                activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
             }
             val text = runGeneration { listener ->
                 activeBackend.sendMessage(messages, listener)
@@ -524,7 +528,8 @@ class ApiServer(
                 }
                 MediaPipeBackend(
                     context = context,
-                    modelPath = taskFile.absolutePath
+                    modelPath = taskFile.absolutePath,
+                    initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
                 )
             }
 

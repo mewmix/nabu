@@ -28,22 +28,15 @@ import com.mewmix.nabu.kokoro.RunEp
 import com.mewmix.nabu.components.VersionPlate
 import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.OnnxRuntimeManager
-import com.mewmix.nabu.utils.ThemeManager
 import com.mewmix.nabu.utils.getAppVersion
 import com.mewmix.nabu.api.ApiServerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
-import com.mewmix.nabu.ui.brutalist.BrutalButton
-import com.mewmix.nabu.ui.brutalist.BrutalButtonText
-import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
-import com.mewmix.nabu.utils.UpdateChecker
 import com.mewmix.nabu.BuildConfig
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
 import androidx.compose.material3.HorizontalDivider
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
@@ -62,7 +55,6 @@ fun SettingsScreen() {
     val storedTtsEngine = SettingsManager.getTtsEngine(context)
     var ttsEngine by remember { mutableStateOf(storedTtsEngine) }
     var expanded by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
     val modelManager = remember { ModelManager(context) }
     // Only Supertonic models should appear in Supertonic selector
     val supertonicModels = modelManager.models.filter { it.type == ModelType.TTS && it.id.startsWith("supertonic") }
@@ -77,6 +69,14 @@ fun SettingsScreen() {
     var llmMaxTokens by remember { mutableStateOf(SettingsManager.getLlmMaxNewTokens(context).toString()) }
     var llmTtftTimeout by remember { mutableStateOf(SettingsManager.getLlmTtftTimeoutMs(context).toString()) }
     var llmTotalTimeout by remember { mutableStateOf(SettingsManager.getLlmTotalTimeoutMs(context).toString()) }
+    var mediaPipeBackendExpanded by remember { mutableStateOf(false) }
+    var mediaPipeBackend by remember { mutableStateOf(SettingsManager.getMediaPipeBackend(context)) }
+    var mediaPipeMaxTokens by remember { mutableStateOf(SettingsManager.getMediaPipeMaxTokens(context).toString()) }
+    var mediaPipeMaxTopK by remember { mutableStateOf(SettingsManager.getMediaPipeMaxTopK(context).toString()) }
+    var mediaPipeTopK by remember { mutableStateOf(SettingsManager.getMediaPipeTopK(context).toString()) }
+    var mediaPipeTopP by remember { mutableStateOf(SettingsManager.getMediaPipeTopP(context).toString()) }
+    var mediaPipeTemperature by remember { mutableStateOf(SettingsManager.getMediaPipeTemperature(context).toString()) }
+    var mediaPipeRandomSeed by remember { mutableStateOf(SettingsManager.getMediaPipeRandomSeed(context).toString()) }
 
     LaunchedEffect(runtime, ttsEngine) {
         if (ttsEngine == "kokoro") {
@@ -292,7 +292,7 @@ fun SettingsScreen() {
             HorizontalDivider()
 
             Text(
-                text = "LLM Settings",
+                text = "LLAMA Settings (.gguf)",
                 style = MaterialTheme.typography.titleMedium
             )
 
@@ -348,6 +348,114 @@ fun SettingsScreen() {
                     filtered.toLongOrNull()?.let { SettingsManager.setLlmTotalTimeoutMs(context, it) }
                 },
                 label = { Text("Total Timeout (ms)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            HorizontalDivider()
+
+            Text(
+                text = "LiteRT (.task) / MediaPipe Settings",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            ExposedDropdownMenuBox(
+                expanded = mediaPipeBackendExpanded,
+                onExpandedChange = { mediaPipeBackendExpanded = it }
+            ) {
+                TextField(
+                    value = when (mediaPipeBackend) {
+                        "cpu" -> "CPU"
+                        "gpu" -> "GPU"
+                        else -> "Default"
+                    },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Preferred Backend") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = mediaPipeBackendExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = mediaPipeBackendExpanded,
+                    onDismissRequest = { mediaPipeBackendExpanded = false }
+                ) {
+                    listOf("default" to "Default", "cpu" to "CPU", "gpu" to "GPU").forEach { (id, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                mediaPipeBackend = id
+                                SettingsManager.setMediaPipeBackend(context, id)
+                                mediaPipeBackendExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            TextField(
+                value = mediaPipeMaxTokens,
+                onValueChange = { value ->
+                    val filtered = value.filter { it.isDigit() }
+                    mediaPipeMaxTokens = filtered
+                    filtered.toIntOrNull()?.let { SettingsManager.setMediaPipeMaxTokens(context, it) }
+                },
+                label = { Text("Max Tokens") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = mediaPipeMaxTopK,
+                onValueChange = { value ->
+                    val filtered = value.filter { it.isDigit() }
+                    mediaPipeMaxTopK = filtered
+                    filtered.toIntOrNull()?.let { SettingsManager.setMediaPipeMaxTopK(context, it) }
+                },
+                label = { Text("Max Top-K") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = mediaPipeTopK,
+                onValueChange = { value ->
+                    val filtered = value.filter { it.isDigit() }
+                    mediaPipeTopK = filtered
+                    filtered.toIntOrNull()?.let { SettingsManager.setMediaPipeTopK(context, it) }
+                },
+                label = { Text("Top-K") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = mediaPipeTopP,
+                onValueChange = { value ->
+                    val filtered = value.filter { it.isDigit() || it == '.' }
+                    mediaPipeTopP = filtered
+                    filtered.toFloatOrNull()?.let { SettingsManager.setMediaPipeTopP(context, it) }
+                },
+                label = { Text("Top-P (0.0-1.0)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = mediaPipeTemperature,
+                onValueChange = { value ->
+                    val filtered = value.filter { it.isDigit() || it == '.' }
+                    mediaPipeTemperature = filtered
+                    filtered.toFloatOrNull()?.let { SettingsManager.setMediaPipeTemperature(context, it) }
+                },
+                label = { Text("Temperature (0.0-2.0)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = mediaPipeRandomSeed,
+                onValueChange = { value ->
+                    val filtered = value.filterIndexed { index, c ->
+                        c.isDigit() || (c == '-' && index == 0)
+                    }
+                    mediaPipeRandomSeed = filtered
+                    filtered.toIntOrNull()?.let { SettingsManager.setMediaPipeRandomSeed(context, it) }
+                },
+                label = { Text("Random Seed (-1 = default)") },
                 modifier = Modifier.fillMaxWidth()
             )
 

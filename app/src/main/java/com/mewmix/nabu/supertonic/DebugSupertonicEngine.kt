@@ -73,6 +73,15 @@ class DebugSupertonicEngine(
 
     suspend fun synthesize(
         text: String,
+        speed: Float,
+        totalStep: Int
+    ): SupertonicResult {
+        val style = defaultStyle ?: throw IllegalStateException("No style loaded. Cannot synthesize.")
+        return synthesize(text, style, totalStep = totalStep, speed = speed)
+    }
+
+    suspend fun synthesize(
+        text: String,
         style: SupertonicStyle,
         totalStep: Int = 5,
         speed: Float = 1.05f,
