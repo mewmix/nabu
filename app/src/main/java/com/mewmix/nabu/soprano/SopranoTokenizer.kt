@@ -1,10 +1,10 @@
 package com.mewmix.nabu.soprano
 
-import com.google.gson.Gson
+import com.google.gson.JsonElement
+import com.google.gson.JsonParser
 import java.io.File
 
 class SopranoTokenizer(private val modelDir: File) {
-    private val gson = Gson()
     private val vocab: Map<String, Int>
     private val merges: List<Pair<String, String>>
     private val specialTokens: Map<String, Int>
@@ -16,24 +16,22 @@ class SopranoTokenizer(private val modelDir: File) {
             throw IllegalStateException("tokenizer.json not found in ${modelDir.absolutePath}")
         }
 
-        val json = gson.fromJson(tokenizerFile.readText(), TokenizerJson::class.java)
-        vocab = json.model.vocab
-        // Merges can be either "a b" strings or ["a","b"] arrays depending on tokenizer export.
-        merges = json.model.merges.map { merge ->
-            when (merge) {
-                is String -> {
-                    val parts = merge.split(" ")
-                    if (parts.size != 2) throw IllegalStateException("Invalid merge: $merge")
-                    parts[0] to parts[1]
-                }
-                is List<*> -> {
-                    if (merge.size != 2 || merge[0] !is String || merge[1] !is String) {
-                        throw IllegalStateException("Invalid merge list: $merge")
-                    }
-                    (merge[0] as String) to (merge[1] as String)
-                }
-                else -> throw IllegalStateException("Unsupported merge token type: ${merge?.javaClass?.name}")
+        val root = JsonParser.parseString(tokenizerFile.readText()).asJsonObject
+        val model = root.getAsJsonObject("model")
+            ?: throw IllegalStateException("tokenizer.json missing model object")
+        val vocabJson = model.getAsJsonObject("vocab")
+            ?: throw IllegalStateException("tokenizer.json missing vocab object")
+        vocab = buildMap(vocabJson.entrySet().size) {
+            for ((token, idElement) in vocabJson.entrySet()) {
+                put(token, idElement.asInt)
             }
+        }
+
+        // Merges can be either "a b" strings or ["a","b"] arrays depending on tokenizer export.
+        val mergesJson = model.getAsJsonArray("merges")
+            ?: throw IllegalStateException("tokenizer.json missing merges array")
+        merges = List(mergesJson.size()) { index ->
+            parseMergeEntry(mergesJson[index])
         }
 
         // Identify special tokens. Usually defined in added_tokens or just vocab with specific format.
@@ -132,13 +130,29 @@ class SopranoTokenizer(private val modelDir: File) {
         return ids.joinToString("") { reverseVocab[it.toInt()] ?: "" }
     }
 
-    // JSON Structure
-    private data class TokenizerJson(
-        val model: Model
-    )
-
-    private data class Model(
-        val vocab: Map<String, Int>,
-        val merges: List<Any>
-    )
+    private fun parseMergeEntry(value: JsonElement): Pair<String, String> {
+        return when {
+            value.isJsonPrimitive && value.asJsonPrimitive.isString -> {
+                val merge = value.asString
+                val parts = merge.split(" ")
+                if (parts.size != 2) throw IllegalStateException("Invalid merge: $merge")
+                parts[0] to parts[1]
+            }
+            value.isJsonArray -> {
+                val mergeArray = value.asJsonArray
+                if (mergeArray.size() != 2) {
+                    throw IllegalStateException("Invalid merge list length: ${mergeArray.size()}")
+                }
+                val first = mergeArray[0]
+                val second = mergeArray[1]
+                if (!first.isJsonPrimitive || !first.asJsonPrimitive.isString ||
+                    !second.isJsonPrimitive || !second.asJsonPrimitive.isString
+                ) {
+                    throw IllegalStateException("Invalid merge list: $mergeArray")
+                }
+                first.asString to second.asString
+            }
+            else -> throw IllegalStateException("Unsupported merge token type: $value")
+        }
+    }
 }

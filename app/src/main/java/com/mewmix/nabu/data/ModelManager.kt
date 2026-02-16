@@ -57,21 +57,7 @@ class ModelManager(private val context: Context) {
 
             if (model.type == ModelType.TTS) {
                 val ttsDir = File(modelDir, model.id)
-                var downloaded = ttsDir.exists() && ttsDir.isDirectory && (ttsDir.list()?.isNotEmpty() == true)
-
-                // Validate required files for specific TTS models (e.g., Soprano needs external data)
-                if (downloaded && model.id == "soprano-80m-onnx") {
-                    val required = listOf(
-                        "soprano_backbone_kv.onnx",
-                        "soprano_decoder.onnx",
-                        "soprano_decoder.onnx.data",
-                        "tokenizer.json"
-                    )
-                    val missing = required.any { name -> !File(ttsDir, name).exists() }
-                    if (missing) {
-                        downloaded = false
-                    }
-                }
+                val downloaded = TtsModelValidator.hasAllRequiredFiles(model.id, ttsDir)
 
                 model.isDownloaded = downloaded
                 // Partial check for TTS is simplified or we can check for a temp folder

@@ -33,6 +33,7 @@ import com.mewmix.nabu.data.ModelDownloader
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.data.Model
+import com.mewmix.nabu.data.TtsModelValidator
 import com.mewmix.nabu.data.UserPreferencesRepository
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalButtonText
@@ -65,7 +66,8 @@ fun InitScreen(
     val progressMap by modelDownloader.progress.collectAsState()
     val detailedProgressMap by modelDownloader.detailedProgress.collectAsState()
     val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
-    var selectedModel by remember { mutableStateOf<Model?>(ttsModels.firstOrNull()) }
+    val supertonicModels = ttsModels.filter { it.id.startsWith("supertonic") }
+    var selectedModel by remember { mutableStateOf<Model?>(supertonicModels.firstOrNull()) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -78,8 +80,10 @@ fun InitScreen(
             val completedModel = modelManager.models.firstOrNull { it.id == targetId }
             val completed = completedModel?.isDownloaded == true
             if (completed) {
-                DebugLogger.log("InitScreen: Supertonic download complete for ${completedModel?.name ?: targetId}")
+                DebugLogger.log("InitScreen: TTS download complete for ${completedModel?.name ?: targetId}")
                 downloadTargetId = null
+            } else {
+                DebugLogger.log("InitScreen: TTS download incomplete for ${completedModel?.name ?: targetId}")
             }
         }
     }
@@ -126,7 +130,7 @@ fun InitScreen(
             }
 
             if (engine == "supertonic") {
-                if (ttsModels.isNotEmpty()) {
+                if (supertonicModels.isNotEmpty()) {
                     ExposedDropdownMenuBox(
                         expanded = modelExpanded,
                         onExpandedChange = { modelExpanded = it }
@@ -142,7 +146,7 @@ fun InitScreen(
                             expanded = modelExpanded,
                             onDismissRequest = { modelExpanded = false }
                         ) {
-                            ttsModels.forEach { model ->
+                            supertonicModels.forEach { model ->
                                 DropdownMenuItem(
                                     text = { Text(model.name) },
                                     onClick = {
@@ -269,7 +273,11 @@ fun InitScreen(
                                 )
                             }
                         } else {
-                            val label = if (model.isDownloaded) "Downloaded" else "Download"
+                            val label = when {
+                                model.isDownloaded -> "Downloaded"
+                                model.hasPartial -> "Resume"
+                                else -> "Download"
+                            }
                             BrutalButton(
                                 onClick = {
                                     if (!model.isDownloaded) {
@@ -289,6 +297,31 @@ fun InitScreen(
 
             BrutalButton(
                 onClick = {
+                    if (engine == "supertonic") {
+                        val selected = selectedModel
+                        if (selected == null || !selected.isDownloaded) {
+                            Toast.makeText(
+                                context,
+                                "Select and download a Supertonic model before continuing.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@BrutalButton
+                        }
+                    }
+                    if (engine == "soprano") {
+                        val modelId = "soprano-80m-onnx"
+                        val modelDir = java.io.File(context.filesDir, "models/$modelId")
+                        val partialDir = java.io.File(context.filesDir, "models/${modelId}_partial")
+                        val missing = TtsModelValidator.missingFiles(modelId, modelDir, partialDir)
+                        if (missing.isNotEmpty()) {
+                            Toast.makeText(
+                                context,
+                                "Soprano download incomplete. Missing: ${missing.joinToString()}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@BrutalButton
+                        }
+                    }
                     SettingsManager.setTtsEngine(context, engine)
                     if (engine == "supertonic") {
                         SettingsManager.setSupertonicModelId(context, selectedModel?.id)

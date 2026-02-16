@@ -9,6 +9,7 @@ import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import java.io.File
 import com.mewmix.nabu.data.ModelManager
+import com.mewmix.nabu.data.TtsModelValidator
 import ai.onnxruntime.OrtEnvironment
 import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.kokoro.RunEp
@@ -108,18 +109,35 @@ object TTSManager {
             DebugLogger.log("TTSManager: Preference=Soprano. Verifying local model files...")
             val modelId = SOPRANO_MODEL_ID
             val modelDir = File(context.filesDir, "models/$modelId")
-            val required = listOf(
-                "soprano_backbone_kv.onnx",
-                "soprano_decoder.onnx",
-                "soprano_decoder.onnx.data",
-                "tokenizer.json"
-            )
-            val missing = required.filter { !File(modelDir, it).exists() }
+            val partialDir = File(context.filesDir, "models/${modelId}_partial")
+            val validInTarget = TtsModelValidator.hasAllRequiredFiles(modelId, modelDir)
+            val validInPartial = TtsModelValidator.hasAllRequiredFiles(modelId, partialDir)
 
-            if (missing.isEmpty()) {
+            val resolvedModelDir = when {
+                validInTarget -> modelDir
+                validInPartial -> {
+                    DebugLogger.log("TTSManager: Soprano complete in partial dir; promoting to final dir")
+                    val promoted = runCatching {
+                        if (modelDir.exists()) modelDir.deleteRecursively()
+                        if (!partialDir.renameTo(modelDir)) {
+                            partialDir.copyRecursively(modelDir, overwrite = true)
+                            partialDir.deleteRecursively()
+                        }
+                        modelDir
+                    }.getOrElse {
+                        DebugLogger.log("TTSManager: Failed to promote partial soprano dir: ${it.message}")
+                        partialDir
+                    }
+                    promoted
+                }
+                else -> null
+            }
+            val missing = TtsModelValidator.missingFiles(modelId, modelDir, partialDir)
+
+            if (resolvedModelDir != null) {
                 try {
-                    DebugLogger.log("TTSManager: Loading Soprano from ${modelDir.absolutePath}")
-                    val engine = SopranoEngine(modelDir, OrtEnvironment.getEnvironment())
+                    DebugLogger.log("TTSManager: Loading Soprano from ${resolvedModelDir.absolutePath}")
+                    val engine = SopranoEngine(resolvedModelDir, OrtEnvironment.getEnvironment())
                     activeEngine = BenchmarkingTTSEngine(engine)
                     activeEngineKind = EngineKind.SOPRANO
                     activeRuntimePreference = RunEp.CPU

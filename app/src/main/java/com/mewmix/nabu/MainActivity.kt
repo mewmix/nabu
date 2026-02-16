@@ -94,6 +94,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import java.util.Locale
 import com.mewmix.nabu.data.ModelManager
+import com.mewmix.nabu.data.TtsModelValidator
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.screens.InitScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -102,6 +103,7 @@ import com.mewmix.nabu.ui.components.GlobalStatusBar
 import com.mewmix.nabu.ui.components.RuntimeStatusLine
 import com.mewmix.nabu.data.ModelState
 import androidx.compose.runtime.collectAsState
+import java.io.File
 
 const val EXTRA_START_SCREEN = "start_screen"
 const val EXTRA_BOOK_URI = "book_uri"
@@ -235,8 +237,22 @@ private fun generateAudio(
         com.mewmix.nabu.utils.DebugLogger.log("Main.generateAudio: requesting engine")
         val engine = com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
         if (engine == null) {
+             val preferredEngine = SettingsManager.getTtsEngine(context)
+             val unavailableMessage = if (preferredEngine == "soprano") {
+                 val modelId = "soprano-80m-onnx"
+                 val modelDir = File(context.filesDir, "models/$modelId")
+                 val partialDir = File(context.filesDir, "models/${modelId}_partial")
+                 val missing = TtsModelValidator.missingFiles(modelId, modelDir, partialDir)
+                 if (missing.isEmpty()) {
+                     "Soprano model is not ready yet. Please retry download."
+                 } else {
+                     "Soprano download incomplete. Missing: ${missing.joinToString()}"
+                 }
+             } else {
+                 "No TTS engine available"
+             }
              withContext(Dispatchers.Main) {
-                Toast.makeText(context, "No TTS engine available", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, unavailableMessage, Toast.LENGTH_LONG).show()
                 onComplete()
             }
             return@launch

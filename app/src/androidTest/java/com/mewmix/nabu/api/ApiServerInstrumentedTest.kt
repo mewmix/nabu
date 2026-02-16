@@ -12,6 +12,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.net.Socket
 
@@ -34,6 +35,7 @@ class ApiServerInstrumentedTest {
         ApiServerManager.stop()
         SettingsManager.setApiEnabled(context, false)
         SettingsManager.setApiLanEnabled(context, false)
+        removeDummyTaskModel(NON_VISION_MODEL_ID)
     }
 
     @Test
@@ -47,12 +49,21 @@ class ApiServerInstrumentedTest {
         assertEquals(200, legacyModels.first)
         val legacyModelsJson = JSONObject(legacyModels.second)
         assertTrue(legacyModelsJson.has("models"))
+        val legacyData = legacyModelsJson.optJSONArray("models")
+        if (legacyData != null && legacyData.length() > 0) {
+            assertTrue(legacyData.getJSONObject(0).has("capabilities"))
+        }
 
         val models = rawHttpGet("/v1/models")
         assertEquals(200, models.first)
         val modelsJson = JSONObject(models.second)
         assertEquals("list", modelsJson.optString("object"))
         assertTrue(modelsJson.has("data"))
+        val v1Data = modelsJson.optJSONArray("data")
+        if (v1Data != null && v1Data.length() > 0) {
+            val metadata = v1Data.getJSONObject(0).optJSONObject("metadata")
+            assertTrue(metadata?.has("capabilities") == true)
+        }
 
         val ttsModels = rawHttpGet("/models?type=tts")
         assertEquals(200, ttsModels.first)
@@ -79,6 +90,132 @@ class ApiServerInstrumentedTest {
         assertEquals(400, postOpenAiTtsMissingInput.first)
         val postOpenAiTtsMissingInputJson = JSONObject(postOpenAiTtsMissingInput.second)
         assertTrue(postOpenAiTtsMissingInputJson.has("error"))
+    }
+
+    @Test
+    fun generateRejectsInvalidImageAndReplyTtsPayloads() {
+        val invalidImage = rawHttpPost(
+            "/generate",
+            """
+                {
+                  "prompt":"describe the image",
+                  "image_base64":"not-a-valid-base64"
+                }
+            """.trimIndent()
+        )
+        assertEquals(400, invalidImage.first)
+        assertTrue(JSONObject(invalidImage.second).has("error"))
+
+        val invalidReplyTts = rawHttpPost(
+            "/generate",
+            """
+                {
+                  "prompt":"hello",
+                  "tts":{
+                    "enabled":true,
+                    "response_format":"wav"
+                  }
+                }
+            """.trimIndent()
+        )
+        assertEquals(400, invalidReplyTts.first)
+        assertTrue(JSONObject(invalidReplyTts.second).has("error"))
+
+        val streamWithReplyTts = rawHttpPost(
+            "/generate",
+            """
+                {
+                  "prompt":"hello",
+                  "stream":true,
+                  "tts":true
+                }
+            """.trimIndent()
+        )
+        assertEquals(400, streamWithReplyTts.first)
+        assertTrue(JSONObject(streamWithReplyTts.second).has("error"))
+
+        val unsupportedRemoteImage = rawHttpPost(
+            "/v1/chat/completions",
+            """
+                {
+                  "messages":[
+                    {
+                      "role":"user",
+                      "content":[
+                        {"type":"text","text":"what is this"},
+                        {"type":"image_url","image_url":{"url":"https://example.com/image.png"}}
+                      ]
+                    }
+                  ]
+                }
+            """.trimIndent()
+        )
+        assertEquals(400, unsupportedRemoteImage.first)
+        assertTrue(JSONObject(unsupportedRemoteImage.second).has("error"))
+
+        val streamChatWithReplyTts = rawHttpPost(
+            "/v1/chat/completions",
+            """
+                {
+                  "stream":true,
+                  "tts":{"enabled":true},
+                  "messages":[
+                    {"role":"user","content":"hello"}
+                  ]
+                }
+            """.trimIndent()
+        )
+        assertEquals(400, streamChatWithReplyTts.first)
+        assertTrue(JSONObject(streamChatWithReplyTts.second).has("error"))
+    }
+
+    @Test
+    fun generateImageRequestsAreGatedToVisionModels() {
+        installDummyTaskModel(NON_VISION_MODEL_ID)
+
+        val explicitUnsupportedModel = rawHttpPost(
+            "/generate",
+            """
+                {
+                  "model":"$NON_VISION_MODEL_ID",
+                  "prompt":"what is in this image?",
+                  "image_base64":"$ONE_PIXEL_IMAGE_BASE64"
+                }
+            """.trimIndent()
+        )
+        assertEquals(400, explicitUnsupportedModel.first)
+        val explicitErrorMessage = JSONObject(explicitUnsupportedModel.second)
+            .optJSONObject("error")
+            ?.optString("message")
+            .orEmpty()
+        assertTrue(explicitErrorMessage.contains("does not support image input"))
+
+        val imageOnlyWithoutPrompt = rawHttpPost(
+            "/generate",
+            """
+                {
+                  "image_base64":"$ONE_PIXEL_IMAGE_BASE64"
+                }
+            """.trimIndent()
+        )
+        assertEquals(400, imageOnlyWithoutPrompt.first)
+        val imageOnlyErrorMessage = JSONObject(imageOnlyWithoutPrompt.second)
+            .optJSONObject("error")
+            ?.optString("message")
+            .orEmpty()
+        assertTrue(imageOnlyErrorMessage.contains("image-capable"))
+    }
+
+    private fun installDummyTaskModel(modelId: String) {
+        val modelDir = File(context.filesDir, "models")
+        if (!modelDir.exists()) {
+            modelDir.mkdirs()
+        }
+        File(modelDir, "$modelId.task").writeBytes(byteArrayOf(0x01.toByte()))
+    }
+
+    private fun removeDummyTaskModel(modelId: String) {
+        File(context.filesDir, "models/$modelId.task").delete()
     }
 
     private fun rawHttpGet(path: String): Pair<Int, String> {
@@ -148,5 +285,11 @@ class ApiServerInstrumentedTest {
             }
             return statusCode to body
         }
+    }
+
+    companion object {
+        private const val NON_VISION_MODEL_ID = "gemma3-1b-it-q4"
+        private const val ONE_PIXEL_IMAGE_BASE64 =
+            "Qk02AAAAAAAAADYAAAAoAAAAAQAAAAEAAAABABgAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAA////AA=="
     }
 }

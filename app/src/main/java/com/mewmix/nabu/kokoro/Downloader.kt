@@ -96,9 +96,8 @@ object Downloader {
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             target.parentFile?.mkdirs()
-            val contentLength = fetchContentLength(url, headers) ?: -1L
             rangeDownload(url, target, headers) { downloaded ->
-                onProgress(downloaded, contentLength)
+                onProgress(downloaded, -1L)
             }
         }
     }
@@ -172,22 +171,4 @@ object Downloader {
         }
     }
 
-    private fun fetchContentLength(url: String, headers: Map<String, String>): Long? {
-        return try {
-            val requestBuilder = Request.Builder()
-                .url(url)
-                .head()
-                .header("User-Agent", "Nabu/1.0 KokoroDownloader")
-                .header("Accept-Encoding", "identity")
-            headers.forEach { (name, value) ->
-                requestBuilder.header(name, value)
-            }
-            client.newCall(requestBuilder.build()).execute().use { response ->
-                if (!response.isSuccessful) return null
-                response.header("Content-Length")?.toLongOrNull()?.takeIf { it > 0L }
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
 }

@@ -4,6 +4,7 @@ import com.mewmix.nabu.kokoro.Downloader
 import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -14,6 +15,10 @@ class ModelDownloader(
     private val context: android.content.Context,
     private val userPreferencesRepository: UserPreferencesRepository,
 ) {
+    companion object {
+        private val activeModelDownloads = mutableSetOf<String>()
+    }
+
     data class DetailedProgress(
         val currentFile: String,
         val downloadedBytes: Long,
@@ -34,11 +39,24 @@ class ModelDownloader(
     val detailedProgress: StateFlow<Map<String, DetailedProgress>> = _detailedProgress
 
     fun downloadModel(model: Model) {
+        val acquired = synchronized(activeModelDownloads) {
+            activeModelDownloads.add(model.id)
+        }
+        if (!acquired) {
+            DebugLogger.log("ModelDownloader: Download already in progress for ${model.id}, skipping duplicate request")
+            return
+        }
         scope.launch {
-            if (model.type == ModelType.TTS) {
-                downloadTtsModel(model)
-            } else {
-                downloadLlmModel(model)
+            try {
+                if (model.type == ModelType.TTS) {
+                    downloadTtsModel(model)
+                } else {
+                    downloadLlmModel(model)
+                }
+            } finally {
+                synchronized(activeModelDownloads) {
+                    activeModelDownloads.remove(model.id)
+                }
             }
         }
     }
@@ -54,7 +72,7 @@ class ModelDownloader(
         val headers = authHeaders(token)
         val baseUrl = ttsBaseUrl(model)
 
-        val allPresent = hasAllFiles(targetDir, fileSpecs)
+        val allPresent = hasAllFiles(model.id, targetDir, fileSpecs)
         if (allPresent) {
             model.isDownloaded = true
             model.hasPartial = false
@@ -62,23 +80,30 @@ class ModelDownloader(
             return
         }
 
-        val missingSpecs = if (targetDir.exists()) {
-            fileSpecs.filter { !File(targetDir, it.localPath).exists() }
-        } else {
-            fileSpecs
+        val destinationRoot = when {
+            targetDir.exists() -> targetDir
+            partialDir.exists() -> partialDir
+            else -> {
+                partialDir.mkdirs()
+                partialDir
+            }
+        }
+        val missingSpecs = fileSpecs.filter { spec ->
+            !TtsModelValidator.isFileValid(model.id, spec.localPath, File(destinationRoot, spec.localPath))
         }
 
         if (missingSpecs.isEmpty()) {
-            model.isDownloaded = true
+            // If all files are valid in partial dir, promote it to final destination.
+            if (destinationRoot == partialDir) {
+                if (targetDir.exists()) targetDir.deleteRecursively()
+                if (!partialDir.renameTo(targetDir)) {
+                    partialDir.copyRecursively(targetDir, overwrite = true)
+                    partialDir.deleteRecursively()
+                }
+            }
+            model.isDownloaded = hasAllFiles(model.id, targetDir, fileSpecs)
             model.hasPartial = false
             return
-        }
-
-        val destinationRoot = if (targetDir.exists()) {
-            targetDir
-        } else {
-            if (!partialDir.exists()) partialDir.mkdirs()
-            partialDir
         }
 
         model.hasPartial = true
@@ -89,8 +114,19 @@ class ModelDownloader(
             missingSpecs.forEachIndexed { index, spec ->
                 val fileUrl = buildFileUrl(baseUrl, spec.remotePath)
                 val destFile = File(destinationRoot, spec.localPath)
+                val partFile = File(destinationRoot, "${spec.localPath}.part")
                 val displayName = spec.localPath.substringAfterLast('/')
                 val baseFraction = index.toFloat() / totalFiles.toFloat()
+
+                destFile.parentFile?.mkdirs()
+                partFile.parentFile?.mkdirs()
+                if (destFile.exists() && !TtsModelValidator.isFileValid(model.id, spec.localPath, destFile)) {
+                    destFile.delete()
+                }
+                if (destFile.exists() && !partFile.exists()) {
+                    // Resume into .part to avoid treating interrupted final files as complete.
+                    destFile.renameTo(partFile)
+                }
 
                 updateProgress(
                     modelId = model.id,
@@ -100,25 +136,55 @@ class ModelDownloader(
                     fraction = baseFraction
                 )
 
-                Downloader.downloadFile(
-                    url = fileUrl,
-                    target = destFile,
-                    headers = headers
-                ) { downloadedBytes, totalBytes ->
-                    val fileFraction = if (totalBytes > 0L) {
-                        downloadedBytes.toFloat() / totalBytes.toFloat()
-                    } else {
-                        0f
+                DebugLogger.log("ModelDownloader: Downloading ${model.id}/${spec.localPath}")
+                val maxAttempts = 3
+                var attempt = 1
+                while (true) {
+                    try {
+                        Downloader.downloadFile(
+                            url = fileUrl,
+                            target = partFile,
+                            headers = headers
+                        ) { downloadedBytes, totalBytes ->
+                            val fileFraction = if (totalBytes > 0L) {
+                                downloadedBytes.toFloat() / totalBytes.toFloat()
+                            } else {
+                                0f
+                            }
+                            val overall = (index.toFloat() + fileFraction) / totalFiles.toFloat()
+                            updateProgress(
+                                modelId = model.id,
+                                currentFile = displayName,
+                                downloadedBytes = downloadedBytes,
+                                totalBytes = totalBytes,
+                                fraction = overall
+                            )
+                        }.getOrThrow()
+                        break
+                    } catch (e: Exception) {
+                        if (attempt >= maxAttempts) {
+                            throw e
+                        }
+                        val backoffMs = 1500L * attempt
+                        DebugLogger.log(
+                            "ModelDownloader: Retry $attempt/$maxAttempts for ${model.id}/${spec.localPath} after error: ${e.message}"
+                        )
+                        delay(backoffMs)
+                        attempt += 1
                     }
-                    val overall = (index.toFloat() + fileFraction) / totalFiles.toFloat()
-                    updateProgress(
-                        modelId = model.id,
-                        currentFile = displayName,
-                        downloadedBytes = downloadedBytes,
-                        totalBytes = totalBytes,
-                        fraction = overall
+                }
+
+                if (!TtsModelValidator.isFileValid(model.id, spec.localPath, partFile)) {
+                    throw IllegalStateException(
+                        "Downloaded file is invalid/incomplete: ${spec.localPath} (${partFile.length()} bytes)"
                     )
-                }.getOrThrow()
+                }
+                if (destFile.exists()) destFile.delete()
+                if (!partFile.renameTo(destFile)) {
+                    partFile.copyTo(destFile, overwrite = true)
+                    partFile.delete()
+                }
+                DebugLogger.log("ModelDownloader: Completed ${model.id}/${spec.localPath} (${destFile.length()} bytes)")
 
                 val destSize = destFile.length().coerceAtLeast(1L)
                 updateProgress(
@@ -138,11 +204,11 @@ class ModelDownloader(
                 }
             }
 
-            model.isDownloaded = hasAllFiles(targetDir, fileSpecs)
+            model.isDownloaded = hasAllFiles(model.id, targetDir, fileSpecs)
             model.hasPartial = !model.isDownloaded && (partialDir.exists() || targetDir.exists())
             DebugLogger.log("ModelDownloader: Download of ${model.name} completed")
         } catch (e: Exception) {
-            model.isDownloaded = hasAllFiles(targetDir, fileSpecs)
+            model.isDownloaded = hasAllFiles(model.id, targetDir, fileSpecs)
             model.hasPartial = !model.isDownloaded && (partialDir.exists() || targetDir.exists())
             DebugLogger.log("ModelDownloader: Error downloading ${model.name}: ${e.message}")
         } finally {
@@ -253,9 +319,11 @@ class ModelDownloader(
     private fun buildFileUrl(baseUrl: String, remotePath: String): String =
         "$baseUrl${remotePath}?download=true"
 
-    private fun hasAllFiles(rootDir: File, specs: List<DownloadFileSpec>): Boolean {
+    private fun hasAllFiles(modelId: String, rootDir: File, specs: List<DownloadFileSpec>): Boolean {
         if (!rootDir.exists()) return false
-        return specs.all { spec -> File(rootDir, spec.localPath).exists() }
+        return specs.all { spec ->
+            TtsModelValidator.isFileValid(modelId, spec.localPath, File(rootDir, spec.localPath))
+        }
     }
 
     private fun authHeaders(token: String?): Map<String, String> {

@@ -8,9 +8,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
+import com.mewmix.nabu.data.TtsModelValidator
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.SettingsManager
+import java.io.File
 
 @Composable
 fun RuntimeStatusLine(
@@ -25,6 +27,10 @@ fun RuntimeStatusLine(
         modelManager.models.firstOrNull { it.type == ModelType.TTS && it.id == id }?.name
     }
     val supertonicModelLabel = supertonicModelName ?: supertonicModelId
+    val sopranoModelId = "soprano-80m-onnx"
+    val sopranoDir = File(context.filesDir, "models/$sopranoModelId")
+    val sopranoPartialDir = File(context.filesDir, "models/${sopranoModelId}_partial")
+    val sopranoMissing = TtsModelValidator.missingFiles(sopranoModelId, sopranoDir, sopranoPartialDir)
 
     val runtimeLabel = if (ttsEngine == "supertonic") {
         buildString {
@@ -32,7 +38,11 @@ fun RuntimeStatusLine(
             supertonicModelLabel?.let { append(" / $it") }
         }
     } else if (ttsEngine == "soprano") {
-        "SOPRANO / CPU / soprano-80m-onnx"
+        if (sopranoMissing.isEmpty()) {
+            "SOPRANO / CPU / soprano-80m-onnx"
+        } else {
+            "SOPRANO / CPU / incomplete download (${sopranoMissing.size} missing)"
+        }
     } else {
         if (runtimeStatus == null) {
             "KOKORO / LOADING..."

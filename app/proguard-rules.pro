@@ -33,6 +33,10 @@
 -keep class com.google.gson.** { *; }
 -keepattributes Signature
 -keepattributes *Annotation*
+# Soprano tokenizer schema is parsed reflectively by Gson at runtime.
+# Keep nested model classes to prevent release obfuscation from turning
+# schema types into non-instantiable abstract references.
+-keep class com.mewmix.nabu.soprano.SopranoTokenizer$* { *; }
 
 # LiteRT / MediaPipe LLM rules (prevent proto field stripping)
 -keep class com.google.ai.edge.litert.** { *; }
@@ -46,3 +50,8 @@
 
 # Keep BuildConfig
 -keep class com.mewmix.nabu.BuildConfig { *; }
+
+# Ktor/SLF4J optional desktop-only hooks referenced by release shrinker
+-dontwarn java.lang.management.ManagementFactory
+-dontwarn java.lang.management.RuntimeMXBean
+-dontwarn org.slf4j.impl.StaticLoggerBinder

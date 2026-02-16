@@ -2,6 +2,7 @@ package com.mewmix.nabu.galleryport
 
 import android.content.Context
 import com.google.mediapipe.tasks.genai.llminference.*
+import com.mewmix.nabu.chat.VisionModelSupport
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
@@ -10,14 +11,14 @@ import java.io.File
 class LlmController private constructor(val llm: LlmInference) {
 
     companion object {
-        private const val CHAT_MODEL_ID = "gemma-2b-it-cpu"
         fun bootstrap(ctx: Context): LlmController? {
             val modelManager = com.mewmix.nabu.data.ModelManager(ctx)
-            val model = modelManager.getModel(CHAT_MODEL_ID)
-
-            if (model == null || !model.isDownloaded) {
-                return null
-            }
+            val model = modelManager.models.firstOrNull {
+                it.isDownloaded &&
+                    it.type == com.mewmix.nabu.data.ModelType.LLM &&
+                    it.backend == "mediapipe" &&
+                    VisionModelSupport.supportsImageInput(it.id)
+            } ?: return null
 
             val modelFile = File(ctx.filesDir, "models/${model.id}.task")
             if (!modelFile.exists()) return null
