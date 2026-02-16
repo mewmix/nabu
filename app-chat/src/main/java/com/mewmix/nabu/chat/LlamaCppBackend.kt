@@ -157,6 +157,16 @@ class LlamaCppBackend(
         }
     }
 
+    override fun supportsImageInput(): Boolean = false
+
+    override fun sendMessage(
+        conversation: List<LlmMessage>,
+        image: LlmImageInput,
+        resultListener: (partialResult: String, done: Boolean) -> Unit
+    ) {
+        resultListener("Image input is not supported by llama.cpp backend.", true)
+    }
+
     private fun buildConversationPrompt(conversation: List<LlmMessage>): String {
         val sb = StringBuilder()
         conversation.forEach { message ->

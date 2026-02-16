@@ -1,10 +1,13 @@
 package com.mewmix.nabu.api
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import com.mewmix.nabu.chat.LlamaCppBackend
 import com.mewmix.nabu.chat.LlmBackend
+import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.LlmMessage
 import com.mewmix.nabu.chat.MediaPipeBackend
+import com.mewmix.nabu.chat.VisionModelSupport
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.kokoro.KokoroEngine
@@ -62,9 +65,11 @@ class ApiServer(
     private val styleLoader by lazy { StyleLoader(context) }
 
     companion object {
+        private const val DEFAULT_IMAGE_PROMPT = "Describe this image."
         private const val DEFAULT_TTS_VOICE = "af_sky"
         private val SUPPORTED_TTS_ENGINES = setOf("kokoro", "supertonic", "soprano")
         private val SUPPORTED_TTS_FORMATS = setOf("wav", "json")
+        private val SUPPORTED_LLM_REPLY_TTS_FORMATS = setOf("json")
     }
 
     fun start() {
@@ -155,9 +160,15 @@ class ApiServer(
         try {
             val body = JSONObject(call.receiveText())
             val requestedModel = body.optString("model").ifBlank { null }
-            val prompt = body.optString("prompt").trim()
+            var prompt = body.optString("prompt").trim()
             val messageArray = body.optJSONArray("messages")
             val stream = body.optBoolean("stream", false)
+            val replyTts = parseReplyTtsRequest(body)
+            val topLevelImage = parseTopLevelImageInput(body)
+
+            if (messageArray == null && topLevelImage != null && prompt.isEmpty()) {
+                prompt = DEFAULT_IMAGE_PROMPT
+            }
 
             if (prompt.isEmpty() && messageArray == null) {
                 respondApiError(
@@ -168,21 +179,50 @@ class ApiServer(
                 return
             }
 
+            if (stream && replyTts != null) {
+                respondApiError(
+                    call = call,
+                    status = HttpStatusCode.BadRequest,
+                    message = "'tts' is not supported when stream=true."
+                )
+                return
+            }
+
             if (stream) {
                 if (messageArray != null) {
+                    val parsedMessages = parseMessages(messageArray)
+                    if (topLevelImage != null) {
+                        throw IllegalArgumentException("Do not provide top-level image fields when 'messages' already include image content.")
+                    }
                     streamGenerateSse(
                         call = call,
                         requestedModel = requestedModel,
-                        sendGeneration = { backend, listener ->
-                            backend.sendMessage(parseMessages(messageArray), listener)
+                        requireImageInput = parsedMessages.image != null,
+                        sendGeneration = { modelId, backend, listener ->
+                            ensureImageInputSupported(modelId, backend, parsedMessages.image)
+                            if (parsedMessages.image != null) {
+                                backend.sendMessage(parsedMessages.messages, parsedMessages.image, listener)
+                            } else {
+                                backend.sendMessage(parsedMessages.messages, listener)
+                            }
                         }
                     )
                 } else {
                     streamGenerateSse(
                         call = call,
                         requestedModel = requestedModel,
-                        sendGeneration = { backend, listener ->
-                            backend.sendMessage(prompt, listener)
+                        requireImageInput = topLevelImage != null,
+                        sendGeneration = { modelId, backend, listener ->
+                            ensureImageInputSupported(modelId, backend, topLevelImage)
+                            if (topLevelImage != null) {
+                                backend.sendMessage(
+                                    listOf(LlmMessage(role = "user", content = prompt)),
+                                    topLevelImage,
+                                    listener
+                                )
+                            } else {
+                                backend.sendMessage(prompt, listener)
+                            }
                         }
                     )
                 }
@@ -190,14 +230,29 @@ class ApiServer(
             }
 
             val generation = if (messageArray != null) {
-                generateFromMessages(requestedModel, parseMessages(messageArray))
+                val parsedMessages = parseMessages(messageArray)
+                if (topLevelImage != null) {
+                    throw IllegalArgumentException("Do not provide top-level image fields when 'messages' already include image content.")
+                }
+                generateFromMessages(requestedModel, parsedMessages.messages, parsedMessages.image)
             } else {
-                generateFromPrompt(requestedModel, prompt)
+                generateFromPrompt(requestedModel, prompt, topLevelImage)
             }
 
             val response = JSONObject()
                 .put("model", generation.modelId)
                 .put("text", generation.text)
+            maybeSynthesizeReplyTts(replyTts, generation.text)?.let { tts ->
+                val wavBytes = toWavBytes(tts.audio, tts.sampleRate)
+                response.put(
+                    "audio",
+                    JSONObject()
+                        .put("engine", tts.engine)
+                        .put("model", tts.modelId)
+                        .put("sample_rate", tts.sampleRate)
+                        .put("audio_base64", Base64.getEncoder().encodeToString(wavBytes))
+                )
+            }
 
             call.respondText(
                 text = response.toString(),
@@ -233,6 +288,7 @@ class ApiServer(
                             .put("name", model.name)
                             .put("backend", modelBackend(model))
                             .put("type", model.type.name.lowercase())
+                            .put("capabilities", JSONArray(modelCapabilities(model).toList()))
                     )
                 }
             }
@@ -269,7 +325,8 @@ class ApiServer(
                             .put("owned_by", "local")
                             .put("metadata", JSONObject()
                                 .put("type", model.type.name.lowercase())
-                                .put("backend", modelBackend(model)))
+                                .put("backend", modelBackend(model))
+                                .put("capabilities", JSONArray(modelCapabilities(model).toList())))
                     )
                 }
             }
@@ -296,6 +353,7 @@ class ApiServer(
         try {
             val body = JSONObject(call.receiveText())
             val stream = body.optBoolean("stream", false)
+            val replyTts = parseReplyTtsRequest(body)
 
             val requestedModel = body.optString("model").ifBlank { null }
             val messageArray = body.optJSONArray("messages")
@@ -308,17 +366,25 @@ class ApiServer(
                 return
             }
 
-            val messages = parseMessages(messageArray)
+            val parsedMessages = parseMessages(messageArray)
+            if (stream && replyTts != null) {
+                respondApiError(
+                    call = call,
+                    status = HttpStatusCode.BadRequest,
+                    message = "'tts' is not supported when stream=true."
+                )
+                return
+            }
             if (stream) {
                 streamChatCompletionsSse(
                     call = call,
                     requestedModel = requestedModel,
-                    messages = messages
+                    payload = parsedMessages
                 )
                 return
             }
 
-            val generation = generateFromMessages(requestedModel, messages)
+            val generation = generateFromMessages(requestedModel, parsedMessages.messages, parsedMessages.image)
             val nowSeconds = System.currentTimeMillis() / 1000L
 
             val choice = JSONObject()
@@ -344,6 +410,17 @@ class ApiServer(
                         .put("completion_tokens", 0)
                         .put("total_tokens", 0)
                 )
+            maybeSynthesizeReplyTts(replyTts, generation.text)?.let { tts ->
+                val wavBytes = toWavBytes(tts.audio, tts.sampleRate)
+                response.put(
+                    "audio",
+                    JSONObject()
+                        .put("engine", tts.engine)
+                        .put("model", tts.modelId)
+                        .put("sample_rate", tts.sampleRate)
+                        .put("audio_base64", Base64.getEncoder().encodeToString(wavBytes))
+                )
+            }
 
             call.respondText(
                 text = response.toString(),
@@ -368,7 +445,8 @@ class ApiServer(
     private suspend fun streamGenerateSse(
         call: io.ktor.server.application.ApplicationCall,
         requestedModel: String?,
-        sendGeneration: (LlmBackend, (String, Boolean) -> Unit) -> Unit
+        requireImageInput: Boolean = false,
+        sendGeneration: (String, LlmBackend, (String, Boolean) -> Unit) -> Unit
     ) {
         call.respondTextWriter(
             contentType = ContentType.Text.EventStream,
@@ -378,14 +456,14 @@ class ApiServer(
             val created = System.currentTimeMillis() / 1000L
             try {
                 requestLock.withLock {
-                    val (modelId, activeBackend) = getOrCreateBackend(requestedModel)
+                    val (modelId, activeBackend) = getOrCreateBackend(requestedModel, requireImageInput)
                     when (activeBackend) {
                         is LlamaCppBackend -> activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
                         is MediaPipeBackend -> activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
                     }
 
                     val stream = Channel<StreamEvent>(Channel.UNLIMITED)
-                    sendGeneration(activeBackend) { partial, done ->
+                    sendGeneration(modelId, activeBackend) { partial, done ->
                         if (partial.isNotEmpty()) {
                             stream.trySend(StreamEvent.Token(partial))
                         }
@@ -443,7 +521,7 @@ class ApiServer(
     private suspend fun streamChatCompletionsSse(
         call: io.ktor.server.application.ApplicationCall,
         requestedModel: String?,
-        messages: List<LlmMessage>
+        payload: ParsedMessages
     ) {
         call.respondTextWriter(
             contentType = ContentType.Text.EventStream,
@@ -453,21 +531,35 @@ class ApiServer(
             val created = System.currentTimeMillis() / 1000L
             try {
                 requestLock.withLock {
-                    val (modelId, activeBackend) = getOrCreateBackend(requestedModel)
+                    val (modelId, activeBackend) = getOrCreateBackend(requestedModel, payload.image != null)
                     when (activeBackend) {
                         is LlamaCppBackend -> activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
                         is MediaPipeBackend -> activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
                     }
 
                     val stream = Channel<StreamEvent>(Channel.UNLIMITED)
-                    activeBackend.sendMessage(messages) { partial, done ->
-                        if (partial.isNotEmpty()) {
-                            stream.trySend(StreamEvent.Token(partial))
+                    ensureImageInputSupported(modelId, activeBackend, payload.image)
+                    if (payload.image != null) {
+                        activeBackend.sendMessage(payload.messages, payload.image) { partial, done ->
+                            if (partial.isNotEmpty()) {
+                                stream.trySend(StreamEvent.Token(partial))
+                            }
+                            if (done) {
+                                stream.trySend(StreamEvent.Done)
+                                stream.close()
+                                return@sendMessage
+                            }
                         }
-                        if (done) {
-                            stream.trySend(StreamEvent.Done)
-                            stream.close()
-                            return@sendMessage
+                    } else {
+                        activeBackend.sendMessage(payload.messages) { partial, done ->
+                            if (partial.isNotEmpty()) {
+                                stream.trySend(StreamEvent.Token(partial))
+                            }
+                            if (done) {
+                                stream.trySend(StreamEvent.Done)
+                                stream.close()
+                                return@sendMessage
+                            }
                         }
                     }
 
@@ -674,41 +766,64 @@ class ApiServer(
         )
     }
 
-    private suspend fun generateFromPrompt(requestedModel: String?, prompt: String): GenerationResult {
-        return requestLock.withLock {
-            val (modelId, activeBackend) = getOrCreateBackend(requestedModel)
-            if (activeBackend is LlamaCppBackend) {
-                activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
-            } else if (activeBackend is MediaPipeBackend) {
-                activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
+    private suspend fun generateFromPrompt(
+        requestedModel: String?,
+        prompt: String,
+        image: LlmImageInput? = null
+    ): GenerationResult {
+        if (image == null) {
+            return requestLock.withLock {
+                val (modelId, activeBackend) = getOrCreateBackend(requestedModel, false)
+                if (activeBackend is LlamaCppBackend) {
+                    activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
+                } else if (activeBackend is MediaPipeBackend) {
+                    activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
+                }
+                val text = runGeneration { listener ->
+                    activeBackend.sendMessage(prompt, listener)
+                }
+                GenerationResult(modelId = modelId, text = text)
             }
-            val text = runGeneration { listener ->
-                activeBackend.sendMessage(prompt, listener)
-            }
-            GenerationResult(modelId = modelId, text = text)
         }
+        return generateFromMessages(
+            requestedModel = requestedModel,
+            messages = listOf(LlmMessage(role = "user", content = prompt)),
+            image = image
+        )
     }
 
-    private suspend fun generateFromMessages(requestedModel: String?, messages: List<LlmMessage>): GenerationResult {
+    private suspend fun generateFromMessages(
+        requestedModel: String?,
+        messages: List<LlmMessage>,
+        image: LlmImageInput? = null
+    ): GenerationResult {
         if (messages.isEmpty()) {
             throw IllegalArgumentException("'messages' cannot be empty")
         }
 
         return requestLock.withLock {
-            val (modelId, activeBackend) = getOrCreateBackend(requestedModel)
+            val (modelId, activeBackend) = getOrCreateBackend(requestedModel, image != null)
             if (activeBackend is LlamaCppBackend) {
                 activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
             } else if (activeBackend is MediaPipeBackend) {
                 activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
             }
+            ensureImageInputSupported(modelId, activeBackend, image)
             val text = runGeneration { listener ->
-                activeBackend.sendMessage(messages, listener)
+                if (image != null) {
+                    activeBackend.sendMessage(messages, image, listener)
+                } else {
+                    activeBackend.sendMessage(messages, listener)
+                }
             }
             GenerationResult(modelId = modelId, text = text)
         }
     }
 
-    private fun getOrCreateBackend(requestedModelId: String?): Pair<String, LlmBackend> {
+    private fun getOrCreateBackend(
+        requestedModelId: String?,
+        requireImageInput: Boolean = false
+    ): Pair<String, LlmBackend> {
         synchronized(backendLock) {
             val availableModels = listAvailableModels(ModelScope.LLM)
             if (availableModels.isEmpty()) {
@@ -716,10 +831,23 @@ class ApiServer(
             }
 
             val targetModel = if (requestedModelId.isNullOrBlank()) {
-                availableModels.first()
+                if (requireImageInput) {
+                    availableModels.firstOrNull { modelSupportsImageInput(it) }
+                        ?: throw IllegalArgumentException(
+                            "No downloaded image-capable model available. Download an allowlisted multimodal model and retry."
+                        )
+                } else {
+                    availableModels.first()
+                }
             } else {
-                availableModels.firstOrNull { it.id == requestedModelId }
+                val requested = availableModels.firstOrNull { it.id == requestedModelId }
                     ?: throw IllegalArgumentException("Requested model is not available: $requestedModelId")
+                if (requireImageInput && !modelSupportsImageInput(requested)) {
+                    throw IllegalArgumentException(
+                        "Requested model '$requestedModelId' does not support image input."
+                    )
+                }
+                requested
             }
 
             if (backend != null && backendModelId == targetModel.id) {
@@ -763,6 +891,15 @@ class ApiServer(
         }
     }
 
+    private fun modelSupportsImageInput(model: com.mewmix.nabu.data.Model): Boolean {
+        if (!VisionModelSupport.supportsImageInput(model.id)) return false
+
+        val taskFile = File(context.filesDir, "models/${model.id}.task")
+        val ggufFile = File(context.filesDir, "models/${model.id}.gguf")
+        val isLlama = model.backend == "llama" || (ggufFile.exists() && !taskFile.exists())
+        return !isLlama
+    }
+
     private suspend fun runGeneration(
         send: (resultListener: (partialResult: String, done: Boolean) -> Unit) -> Unit
     ): String {
@@ -791,21 +928,145 @@ class ApiServer(
         }
     }
 
-    private fun parseMessages(input: JSONArray): List<LlmMessage> {
+    private fun parseMessages(input: JSONArray): ParsedMessages {
         val messages = mutableListOf<LlmMessage>()
+        var image: LlmImageInput? = null
+
         for (i in 0 until input.length()) {
             val item = input.optJSONObject(i) ?: continue
             val rawRole = item.optString("role").trim()
-            val content = item.optString("content").trim()
-            if (rawRole.isEmpty() || content.isEmpty()) continue
-
+            if (rawRole.isEmpty()) continue
             val role = when (rawRole.lowercase()) {
                 "assistant" -> "model"
                 else -> rawRole.lowercase()
             }
-            messages.add(LlmMessage(role = role, content = content))
+
+            val parsed = parseMessageContent(item, role)
+            if (parsed.content.isNotEmpty()) {
+                messages.add(LlmMessage(role = role, content = parsed.content))
+            }
+            if (parsed.image != null) {
+                if (image != null) {
+                    throw IllegalArgumentException("Only one image input is supported per request.")
+                }
+                image = parsed.image
+            }
         }
-        return messages
+
+        if (messages.isEmpty()) {
+            throw IllegalArgumentException("'messages' must include at least one non-empty content entry.")
+        }
+        return ParsedMessages(messages = messages, image = image)
+    }
+
+    private fun parseMessageContent(item: JSONObject, role: String): ParsedMessageContent {
+        val contentRaw = item.opt("content")
+        if (contentRaw is JSONArray) {
+            val textParts = mutableListOf<String>()
+            var image: LlmImageInput? = null
+            for (idx in 0 until contentRaw.length()) {
+                val part = contentRaw.optJSONObject(idx) ?: continue
+                when (part.optString("type").trim().lowercase()) {
+                    "text" -> {
+                        val text = part.optString("text").trim()
+                        if (text.isNotEmpty()) {
+                            textParts.add(text)
+                        }
+                    }
+                    "image_url" -> {
+                        if (role != "user") {
+                            throw IllegalArgumentException("Image input is only supported for user messages.")
+                        }
+                        if (image != null) {
+                            throw IllegalArgumentException("Only one image input is supported per request.")
+                        }
+                        val imageUrl = part.optJSONObject("image_url")
+                            ?.optString("url")
+                            ?.trim()
+                            ?.ifBlank { null }
+                            ?: part.optString("image_url").trim().ifBlank { null }
+                            ?: throw IllegalArgumentException("'image_url' entry is missing a usable 'url' value.")
+                        image = decodeImageInput(imageUrl)
+                    }
+                    else -> Unit
+                }
+            }
+            var content = textParts.joinToString("\n").trim()
+            if (image != null && content.isEmpty()) {
+                content = DEFAULT_IMAGE_PROMPT
+            }
+            return ParsedMessageContent(content = content, image = image)
+        }
+
+        return ParsedMessageContent(
+            content = item.optString("content").trim(),
+            image = null
+        )
+    }
+
+    private fun parseTopLevelImageInput(body: JSONObject): LlmImageInput? {
+        val imageBase64 = body.optString("image_base64").trim().ifBlank { null }
+        val imageUrl = when (val raw = body.opt("image_url")) {
+            is JSONObject -> raw.optString("url").trim().ifBlank { null }
+            is String -> raw.trim().ifBlank { null }
+            else -> null
+        }
+        val imageData = body.optString("image").trim().ifBlank { null }
+
+        val provided = listOfNotNull(imageBase64, imageUrl, imageData)
+        if (provided.isEmpty()) return null
+        if (provided.size > 1) {
+            throw IllegalArgumentException("Provide only one of: image_base64, image_url, image.")
+        }
+        return decodeImageInput(provided.first())
+    }
+
+    private fun decodeImageInput(raw: String): LlmImageInput {
+        val value = raw.trim()
+        if (value.isEmpty()) {
+            throw IllegalArgumentException("Image payload is empty.")
+        }
+        if (value.startsWith("http://", ignoreCase = true) || value.startsWith("https://", ignoreCase = true)) {
+            throw IllegalArgumentException("Remote image URLs are not supported. Provide a data URL or base64 image payload.")
+        }
+
+        val base64Payload = if (value.startsWith("data:", ignoreCase = true)) {
+            val commaIndex = value.indexOf(',')
+            if (commaIndex <= 0 || commaIndex >= value.length - 1) {
+                throw IllegalArgumentException("Invalid data URL image payload.")
+            }
+            val meta = value.substring(0, commaIndex)
+            if (!meta.contains(";base64", ignoreCase = true)) {
+                throw IllegalArgumentException("Only base64 data URL images are supported.")
+            }
+            value.substring(commaIndex + 1)
+        } else {
+            value
+        }
+
+        val imageBytes = try {
+            Base64.getDecoder().decode(base64Payload)
+        } catch (_: IllegalArgumentException) {
+            throw IllegalArgumentException("Image payload is not valid base64.")
+        }
+
+        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            ?: throw IllegalArgumentException("Unable to decode image payload.")
+        return LlmImageInput(bitmap = bitmap)
+    }
+
+    private fun ensureImageInputSupported(modelId: String, backend: LlmBackend, image: LlmImageInput?) {
+        if (image == null) return
+        if (!VisionModelSupport.supportsImageInput(modelId)) {
+            throw IllegalArgumentException(
+                "Model '$modelId' is not allowlisted for image input."
+            )
+        }
+        if (!backend.supportsImageInput()) {
+            throw IllegalArgumentException(
+                "Backend for model '$modelId' does not support image input."
+            )
+        }
     }
 
     private suspend fun Writer.writeSseData(payload: String) {
@@ -907,6 +1168,85 @@ class ApiServer(
                 }
             }
         }
+    }
+
+    private fun parseReplyTtsRequest(body: JSONObject): ReplyTtsRequest? {
+        if (!body.has("tts")) return null
+        val raw = body.opt("tts")
+        if (raw == null || raw == JSONObject.NULL) return null
+
+        if (raw is Boolean) {
+            if (!raw) return null
+            return ReplyTtsRequest(
+                speed = 1.0f,
+                voice = null,
+                target = resolveTtsTarget(
+                    requestedEngine = null,
+                    requestedModel = null,
+                    requestedSupertonicModel = null
+                ),
+                responseFormat = "json"
+            )
+        }
+
+        val ttsBody = raw as? JSONObject
+            ?: throw IllegalArgumentException("'tts' must be a boolean or an object.")
+        val enabled = if (ttsBody.has("enabled")) ttsBody.optBoolean("enabled", true) else true
+        if (!enabled) return null
+
+        val speed = ttsBody.optDouble("speed", 1.0).toFloat()
+        if (!speed.isFinite() || speed <= 0f) {
+            throw IllegalArgumentException("'tts.speed' must be a positive number.")
+        }
+
+        val responseFormat = ttsBody.optString("response_format")
+            .trim()
+            .lowercase()
+            .ifBlank { "json" }
+        if (responseFormat !in SUPPORTED_LLM_REPLY_TTS_FORMATS) {
+            throw IllegalArgumentException(
+                "Unsupported 'tts.response_format' '$responseFormat'. Use one of: ${SUPPORTED_LLM_REPLY_TTS_FORMATS.joinToString()}."
+            )
+        }
+
+        val voice = ttsBody.optString("voice")
+            .ifBlank { ttsBody.optString("style") }
+            .trim()
+            .ifBlank { null }
+
+        val requestedEngine = ttsBody.optString("engine").trim().lowercase().ifBlank { null }
+        val requestedModel = ttsBody.optString("model").trim().ifBlank { null }
+        val requestedSupertonicModel = ttsBody.optString("supertonic_model").trim().ifBlank { null }
+        val target = resolveTtsTarget(
+            requestedEngine = requestedEngine,
+            requestedModel = requestedModel,
+            requestedSupertonicModel = requestedSupertonicModel
+        )
+
+        return ReplyTtsRequest(
+            speed = speed,
+            voice = voice,
+            target = target,
+            responseFormat = responseFormat
+        )
+    }
+
+    private suspend fun maybeSynthesizeReplyTts(request: ReplyTtsRequest?, text: String): TtsSynthesisResult? {
+        if (request == null) return null
+        if (request.responseFormat != "json") {
+            throw IllegalArgumentException("Only 'json' TTS response format is supported for LLM replies.")
+        }
+        val normalizedText = text.trim()
+        if (normalizedText.isEmpty()) return null
+
+        return synthesizeTts(
+            TtsSynthesisRequest(
+                input = normalizedText,
+                speed = request.speed,
+                voice = request.voice,
+                target = request.target
+            )
+        )
     }
 
     private fun unwrapTtsEngine(engine: TTSEngine): TTSEngine =
@@ -1067,6 +1407,14 @@ class ApiServer(
         }
     }
 
+    private fun modelCapabilities(model: com.mewmix.nabu.data.Model): Set<String> {
+        return if (model.type == ModelType.TTS) {
+            setOf("tts")
+        } else {
+            VisionModelSupport.capabilitiesFor(model.id)
+        }
+    }
+
     private suspend fun parseModelScope(
         call: io.ktor.server.application.ApplicationCall,
         default: ModelScope
@@ -1128,6 +1476,16 @@ class ApiServer(
         val text: String
     )
 
+    private data class ParsedMessages(
+        val messages: List<LlmMessage>,
+        val image: LlmImageInput?
+    )
+
+    private data class ParsedMessageContent(
+        val content: String,
+        val image: LlmImageInput?
+    )
+
     private data class TtsRequestTarget(
         val engine: String,
         val supertonicModelId: String?
@@ -1145,6 +1503,13 @@ class ApiServer(
         val sampleRate: Int,
         val modelId: String,
         val engine: String
+    )
+
+    private data class ReplyTtsRequest(
+        val speed: Float,
+        val voice: String?,
+        val target: TtsRequestTarget,
+        val responseFormat: String
     )
 
     private sealed interface StreamEvent {

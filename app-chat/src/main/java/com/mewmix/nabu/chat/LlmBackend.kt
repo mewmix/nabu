@@ -13,6 +13,16 @@ interface LlmBackend {
         resultListener: (partialResult: String, done: Boolean) -> Unit
     )
 
+    fun supportsImageInput(): Boolean = false
+
+    fun sendMessage(
+        conversation: List<LlmMessage>,
+        image: LlmImageInput,
+        resultListener: (partialResult: String, done: Boolean) -> Unit
+    ) {
+        resultListener("Image input is not supported by this backend.", true)
+    }
+
     fun cancel()
 
     fun close()

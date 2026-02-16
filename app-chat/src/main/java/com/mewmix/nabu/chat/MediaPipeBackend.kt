@@ -1,7 +1,9 @@
 package com.mewmix.nabu.chat
 
 import android.content.Context
+import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.mewmix.nabu.utils.DebugLogger
+import com.google.mediapipe.tasks.genai.llminference.GraphOptions
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
@@ -70,6 +72,26 @@ class MediaPipeBackend(
         generateWithSession(payload, resultListener)
     }
 
+    override fun supportsImageInput(): Boolean = true
+
+    override fun sendMessage(
+        conversation: List<LlmMessage>,
+        image: LlmImageInput,
+        resultListener: (partialResult: String, done: Boolean) -> Unit
+    ) {
+        if (conversation.isEmpty()) {
+            DebugLogger.log("MediaPipeBackend image request received empty conversation; aborting request")
+            return
+        }
+        if (llmInference == null) {
+            initialize()
+        }
+
+        val payload = buildConversationPayload(conversation)
+        DebugLogger.log("MediaPipeBackend sendMessage(image) with ${conversation.size} turns")
+        generateWithSession(payload, resultListener, image)
+    }
+
     override fun sendMessage(prompt: String, resultListener: (partialResult: String, done: Boolean) -> Unit) {
         if (llmInference == null) {
             initialize()
@@ -100,7 +122,8 @@ class MediaPipeBackend(
 
     private fun generateWithSession(
         prompt: String,
-        resultListener: (partialResult: String, done: Boolean) -> Unit
+        resultListener: (partialResult: String, done: Boolean) -> Unit,
+        image: LlmImageInput? = null
     ) {
         val inference = llmInference ?: run {
             resultListener("MediaPipe backend unavailable.", true)
@@ -109,7 +132,7 @@ class MediaPipeBackend(
         try {
             val localConfig = config
             val boundedTopK = localConfig.topK.coerceIn(1, localConfig.maxTopK)
-            val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+            val optionsBuilder = LlmInferenceSession.LlmInferenceSessionOptions.builder()
                 .setTopK(boundedTopK)
                 .setTopP(localConfig.topP)
                 .setTemperature(localConfig.temperature)
@@ -118,12 +141,22 @@ class MediaPipeBackend(
                         setRandomSeed(localConfig.randomSeed)
                     }
                 }
-                .build()
+            if (image != null) {
+                optionsBuilder.setGraphOptions(
+                    GraphOptions.builder()
+                        .setEnableVisionModality(true)
+                        .build()
+                )
+            }
+            val sessionOptions = optionsBuilder.build()
 
             val session = LlmInferenceSession.createFromOptions(inference, sessionOptions)
             val previousSession = activeSession.getAndSet(session)
             previousSession?.cancelGenerateResponseAsync()
             previousSession?.close()
+            if (image != null) {
+                session.addImage(BitmapImageBuilder(image.bitmap).build())
+            }
             session.addQueryChunk(prompt)
             session.generateResponseAsync { partialResult, done ->
                 resultListener(partialResult.orEmpty(), done)
