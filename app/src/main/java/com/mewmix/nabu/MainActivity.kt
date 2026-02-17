@@ -81,6 +81,7 @@ import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.formatBytes
+import com.mewmix.nabu.utils.UpdateChecker
 import com.mewmix.nabu.kokoro.Downloader
 import com.mewmix.nabu.kokoro.RunEp
 import com.google.android.material.color.DynamicColors
@@ -128,6 +129,9 @@ class MyApplication : Application() {
         if (com.mewmix.nabu.utils.SettingsManager.isMethodTracingEnabled(this)) {
             com.mewmix.nabu.utils.MethodTraceManager.start(this)
         }
+
+        UpdateChecker.schedulePeriodicChecks(this)
+        UpdateChecker.enqueueStartupCheck(this)
 
         ApiServerManager.syncWithSettings(this)
     }

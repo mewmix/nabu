@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.DropdownMenu
@@ -19,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -28,9 +30,11 @@ import com.mewmix.nabu.kokoro.RunEp
 import com.mewmix.nabu.components.VersionPlate
 import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.OnnxRuntimeManager
+import com.mewmix.nabu.utils.UpdateChecker
 import com.mewmix.nabu.utils.getAppVersion
 import com.mewmix.nabu.api.ApiServerManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
@@ -40,11 +44,14 @@ import android.net.Uri
 import androidx.compose.material3.HorizontalDivider
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
+import java.text.DateFormat
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val versionName = remember { getAppVersion(context) }
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
@@ -77,6 +84,9 @@ fun SettingsScreen() {
     var mediaPipeTopP by remember { mutableStateOf(SettingsManager.getMediaPipeTopP(context).toString()) }
     var mediaPipeTemperature by remember { mutableStateOf(SettingsManager.getMediaPipeTemperature(context).toString()) }
     var mediaPipeRandomSeed by remember { mutableStateOf(SettingsManager.getMediaPipeRandomSeed(context).toString()) }
+    var updateStatus by remember { mutableStateOf(UpdateChecker.cachedStatus(context)) }
+    var checkingForUpdate by remember { mutableStateOf(false) }
+    var updateError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(runtime, ttsEngine) {
         if (ttsEngine == "kokoro") {
@@ -88,6 +98,9 @@ fun SettingsScreen() {
                 )
             }
         }
+    }
+    LaunchedEffect(Unit) {
+        updateStatus = withContext(Dispatchers.IO) { UpdateChecker.cachedStatus(context) }
     }
 
     PanelBox(
@@ -458,6 +471,77 @@ fun SettingsScreen() {
                 label = { Text("Random Seed (-1 = default)") },
                 modifier = Modifier.fillMaxWidth()
             )
+
+            HorizontalDivider()
+
+            Text(
+                text = "App Updates (GitHub Releases)",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Text(
+                text = "Current: v$versionName",
+                style = MaterialTheme.typography.bodySmall
+            )
+            updateStatus.latestVersion?.let { latest ->
+                Text(
+                    text = "Latest: $latest",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Text(
+                text = if (updateStatus.updateAvailable) "Update available" else "No update detected",
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (updateStatus.lastCheckedAt > 0L) {
+                val checkedAt = remember(updateStatus.lastCheckedAt) {
+                    DateFormat.getDateTimeInstance().format(Date(updateStatus.lastCheckedAt))
+                }
+                Text(
+                    text = "Last checked: $checkedAt",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            updateError?.let { err ->
+                Text(
+                    text = err,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        checkingForUpdate = true
+                        updateError = null
+                        val result = withContext(Dispatchers.IO) {
+                            UpdateChecker.checkForUpdate(context, force = true)
+                        }
+                        updateStatus = withContext(Dispatchers.IO) { UpdateChecker.cachedStatus(context) }
+                        if (!result.success) {
+                            updateError = "Update check failed. Using cached result."
+                        }
+                        checkingForUpdate = false
+                    }
+                },
+                enabled = !checkingForUpdate,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (checkingForUpdate) "Checking..." else "Check for Updates")
+            }
+
+            if (updateStatus.updateAvailable && !updateStatus.releaseUrl.isNullOrBlank()) {
+                Button(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateStatus.releaseUrl))
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open Latest Release")
+                }
+            }
 
             val commitHash = BuildConfig.GIT_COMMIT_HASH.ifBlank { "unknown" }
             val shortHash = commitHash.take(7)
