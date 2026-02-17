@@ -32,6 +32,8 @@ import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.StyleLoader
 import com.mewmix.nabu.utils.createAudioFromStyleVector
 import com.mewmix.nabu.utils.mixStyles
+import com.mewmix.nabu.tools.GlaiveBridge
+import com.mewmix.nabu.tools.ToolRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -120,6 +122,12 @@ class ChatViewModel(
     init {
         viewModelScope.launch(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
+
+            // Initialize Glaive tools if available
+            if (GlaiveBridge.isInstalled(context.applicationContext)) {
+                GlaiveBridge.registerDefaultTools()
+                DebugLogger.log("ChatViewModel: Glaive tools registered.")
+            }
         }
         // Launch a coroutine to play queued audio in the order they were generated
         viewModelScope.launch {
@@ -274,8 +282,15 @@ class ChatViewModel(
 
         val conversationForModel = prepareConversationForModel(backendMaxTokens)
 
+        // TODO: Inject available tools into system prompt or conversation history here.
+        // val availableTools = ToolRegistry.tools.value
+        // if (availableTools.isNotEmpty()) { ... }
+
         viewModelScope.launch(Dispatchers.IO) {
             backend.sendMessage(conversationForModel) { partial, done ->
+                // TODO: Monitor partial stream for tool call patterns (e.g. <tool_code> or JSON)
+                // If tool call detected, pause generation, execute tool via GlaiveBridge, and feed result back.
+
                 if (benchmarkEnabled) {
                     if (!done) {
                         BenchmarkManager.recordPartial(partial)

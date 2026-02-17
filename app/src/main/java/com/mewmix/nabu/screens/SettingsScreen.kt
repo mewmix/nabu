@@ -33,6 +33,8 @@ import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.UpdateChecker
 import com.mewmix.nabu.utils.getAppVersion
 import com.mewmix.nabu.api.ApiServerManager
+import com.mewmix.nabu.auth.GeminiAuthenticator
+import com.mewmix.nabu.auth.CodexAuthenticator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -471,6 +473,27 @@ fun SettingsScreen() {
                 label = { Text("Random Seed (-1 = default)") },
                 modifier = Modifier.fillMaxWidth()
             )
+
+            HorizontalDivider()
+
+            Text(
+                text = "Integrations (Experimental)",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Button(
+                onClick = { GeminiAuthenticator().initiateLogin(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Connect Gemini Account")
+            }
+
+            Button(
+                onClick = { CodexAuthenticator().initiateLogin(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Connect Codex (OpenAI) Account")
+            }
 
             HorizontalDivider()
 
