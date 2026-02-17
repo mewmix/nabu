@@ -66,18 +66,20 @@ class ModelManager(private val context: Context) {
             } else {
                 val taskFile = File(modelDir, "${model.id}.task")
                 val ggufFile = File(modelDir, "${model.id}.gguf")
+                val taskValid = taskFile.exists() && taskFile.isFile && taskFile.length() > 0L
+                val ggufValid = ggufFile.exists() && ggufFile.isFile && ggufFile.length() > 0L
 
-                if (taskFile.exists()) {
+                if (taskValid) {
                     model.isDownloaded = true
                     model.backend = "mediapipe"
-                } else if (ggufFile.exists()) {
+                } else if (ggufValid) {
                     model.isDownloaded = true
                     model.backend = "llama"
                 } else {
                     model.isDownloaded = false
                     val taskPart = File(modelDir, "${model.id}.task.part")
                     val ggufPart = File(modelDir, "${model.id}.gguf.part")
-                    model.hasPartial = taskPart.exists() || ggufPart.exists()
+                    model.hasPartial = taskPart.exists() || ggufPart.exists() || taskFile.exists() || ggufFile.exists()
 
                     val jsonBackend = modelJson.optString("backend", "mediapipe")
                     model.backend = jsonBackend
@@ -89,6 +91,7 @@ class ModelManager(private val context: Context) {
         // Include any additional models already placed in the models directory
         val modelDir = File(context.filesDir, "models")
         modelDir.listFiles { _, name -> name.endsWith(".task") || name.endsWith(".gguf") }?.forEach { file ->
+            if (!file.isFile || file.length() <= 0L) return@forEach
             val id = file.nameWithoutExtension
             if (modelList.none { it.id == id }) {
                 val backend = if (file.name.endsWith(".gguf")) "llama" else "mediapipe"

@@ -1,6 +1,7 @@
 package com.mewmix.nabu.data
 
 import com.mewmix.nabu.kokoro.Downloader
+import com.mewmix.nabu.kokoro.ManifestProvider
 import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,7 @@ class ModelDownloader(
     private val userPreferencesRepository: UserPreferencesRepository,
 ) {
     companion object {
+        const val KOKORO_MODEL_ID = "kokoro-default"
         private val activeModelDownloads = mutableSetOf<String>()
     }
 
@@ -38,26 +40,98 @@ class ModelDownloader(
     private val _detailedProgress = MutableStateFlow<Map<String, DetailedProgress>>(emptyMap())
     val detailedProgress: StateFlow<Map<String, DetailedProgress>> = _detailedProgress
 
-    fun downloadModel(model: Model) {
-        val acquired = synchronized(activeModelDownloads) {
-            activeModelDownloads.add(model.id)
+    private fun tryAcquireDownload(modelId: String): Boolean =
+        synchronized(activeModelDownloads) { activeModelDownloads.add(modelId) }
+
+    private fun releaseDownload(modelId: String) {
+        synchronized(activeModelDownloads) { activeModelDownloads.remove(modelId) }
+    }
+
+    private fun isDownloadActive(modelId: String): Boolean =
+        synchronized(activeModelDownloads) { activeModelDownloads.contains(modelId) }
+
+    private suspend fun waitForActiveDownload(modelId: String) {
+        while (isDownloadActive(modelId)) {
+            delay(200L)
         }
-        if (!acquired) {
-            DebugLogger.log("ModelDownloader: Download already in progress for ${model.id}, skipping duplicate request")
-            return
+    }
+
+    suspend fun ensureKokoroDefaultDownloaded(): Boolean {
+        if (!tryAcquireDownload(KOKORO_MODEL_ID)) {
+            waitForActiveDownload(KOKORO_MODEL_ID)
+            return Downloader.modelsAvailable(context.applicationContext, ManifestProvider.kokoroV1())
         }
-        scope.launch {
-            try {
-                if (model.type == ModelType.TTS) {
-                    downloadTtsModel(model)
-                } else {
-                    downloadLlmModel(model)
-                }
-            } finally {
-                synchronized(activeModelDownloads) {
-                    activeModelDownloads.remove(model.id)
-                }
+        return try {
+            downloadKokoro()
+        } finally {
+            releaseDownload(KOKORO_MODEL_ID)
+        }
+    }
+
+    suspend fun ensureModelDownloaded(model: Model): Boolean {
+        if (!tryAcquireDownload(model.id)) {
+            waitForActiveDownload(model.id)
+            return isModelDownloadedOnDisk(model)
+        }
+        return try {
+            if (model.type == ModelType.TTS) {
+                downloadTtsModel(model)
+            } else {
+                downloadLlmModel(model)
             }
+            isModelDownloadedOnDisk(model)
+        } finally {
+            releaseDownload(model.id)
+        }
+    }
+
+    fun downloadKokoroDefault() {
+        scope.launch {
+            ensureKokoroDefaultDownloaded()
+        }
+    }
+
+    fun downloadModel(model: Model) {
+        scope.launch {
+            ensureModelDownloaded(model)
+        }
+    }
+
+    private suspend fun downloadKokoro(): Boolean {
+        val appContext = context.applicationContext
+        val manifest = ManifestProvider.kokoroV1()
+
+        updateProgress(
+            modelId = KOKORO_MODEL_ID,
+            currentFile = "kokoro",
+            downloadedBytes = 0L,
+            totalBytes = manifest.files.sumOf { it.sizeBytes },
+            fraction = 0f
+        )
+        DebugLogger.log("ModelDownloader: Starting download of Kokoro")
+        try {
+            val result = Downloader.ensureModels(appContext, manifest) { current ->
+                val fraction = if (current.totalBytes > 0L) {
+                    current.downloadedBytes.toFloat() / current.totalBytes.toFloat()
+                } else {
+                    0f
+                }
+                updateProgress(
+                    modelId = KOKORO_MODEL_ID,
+                    currentFile = current.fileId,
+                    downloadedBytes = current.downloadedBytes,
+                    totalBytes = current.totalBytes,
+                    fraction = fraction
+                )
+            }
+            result.getOrThrow()
+            DebugLogger.log("ModelDownloader: Kokoro models verified and ready")
+            return true
+        } catch (e: Exception) {
+            DebugLogger.log("ModelDownloader: Error downloading Kokoro: ${e.message}")
+            return false
+        } finally {
+            clearProgress(KOKORO_MODEL_ID)
         }
     }
 
@@ -217,24 +291,37 @@ class ModelDownloader(
     }
 
     private suspend fun downloadLlmModel(model: Model) {
+        if (model.downloadUrl.isBlank()) {
+            DebugLogger.log("ModelDownloader: Skipping LLM download for ${model.id}; no download URL")
+            model.isDownloaded = false
+            model.hasPartial = false
+            return
+        }
         val token = userPreferencesRepository.hfToken.first()?.trim()?.ifBlank { null }
         val headers = authHeaders(token)
 
         val modelDir = File(context.filesDir, "models")
         if (!modelDir.exists()) modelDir.mkdirs()
 
-        val extension = if (model.downloadUrl.lowercase().contains(".gguf")) "gguf" else "task"
+        val extension = llmExtension(model)
         val finalFile = File(modelDir, "${model.id}.$extension")
         val tempFile = File(modelDir, "${model.id}.$extension.part")
 
-        if (finalFile.exists()) {
+        if (finalFile.exists() && finalFile.length() <= 0L) {
+            DebugLogger.log("ModelDownloader: Removing invalid empty artifact for ${model.id}")
+            finalFile.delete()
+        }
+        if (finalFile.exists() && isLlmArtifactValid(finalFile)) {
             model.isDownloaded = true
             model.hasPartial = false
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
             DebugLogger.log("ModelDownloader: ${model.name} already downloaded")
             return
         }
 
-        model.hasPartial = tempFile.exists()
+        model.hasPartial = tempFile.exists() || finalFile.exists()
         DebugLogger.log("ModelDownloader: Starting download of ${model.name}")
 
         try {
@@ -262,15 +349,30 @@ class ModelDownloader(
                 throw IllegalStateException("Unable to promote ${tempFile.name} to ${finalFile.name}")
             }
 
-            model.isDownloaded = true
+            model.isDownloaded = isLlmArtifactValid(finalFile)
             model.hasPartial = false
             DebugLogger.log("ModelDownloader: Download of ${model.name} completed")
         } catch (e: Exception) {
-            model.isDownloaded = false
-            model.hasPartial = tempFile.exists()
+            model.isDownloaded = isLlmArtifactValid(finalFile)
+            model.hasPartial = !model.isDownloaded && (tempFile.exists() || finalFile.exists())
             DebugLogger.log("ModelDownloader: Error downloading ${model.name}: ${e.message}")
         } finally {
             clearProgress(model.id)
+        }
+    }
+
+    private fun llmExtension(model: Model): String =
+        if (model.downloadUrl.lowercase().contains(".gguf")) "gguf" else "task"
+
+    private fun isLlmArtifactValid(file: File): Boolean = file.exists() && file.isFile && file.length() > 0L
+
+    private fun isModelDownloadedOnDisk(model: Model): Boolean {
+        val modelDir = File(context.filesDir, "models")
+        return if (model.type == ModelType.TTS) {
+            hasAllFiles(model.id, File(modelDir, model.id), ttsFileSpecs(model))
+        } else {
+            val extension = llmExtension(model)
+            isLlmArtifactValid(File(modelDir, "${model.id}.$extension"))
         }
     }
 

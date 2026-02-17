@@ -4,6 +4,17 @@ import java.io.File
 
 object TtsModelValidator {
     private const val SOPRANO_MODEL_ID = "soprano-80m-onnx"
+    private const val SUPERTONIC_MODEL_ID = "supertonic-onnx"
+    private const val SUPERTONIC2_MODEL_ID = "supertonic-2-onnx"
+
+    private val supertonicBaseFiles = listOf(
+        "duration_predictor.onnx",
+        "text_encoder.onnx",
+        "vector_estimator.onnx",
+        "vocoder.onnx",
+        "tts.json",
+        "unicode_indexer.json"
+    )
 
     private val sopranoMinBytes = mapOf(
         "soprano_backbone_kv.onnx" to 200_000_000L,
@@ -19,6 +30,24 @@ object TtsModelValidator {
                 "soprano_decoder.onnx",
                 "soprano_decoder.onnx.data",
                 "tokenizer.json"
+            )
+            SUPERTONIC_MODEL_ID -> supertonicBaseFiles + listOf(
+                "voice_styles/F1.json",
+                "voice_styles/F2.json",
+                "voice_styles/M1.json",
+                "voice_styles/M2.json"
+            )
+            SUPERTONIC2_MODEL_ID -> supertonicBaseFiles + listOf(
+                "voice_styles/F1.json",
+                "voice_styles/F2.json",
+                "voice_styles/F3.json",
+                "voice_styles/F4.json",
+                "voice_styles/F5.json",
+                "voice_styles/M1.json",
+                "voice_styles/M2.json",
+                "voice_styles/M3.json",
+                "voice_styles/M4.json",
+                "voice_styles/M5.json"
             )
             else -> emptyList()
         }
@@ -59,6 +88,12 @@ object TtsModelValidator {
 
         val minBytes = when (modelId) {
             SOPRANO_MODEL_ID -> sopranoMinBytes[localPath]
+            SUPERTONIC_MODEL_ID,
+            SUPERTONIC2_MODEL_ID -> when {
+                localPath in supertonicBaseFiles -> 1_000L
+                localPath.startsWith("voice_styles/") -> 100L
+                else -> null
+            }
             else -> null
         }
         return minBytes?.let { size >= it } ?: true

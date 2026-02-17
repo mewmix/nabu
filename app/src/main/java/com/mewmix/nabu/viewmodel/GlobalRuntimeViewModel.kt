@@ -3,7 +3,12 @@ package com.mewmix.nabu.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.mewmix.nabu.data.Model
+import com.mewmix.nabu.data.ModelDownloader
+import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelState
+import com.mewmix.nabu.data.ModelType
+import com.mewmix.nabu.data.UserPreferencesRepository
 import com.mewmix.nabu.kokoro.Downloader
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.SettingsManager
@@ -40,45 +45,80 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             val context = getApplication<Application>()
             _modelState.value = ModelState.Loading
-            
-            val ttsEngine = SettingsManager.getTtsEngine(context)
 
-            if (ttsEngine == "supertonic" || ttsEngine == "soprano") {
-                // Supertonic/Soprano use their own runtime and do not require Kokoro init.
-                _modelState.value = ModelState.Ready
-            } else {
-                // Kokoro logic
-                if (Downloader.modelsAvailable(context, OnnxRuntimeManager.currentManifest())) {
-                    // Models exist, init runtime
+            val modelManager = ModelManager(context)
+            val downloader = ModelDownloader(context, UserPreferencesRepository(context))
+            when (SettingsManager.getTtsEngine(context)) {
+                "supertonic" -> {
+                    val model = resolveSupertonicModel(context, modelManager)
+                    if (model == null) {
+                        _modelState.value = ModelState.Error("No Supertonic model configured")
+                        return@launch
+                    }
+                    if (!model.isDownloaded) {
+                        val downloaded = downloader.ensureModelDownloaded(model)
+                        if (!downloaded) {
+                            _modelState.value = ModelState.Error("Supertonic model download incomplete")
+                            return@launch
+                        }
+                    }
+                    _modelState.value = ModelState.Ready
+                    return@launch
+                }
+                "soprano" -> {
+                    val model = modelManager.getModel("soprano-80m-onnx")
+                    if (model == null) {
+                        _modelState.value = ModelState.Error("Soprano model missing from allowlist")
+                        return@launch
+                    }
+                    if (!model.isDownloaded) {
+                        val downloaded = downloader.ensureModelDownloaded(model)
+                        if (!downloaded) {
+                            _modelState.value = ModelState.Error("Soprano model download incomplete")
+                            return@launch
+                        }
+                    }
+                    _modelState.value = ModelState.Ready
+                    return@launch
+                }
+                else -> {
+                    val canAutoDownload = SettingsManager.isKokoroAutoDownloadEnabled(context)
+                    val kokoroReady = if (canAutoDownload) {
+                        downloader.ensureKokoroDefaultDownloaded()
+                    } else {
+                        Downloader.modelsAvailable(context, OnnxRuntimeManager.currentManifest())
+                    }
+                    if (!kokoroReady) {
+                        _modelState.value = ModelState.Error("Voice models required")
+                        return@launch
+                    }
+
                     val result = OnnxRuntimeManager.initialize(
                         context,
-                        allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(context),
+                        allowDownload = false,
                         onProgress = { progress -> _downloadProgress.value = progress }
                     )
-                    
                     _modelState.value = result.fold(
                         onSuccess = { ModelState.Ready },
                         onFailure = { ModelState.Error(it?.message ?: "Runtime init failed") }
                     )
-                } else {
-                    // Need download
-                    if (SettingsManager.isKokoroAutoDownloadEnabled(context)) {
-                         val result = OnnxRuntimeManager.initialize(
-                            context,
-                            allowDownload = true,
-                            onProgress = { progress -> _downloadProgress.value = progress }
-                        )
-                         _modelState.value = result.fold(
-                            onSuccess = { ModelState.Ready },
-                            onFailure = { ModelState.Error(it?.message ?: "Download failed") }
-                        )
-                    } else {
-                        // Prompt user
-                        _modelState.value = ModelState.Error("Voice models required")
-                    }
                 }
             }
         }
+    }
+
+    private fun resolveSupertonicModel(context: Application, modelManager: ModelManager): Model? {
+        val supertonicModels = modelManager.models.filter {
+            it.type == ModelType.TTS && it.id.startsWith("supertonic")
+        }
+        if (supertonicModels.isEmpty()) return null
+        val preferredId = SettingsManager.getSupertonicModelId(context)
+        val selected = preferredId?.let { id -> supertonicModels.firstOrNull { it.id == id } }
+            ?: supertonicModels.firstOrNull()
+        if (preferredId.isNullOrBlank() && selected != null) {
+            SettingsManager.setSupertonicModelId(context, selected.id)
+        }
+        return selected
     }
     
     fun updateBenchmarkStat(label: String, value: Float) {

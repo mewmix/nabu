@@ -50,9 +50,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.PanelBox
-import com.mewmix.nabu.utils.OnnxRuntimeManager
-import com.mewmix.nabu.kokoro.Downloader
-import com.mewmix.nabu.kokoro.ManifestProvider
 import com.mewmix.nabu.utils.formatBytes
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,14 +68,30 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
     var hfToken by remember { mutableStateOf("") }
 
     // Kokoro specific state
-    val contextCtx = context.applicationContext
     var kokoroDownloaded by remember { mutableStateOf(false) }
     var kokoroDownloading by remember { mutableStateOf(false) }
-    var kokoroProgress by remember { mutableStateOf<Downloader.DownloadProgress?>(null) }
+    val kokoroProgress = progressMap[ModelDownloader.KOKORO_MODEL_ID]
+    val kokoroDetail = detailedProgressMap[ModelDownloader.KOKORO_MODEL_ID]
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            kokoroDownloaded = Downloader.modelsAvailable(contextCtx, ManifestProvider.kokoroV1())
+            kokoroDownloaded = com.mewmix.nabu.kokoro.Downloader.modelsAvailable(
+                context.applicationContext,
+                com.mewmix.nabu.kokoro.ManifestProvider.kokoroV1()
+            )
+        }
+    }
+
+    LaunchedEffect(progressMap) {
+        if (kokoroDownloading && !progressMap.containsKey(ModelDownloader.KOKORO_MODEL_ID)) {
+            val available = withContext(Dispatchers.IO) {
+                com.mewmix.nabu.kokoro.Downloader.modelsAvailable(
+                    context.applicationContext,
+                    com.mewmix.nabu.kokoro.ManifestProvider.kokoroV1()
+                )
+            }
+            kokoroDownloaded = available
+            kokoroDownloading = false
         }
     }
 
@@ -190,20 +203,22 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                         Text(text = "The default text-to-speech engine.", style = MaterialTheme.typography.bodyMedium)
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        if (kokoroDownloading && kokoroProgress != null) {
-                            kokoroProgress?.let { current ->
-                                if (current.totalBytes > 0L) {
-                                    val ratio = current.downloadedBytes.toFloat() / current.totalBytes.toFloat()
-                                    LinearProgressIndicator(
-                                        progress = { ratio.coerceIn(0f, 1f) },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Text(
-                                        "${formatBytes(current.downloadedBytes)} / ${formatBytes(current.totalBytes)}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                        if (kokoroProgress != null) {
+                            LinearProgressIndicator(
+                                progress = { kokoroProgress.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            kokoroDetail?.let { detail ->
+                                val bytesLabel = if (detail.totalBytes > 0L) {
+                                    "${formatBytes(detail.downloadedBytes)} / ${formatBytes(detail.totalBytes)}"
+                                } else {
+                                    formatBytes(detail.downloadedBytes)
                                 }
+                                Text(
+                                    "${detail.currentFile}: $bytesLabel",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         } else {
                             Row(
@@ -225,21 +240,8 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                                 } else {
                                     BrutalButton(onClick = {
                                         kokoroDownloading = true
-                                        scope.launch(Dispatchers.IO) {
-                                            DebugLogger.log("ModelsScreen: Starting Kokoro download")
-                                            OnnxRuntimeManager.initialize(
-                                                contextCtx,
-                                                allowDownload = true,
-                                                onProgress = { p -> kokoroProgress = p }
-                                            ).onSuccess {
-                                                DebugLogger.log("ModelsScreen: Kokoro download complete")
-                                                kokoroDownloaded = true
-                                                kokoroDownloading = false
-                                            }.onFailure {
-                                                kokoroDownloading = false
-                                                DebugLogger.log("ModelsScreen: Failed to download Kokoro: ${it.message}")
-                                            }
-                                        }
+                                        DebugLogger.log("ModelsScreen: Starting Kokoro download")
+                                        modelDownloader.downloadKokoroDefault()
                                     }, enabled = !kokoroDownloading) {
                                         Icon(
                                             Icons.Filled.CloudDownload,

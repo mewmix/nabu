@@ -19,13 +19,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mewmix.nabu.utils.SettingsManager
-import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.formatBytes
 import com.mewmix.nabu.kokoro.Downloader
 import com.mewmix.nabu.kokoro.ManifestProvider
@@ -41,7 +39,6 @@ import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.widget.Toast
 
@@ -52,12 +49,10 @@ fun InitScreen(
     onComplete: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var engine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
     var engineExpanded by remember { mutableStateOf(false) }
     var modelExpanded by remember { mutableStateOf(false) }
     var kokoroDownloading by remember { mutableStateOf(false) }
-    var kokoroProgress by remember { mutableStateOf<Downloader.DownloadProgress?>(null) }
     var kokoroDownloaded by remember { mutableStateOf(false) }
     var downloadTargetId by remember { mutableStateOf<String?>(null) }
 
@@ -65,6 +60,8 @@ fun InitScreen(
     val modelDownloader = remember { ModelDownloader(context, userPreferencesRepository) }
     val progressMap by modelDownloader.progress.collectAsState()
     val detailedProgressMap by modelDownloader.detailedProgress.collectAsState()
+    val kokoroProgress = progressMap[ModelDownloader.KOKORO_MODEL_ID]
+    val kokoroDetail = detailedProgressMap[ModelDownloader.KOKORO_MODEL_ID]
     val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
     val supertonicModels = ttsModels.filter { it.id.startsWith("supertonic") }
     var selectedModel by remember { mutableStateOf<Model?>(supertonicModels.firstOrNull()) }
@@ -75,6 +72,17 @@ fun InitScreen(
         }
     }
     LaunchedEffect(progressMap) {
+        if (kokoroDownloading && !progressMap.containsKey(ModelDownloader.KOKORO_MODEL_ID)) {
+            val available = withContext(Dispatchers.IO) {
+                Downloader.modelsAvailable(context.applicationContext, ManifestProvider.kokoroV1())
+            }
+            kokoroDownloaded = available
+            kokoroDownloading = false
+            if (!available) {
+                Toast.makeText(context, "Failed to download Kokoro models", Toast.LENGTH_LONG).show()
+            }
+        }
+
         val targetId = downloadTargetId
         if (targetId != null && !progressMap.containsKey(targetId)) {
             val completedModel = modelManager.models.firstOrNull { it.id == targetId }
@@ -183,20 +191,22 @@ fun InitScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    if (kokoroDownloading && kokoroProgress != null) {
-                        kokoroProgress?.let { current ->
-                            if (current.totalBytes > 0L) {
-                                val ratio = current.downloadedBytes.toFloat() / current.totalBytes.toFloat()
-                                LinearProgressIndicator(
-                                    progress = { ratio.coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Text(
-                                    "${formatBytes(current.downloadedBytes)} / ${formatBytes(current.totalBytes)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Brutal.textBright
-                                )
+                    if (kokoroProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { kokoroProgress.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        kokoroDetail?.let { detail ->
+                            val bytesLabel = if (detail.totalBytes > 0L) {
+                                "${formatBytes(detail.downloadedBytes)} / ${formatBytes(detail.totalBytes)}"
+                            } else {
+                                formatBytes(detail.downloadedBytes)
                             }
+                            Text(
+                                "${detail.currentFile}: $bytesLabel",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Brutal.textBright
+                            )
                         }
                     } else {
                         val kokoroButtonLabel = if (kokoroDownloaded) "Downloaded" else "Download"
@@ -204,29 +214,8 @@ fun InitScreen(
                             onClick = {
                                 if (!kokoroDownloaded) {
                                     kokoroDownloading = true
-                                    kokoroProgress = null
-                                    scope.launch(Dispatchers.IO) {
-                                        DebugLogger.log("InitScreen: Starting Kokoro download")
-                                        val result = OnnxRuntimeManager.initialize(
-                                            context.applicationContext,
-                                            allowDownload = true,
-                                            onProgress = { update -> scope.launch { kokoroProgress = update } }
-                                        )
-                                        withContext(Dispatchers.Main) {
-                                            kokoroDownloading = false
-                                            result.onSuccess {
-                                                DebugLogger.log("InitScreen: Kokoro download complete")
-                                                kokoroDownloaded = true
-                                            }.onFailure { error ->
-                                                DebugLogger.log("InitScreen: Kokoro download failed: ${error.message}")
-                                                Toast.makeText(
-                                                    context,
-                                                    error.message ?: "Failed to download models",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                            }
-                                        }
-                                    }
+                                    DebugLogger.log("InitScreen: Starting Kokoro download")
+                                    modelDownloader.downloadKokoroDefault()
                                 }
                             },
                             enabled = !kokoroDownloaded && !isDownloading
