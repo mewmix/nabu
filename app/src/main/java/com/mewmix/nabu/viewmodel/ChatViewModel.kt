@@ -33,7 +33,10 @@ import com.mewmix.nabu.utils.StyleLoader
 import com.mewmix.nabu.utils.createAudioFromStyleVector
 import com.mewmix.nabu.utils.mixStyles
 import com.mewmix.nabu.tools.GlaiveBridge
+import com.mewmix.nabu.tools.ToolCall
+import com.mewmix.nabu.tools.ToolCallProtocol
 import com.mewmix.nabu.tools.ToolRegistry
+import com.mewmix.nabu.tools.ToolResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +56,7 @@ class ChatViewModel(
 
     companion object {
         private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
+        private const val MAX_TOOL_CALLS_PER_TURN = 1
         private val TOKEN_REGEX = Regex("\\S+")
     }
 
@@ -281,51 +285,115 @@ class ChatViewModel(
         }
 
         val conversationForModel = prepareConversationForModel(backendMaxTokens)
-
-        // TODO: Inject available tools into system prompt or conversation history here.
-        // val availableTools = ToolRegistry.tools.value
-        // if (availableTools.isNotEmpty()) { ... }
+        val appContext = context.applicationContext
 
         viewModelScope.launch(Dispatchers.IO) {
-            backend.sendMessage(conversationForModel) { partial, done ->
-                // TODO: Monitor partial stream for tool call patterns (e.g. <tool_code> or JSON)
-                // If tool call detected, pause generation, execute tool via GlaiveBridge, and feed result back.
-
-                if (benchmarkEnabled) {
-                    if (!done) {
-                        BenchmarkManager.recordPartial(partial)
-                    } else {
-                        BenchmarkManager.finishLlm()
-                        BenchmarkManager.profileSystem(context)
-                    }
+            suspend fun executeToolCall(toolCall: ToolCall): ToolResult {
+                val tool = ToolRegistry.getTool(toolCall.toolName)
+                if (tool == null || !tool.isAvailable) {
+                    return ToolResult(
+                        toolName = toolCall.toolName,
+                        output = "Tool '${toolCall.toolName}' is unavailable.",
+                        isError = true
+                    )
                 }
-                if (!done) {
-                    responseBuilder.append(partial)
-                    sentenceBuilder.append(partial)
-                    viewModelScope.launch {
-                        val last = _chatMessages.value.lastOrNull()
-                        if (last != null) {
-                            _chatMessages.value =
-                                _chatMessages.value.dropLast(1) + last.copy(message = responseBuilder.toString())
-                        }
-                    }
-                    processSentences(sentenceBuilder, false)
-                } else {
-                    viewModelScope.launch {
-                        _isLoading.value = false
-                        DebugLogger.log("ChatViewModel response complete")
-                        val finalResponse = responseBuilder.toString()
-                        val last = _chatMessages.value.lastOrNull()
-                        if (last != null) {
-                            _chatMessages.value =
-                                _chatMessages.value.dropLast(1) + last.copy(message = finalResponse)
-                        }
-                        conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
-                        persistConversationMessages()
-                        processSentences(sentenceBuilder, true)
+                if (!GlaiveBridge.isInstalled(appContext)) {
+                    return ToolResult(
+                        toolName = toolCall.toolName,
+                        output = "Glaive is not installed.",
+                        isError = true
+                    )
+                }
+                return GlaiveBridge.executeTool(appContext, toolCall)
+            }
+
+            fun updateAssistantPlaceholder(content: String) {
+                viewModelScope.launch {
+                    val last = _chatMessages.value.lastOrNull()
+                    if (last != null) {
+                        _chatMessages.value =
+                            _chatMessages.value.dropLast(1) + last.copy(message = content)
                     }
                 }
             }
+
+            fun finalizeAssistantResponse(finalResponse: String, speakOutput: Boolean) {
+                viewModelScope.launch {
+                    _isLoading.value = false
+                    DebugLogger.log("ChatViewModel response complete")
+                    val last = _chatMessages.value.lastOrNull()
+                    if (last != null) {
+                        _chatMessages.value =
+                            _chatMessages.value.dropLast(1) + last.copy(message = finalResponse)
+                    }
+                    conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
+                    persistConversationMessages()
+                    if (speakOutput) {
+                        processSentences(sentenceBuilder, true)
+                    } else {
+                        sentenceBuilder.clear()
+                        dropQueuedAudio = false
+                    }
+                }
+            }
+
+            fun runInference(conversation: List<LlmMessage>, remainingToolCalls: Int) {
+                responseBuilder.clear()
+                sentenceBuilder.clear()
+                var suppressSpeechForThisPass = false
+
+                backend.sendMessage(conversation) { partial, done ->
+                    if (benchmarkEnabled && !done) {
+                        BenchmarkManager.recordPartial(partial)
+                    }
+
+                    if (!done) {
+                        responseBuilder.append(partial)
+                        if (partial.contains("<tool_call>", ignoreCase = true)) {
+                            suppressSpeechForThisPass = true
+                            sentenceBuilder.clear()
+                        } else {
+                            sentenceBuilder.append(partial)
+                        }
+                        updateAssistantPlaceholder(responseBuilder.toString())
+                        if (!suppressSpeechForThisPass) {
+                            processSentences(sentenceBuilder, false)
+                        }
+                        return@sendMessage
+                    }
+
+                    val finalResponse = responseBuilder.toString()
+                    val toolCall = ToolCallProtocol.extractToolCall(finalResponse)
+                    if (toolCall != null && remainingToolCalls > 0) {
+                        updateAssistantPlaceholder("Running tool ${toolCall.toolName}...")
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val result = executeToolCall(toolCall)
+                            conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
+                            conversationHistory.add(
+                                ConversationTurn(
+                                    ConversationRole.USER,
+                                    ToolCallProtocol.formatToolResultForModel(result)
+                                )
+                            )
+                            persistConversationMessages()
+                            val followUpConversation = prepareConversationForModel(backendMaxTokens)
+                            runInference(followUpConversation, remainingToolCalls - 1)
+                        }
+                        return@sendMessage
+                    }
+
+                    if (benchmarkEnabled) {
+                        BenchmarkManager.finishLlm()
+                        BenchmarkManager.profileSystem(context)
+                    }
+                    finalizeAssistantResponse(
+                        finalResponse = finalResponse,
+                        speakOutput = toolCall == null
+                    )
+                }
+            }
+
+            runInference(conversationForModel, MAX_TOOL_CALLS_PER_TURN)
         }
     }
 
@@ -514,7 +582,12 @@ class ChatViewModel(
     }
 
     private fun prepareConversationForModel(maxTokens: Int): List<LlmMessage> {
-        val systemMsg = LlmMessage(role = "system", content = _systemPrompt.value)
+        val availableTools = ToolRegistry.tools.value.filter { it.isAvailable }
+        val systemPrompt = ToolCallProtocol.buildSystemPrompt(
+            basePrompt = _systemPrompt.value,
+            tools = availableTools
+        )
+        val systemMsg = LlmMessage(role = "system", content = systemPrompt)
         val systemTokens = estimateTokenCount(systemMsg.content)
         val availableTokens = maxTokens - systemTokens
 
@@ -522,7 +595,10 @@ class ChatViewModel(
         val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) } + systemTokens
         
         _tokenUsage.value = totalTokens to maxTokens
-        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns + system prompt (~${totalTokens} tokens) for inference")
+        DebugLogger.log(
+            "Prepared ${trimmedConversation.size} conversation turns + system prompt " +
+                "(~${totalTokens} tokens, tools=${availableTools.size}) for inference"
+        )
         
         val messages = mutableListOf<LlmMessage>()
         if (systemMsg.content.isNotBlank()) {
