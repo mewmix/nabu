@@ -54,7 +54,10 @@ import com.mewmix.nabu.utils.formatBytes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
+fun ModelsScreen(
+    userPreferencesRepository: UserPreferencesRepository,
+    onModelArtifactsChanged: () -> Unit = {}
+) {
     val context = LocalContext.current
     val modelManager = remember { ModelManager(context) }
     val modelDownloader = remember { ModelDownloader(context, userPreferencesRepository) }
@@ -66,6 +69,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
     var showDialog by remember { mutableStateOf(false) }
     var selectedModel by remember { mutableStateOf<Model?>(null) }
     var hfToken by remember { mutableStateOf("") }
+    var hadActiveDownloads by remember { mutableStateOf(false) }
 
     // Kokoro specific state
     var kokoroDownloaded by remember { mutableStateOf(false) }
@@ -93,6 +97,12 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
             kokoroDownloaded = available
             kokoroDownloading = false
         }
+
+        val hasActiveDownloads = progressMap.isNotEmpty()
+        if (hadActiveDownloads && !hasActiveDownloads) {
+            onModelArtifactsChanged()
+        }
+        hadActiveDownloads = hasActiveDownloads
     }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -124,6 +134,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                 )
                 modelManager.addLocalModel(model)
                 DebugLogger.log("ModelsScreen: Imported $name")
+                onModelArtifactsChanged()
             } else {
                 DebugLogger.log("ModelsScreen: Selected file is not a .task or .gguf file")
             }
@@ -298,6 +309,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                                     BrutalButton(onClick = {
                                         DebugLogger.log("ModelsScreen: Deleting ${model.name}")
                                         modelManager.deleteModel(model)
+                                        onModelArtifactsChanged()
                                     }) {
                                         Icon(Icons.Filled.Delete, contentDescription = "Delete model")
                                     }
@@ -321,6 +333,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                                         BrutalButton(onClick = {
                                             DebugLogger.log("ModelsScreen: Deleting partial ${model.name}")
                                             modelManager.deleteModel(model)
+                                            onModelArtifactsChanged()
                                         }) {
                                             Icon(Icons.Filled.Delete, contentDescription = "Delete partial model")
                                         }

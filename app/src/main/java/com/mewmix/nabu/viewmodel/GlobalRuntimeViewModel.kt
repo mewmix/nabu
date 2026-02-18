@@ -47,6 +47,7 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             val context = getApplication<Application>()
             _modelState.value = ModelState.Loading
+            _downloadProgress.value = null
 
             val modelManager = ModelManager(context)
             val downloader = ModelDownloader(context, UserPreferencesRepository(context))
@@ -64,6 +65,7 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
                             return@launch
                         }
                     }
+                    _downloadProgress.value = null
                     _modelState.value = ModelState.Ready
                     return@launch
                 }
@@ -80,6 +82,7 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
                             return@launch
                         }
                     }
+                    _downloadProgress.value = null
                     _modelState.value = ModelState.Ready
                     return@launch
                 }

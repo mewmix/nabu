@@ -53,7 +53,9 @@ import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+    onRuntimeSettingsChanged: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val versionName = remember { getAppVersion(context) }
@@ -239,6 +241,7 @@ fun SettingsScreen() {
                             onClick = {
                                 runtime = option
                                 SettingsManager.setRuntimePreference(context, option)
+                                onRuntimeSettingsChanged()
                                 expanded = false
                             }
                         )
@@ -272,6 +275,7 @@ fun SettingsScreen() {
                                 ttsEngine = option
                                 SettingsManager.setTtsEngine(context, option)
                                 com.mewmix.nabu.utils.DebugLogger.log("Settings: TTS Engine set to $option")
+                                onRuntimeSettingsChanged()
                                 ttsEngineExpanded = false
                             }
                         )
@@ -307,6 +311,7 @@ fun SettingsScreen() {
                                 onClick = {
                                     supertonicModelId = model.id
                                     SettingsManager.setSupertonicModelId(context, model.id)
+                                    onRuntimeSettingsChanged()
                                     supertonicExpanded = false
                                 }
                             )

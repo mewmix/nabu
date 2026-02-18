@@ -513,8 +513,13 @@ fun MainScreen(
                         destination?.let { navigateTo(it) }
                     }
                     Screen.Creations -> CreationsScreen()
-                    Screen.Settings -> SettingsScreen()
-                    Screen.Models -> ModelsScreen(userPreferencesRepository)
+                    Screen.Settings -> SettingsScreen(
+                        onRuntimeSettingsChanged = { viewModel.retryInitialization() }
+                    )
+                    Screen.Models -> ModelsScreen(
+                        userPreferencesRepository = userPreferencesRepository,
+                        onModelArtifactsChanged = { viewModel.retryInitialization() }
+                    )
                     Screen.Credits -> CreditsConstellationScreen()
                     Screen.DebugLog -> DebugLogScreen()
                 }
