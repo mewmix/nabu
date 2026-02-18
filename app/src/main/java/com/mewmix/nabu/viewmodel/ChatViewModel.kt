@@ -42,6 +42,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -57,6 +58,7 @@ class ChatViewModel(
     companion object {
         private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
         private const val MAX_TOOL_CALLS_PER_TURN = 1
+        private const val TOOL_EXECUTION_TIMEOUT_MS = 30_000L
         private val TOKEN_REGEX = Regex("\\S+")
     }
 
@@ -304,7 +306,13 @@ class ChatViewModel(
                         isError = true
                     )
                 }
-                return GlaiveBridge.executeTool(appContext, toolCall)
+                return withTimeoutOrNull(TOOL_EXECUTION_TIMEOUT_MS) {
+                    GlaiveBridge.executeTool(appContext, toolCall)
+                } ?: ToolResult(
+                    toolName = toolCall.toolName,
+                    output = "Tool '${toolCall.toolName}' timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s.",
+                    isError = true
+                )
             }
 
             fun updateAssistantPlaceholder(content: String) {
