@@ -49,6 +49,8 @@ object ToolCallProtocol {
         lines += "- Always use absolute Android paths."
         lines += "- If the user says Downloads/downloads, use /sdcard/Download."
         lines += "- If the user provided an explicit path, use that exact path."
+        lines += "- Prefer shared-storage roots: /sdcard/Download, /sdcard/Documents, /sdcard/Pictures, /sdcard/Music."
+        lines += "- Do not guess private/system paths like /data, /system, or /proc for tool calls."
         lines += "- If path is unclear, ask for clarification instead of guessing."
 
         return lines.joinToString("\n")

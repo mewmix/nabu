@@ -103,5 +103,7 @@ class ToolCallProtocolTest {
         assertTrue(prompt.contains("TOOL_RESULT"))
         assertTrue(prompt.contains("/sdcard/Download"))
         assertTrue(prompt.contains("absolute Android paths"))
+        assertTrue(prompt.contains("/sdcard/Documents"))
+        assertTrue(prompt.contains("/data"))
     }
 }
