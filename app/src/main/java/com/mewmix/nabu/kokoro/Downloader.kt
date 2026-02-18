@@ -60,7 +60,7 @@ object Downloader {
                     if (totalBytes > 0L) {
                         onProgress(DownloadProgress(file.id, completedBytes + startingBytes, totalBytes))
                     }
-                    rangeDownload(file.url, tmpFile) { currentBytes ->
+                    rangeDownload(file.url, tmpFile) { currentBytes, _ ->
                         if (totalBytes > 0L) {
                             onProgress(DownloadProgress(file.id, completedBytes + currentBytes, totalBytes))
                         }
@@ -96,8 +96,8 @@ object Downloader {
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             target.parentFile?.mkdirs()
-            rangeDownload(url, target, headers) { downloaded ->
-                onProgress(downloaded, -1L)
+            rangeDownload(url, target, headers) { downloaded, total ->
+                onProgress(downloaded, total)
             }
         }
     }
@@ -115,7 +115,7 @@ object Downloader {
         url: String,
         target: File,
         headers: Map<String, String> = emptyMap(),
-        onProgress: (Long) -> Unit
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
     ) {
         var existingBytes = if (target.exists()) target.length() else 0L
 
@@ -135,6 +135,7 @@ object Downloader {
         client.newCall(request).execute().use { response ->
             if (response.code == 416) {
                 Log.w(TAG, "Server reported range not satisfiable for $url, assuming file complete")
+                onProgress(existingBytes, existingBytes)
                 return
             }
 
@@ -150,10 +151,19 @@ object Downloader {
                 existingBytes = 0
             }
 
+            val responseLength = body.contentLength().takeIf { it >= 0L }
+            val totalBytes = when {
+                response.code == 206 -> parseTotalFromContentRange(response.header("Content-Range"))
+                responseLength != null -> existingBytes + responseLength
+                else -> -1L
+            }
+
             var writtenBytes = existingBytes
             if (!append) {
                 writtenBytes = 0L
-                onProgress(0L)
+                onProgress(0L, totalBytes)
+            } else {
+                onProgress(writtenBytes, totalBytes)
             }
 
             FileOutputStream(target, append).use { output ->
@@ -164,11 +174,21 @@ object Downloader {
                         if (read == -1) break
                         output.write(buffer, 0, read)
                         writtenBytes += read.toLong()
-                        onProgress(writtenBytes)
+                        onProgress(writtenBytes, totalBytes)
                     }
                 }
             }
         }
+    }
+
+    private fun parseTotalFromContentRange(contentRange: String?): Long {
+        if (contentRange.isNullOrBlank()) return -1L
+        // Content-Range example: "bytes 1048576-2097151/734003200"
+        val slashIndex = contentRange.lastIndexOf('/')
+        if (slashIndex == -1 || slashIndex == contentRange.lastIndex) return -1L
+        val totalPart = contentRange.substring(slashIndex + 1).trim()
+        if (totalPart == "*") return -1L
+        return totalPart.toLongOrNull() ?: -1L
     }
 
 }

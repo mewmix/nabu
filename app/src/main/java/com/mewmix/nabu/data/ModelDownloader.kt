@@ -247,41 +247,25 @@ class ModelDownloader(
                 )
 
                 DebugLogger.log("ModelDownloader: Downloading ${model.id}/${spec.localPath}")
-                val maxAttempts = 3
-                var attempt = 1
-                while (true) {
-                    try {
-                        Downloader.downloadFile(
-                            url = fileUrl,
-                            target = partFile,
-                            headers = headers
-                        ) { downloadedBytes, totalBytes ->
-                            val fileFraction = if (totalBytes > 0L) {
-                                downloadedBytes.toFloat() / totalBytes.toFloat()
-                            } else {
-                                0f
-                            }
-                            val overall = (index.toFloat() + fileFraction) / totalFiles.toFloat()
-                            updateProgress(
-                                modelId = model.id,
-                                currentFile = displayName,
-                                downloadedBytes = downloadedBytes,
-                                totalBytes = totalBytes,
-                                fraction = overall
-                            )
-                        }.getOrThrow()
-                        break
-                    } catch (e: Exception) {
-                        if (attempt >= maxAttempts) {
-                            throw e
-                        }
-                        val backoffMs = 1500L * attempt
-                        DebugLogger.log(
-                            "ModelDownloader: Retry $attempt/$maxAttempts for ${model.id}/${spec.localPath} after error: ${e.message}"
-                        )
-                        delay(backoffMs)
-                        attempt += 1
+                downloadWithRetry(
+                    fileLabel = "${model.id}/${spec.localPath}",
+                    url = fileUrl,
+                    target = partFile,
+                    headers = headers
+                ) { downloadedBytes, totalBytes ->
+                    val fileFraction = if (totalBytes > 0L) {
+                        downloadedBytes.toFloat() / totalBytes.toFloat()
+                    } else {
+                        0f
                     }
+                    val overall = (index.toFloat() + fileFraction) / totalFiles.toFloat()
+                    updateProgress(
+                        modelId = model.id,
+                        currentFile = displayName,
+                        downloadedBytes = downloadedBytes,
+                        totalBytes = totalBytes,
+                        fraction = overall
+                    )
                 }
 
                 if (!TtsModelValidator.isFileValid(model.id, spec.localPath, partFile)) {
@@ -361,7 +345,8 @@ class ModelDownloader(
         DebugLogger.log("ModelDownloader: Starting download of ${model.name}")
 
         try {
-            Downloader.downloadFile(
+            downloadWithRetry(
+                fileLabel = "${model.id}.${extension}",
                 url = model.downloadUrl,
                 target = tempFile,
                 headers = headers
@@ -378,11 +363,16 @@ class ModelDownloader(
                     totalBytes = totalBytes,
                     fraction = fraction
                 )
-            }.getOrThrow()
+            }
+
+            if (!isLlmArtifactValid(tempFile)) {
+                throw IllegalStateException("Downloaded artifact is empty or invalid: ${tempFile.name}")
+            }
 
             if (finalFile.exists()) finalFile.delete()
             if (!tempFile.renameTo(finalFile)) {
-                throw IllegalStateException("Unable to promote ${tempFile.name} to ${finalFile.name}")
+                tempFile.copyTo(finalFile, overwrite = true)
+                tempFile.delete()
             }
 
             model.isDownloaded = isLlmArtifactValid(finalFile)
@@ -487,6 +477,38 @@ class ModelDownloader(
 
     private fun authHeaders(token: String?): Map<String, String> {
         return if (token.isNullOrBlank()) emptyMap() else mapOf("Authorization" to "Bearer $token")
+    }
+
+    private suspend fun downloadWithRetry(
+        fileLabel: String,
+        url: String,
+        target: File,
+        headers: Map<String, String>,
+        maxAttempts: Int = 4,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
+    ) {
+        var attempt = 1
+        while (true) {
+            try {
+                Downloader.downloadFile(
+                    url = url,
+                    target = target,
+                    headers = headers,
+                    onProgress = onProgress
+                ).getOrThrow()
+                return
+            } catch (e: Exception) {
+                if (attempt >= maxAttempts) {
+                    throw e
+                }
+                val backoffMs = 1500L * attempt
+                DebugLogger.log(
+                    "ModelDownloader: Retry $attempt/$maxAttempts for $fileLabel after error: ${e.message}"
+                )
+                delay(backoffMs)
+                attempt += 1
+            }
+        }
     }
 
     private fun updateProgress(
