@@ -25,7 +25,7 @@ class ToolCallProtocolTest {
     }
 
     @Test
-    fun extractToolCall_ignoresBareJsonWithoutWrapper() {
+    fun extractToolCall_parsesBareJsonWithoutWrapper() {
         val text = "{" +
             "\"tool\":\"read_file\"," +
             "\"arguments\":{\"path\":\"/etc/hosts\"}" +
@@ -33,7 +33,9 @@ class ToolCallProtocolTest {
 
         val toolCall = ToolCallProtocol.extractToolCall(text)
 
-        assertNull(toolCall)
+        assertNotNull(toolCall)
+        assertEquals("read_file", toolCall?.toolName)
+        assertEquals("/etc/hosts", toolCall?.arguments?.get("path"))
     }
 
     @Test
@@ -55,6 +57,17 @@ class ToolCallProtocolTest {
     fun extractToolCall_returnsNullForNonToolText() {
         val toolCall = ToolCallProtocol.extractToolCall("Normal assistant response with no tool call")
         assertNull(toolCall)
+    }
+
+    @Test
+    fun extractToolCall_parsesCommandStyleListFiles() {
+        val toolCall = ToolCallProtocol.extractToolCall(
+            "list_files /sdcard/Download\n-- This query results in an empty list."
+        )
+
+        assertNotNull(toolCall)
+        assertEquals("list_files", toolCall?.toolName)
+        assertEquals("/sdcard/Download", toolCall?.arguments?.get("path"))
     }
 
     @Test
@@ -88,5 +101,7 @@ class ToolCallProtocolTest {
         assertTrue(prompt.contains("<tool_call>"))
         assertTrue(prompt.contains("read_file"))
         assertTrue(prompt.contains("TOOL_RESULT"))
+        assertTrue(prompt.contains("/sdcard/Download"))
+        assertTrue(prompt.contains("absolute Android paths"))
     }
 }

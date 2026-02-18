@@ -93,7 +93,7 @@ class LlamaCppBackend(
 
                 override fun onError(message: String) {
                     DebugLogger.log("LlamaCppBackend generation error: $message")
-                    resultListener("", true)
+                    resultListener("Llama.cpp generation error: $message", true)
                 }
             }
 
@@ -106,7 +106,7 @@ class LlamaCppBackend(
                 callback
             )
             if (!ok) {
-                resultListener("Llama.cpp backend unavailable.", true)
+                resultListener("Llama.cpp generation failed.", true)
             }
         }
     }
@@ -139,7 +139,7 @@ class LlamaCppBackend(
 
                 override fun onError(message: String) {
                     DebugLogger.log("LlamaCppBackend generation error: $message")
-                    resultListener("", true)
+                    resultListener("Llama.cpp generation error: $message", true)
                 }
             }
 
@@ -152,7 +152,7 @@ class LlamaCppBackend(
                 callback
             )
             if (!ok) {
-                resultListener("Llama.cpp backend unavailable.", true)
+                resultListener("Llama.cpp generation failed.", true)
             }
         }
     }

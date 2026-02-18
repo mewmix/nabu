@@ -45,6 +45,11 @@ object ToolCallProtocol {
 
         lines += "Tool results arrive in a user message starting with TOOL_RESULT as JSON."
         lines += "After receiving TOOL_RESULT, produce a normal user-facing answer."
+        lines += "Path rules for tool arguments:"
+        lines += "- Always use absolute Android paths."
+        lines += "- If the user says Downloads/downloads, use /sdcard/Download."
+        lines += "- If the user provided an explicit path, use that exact path."
+        lines += "- If path is unclear, ask for clarification instead of guessing."
 
         return lines.joinToString("\n")
     }
@@ -60,7 +65,17 @@ object ToolCallProtocol {
             return parseToolCallJson(fencedJson)
         }
 
-        return null
+        val trimmed = text.trim()
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            parseToolCallJson(trimmed)?.let { return it }
+        }
+
+        val inlineJson = extractJsonObject(trimmed)
+        if (inlineJson != trimmed && inlineJson.startsWith("{") && inlineJson.endsWith("}")) {
+            parseToolCallJson(inlineJson)?.let { return it }
+        }
+
+        return parseCommandStyleToolCall(text)
     }
 
     fun formatToolResultForModel(result: ToolResult): String {
@@ -136,6 +151,31 @@ object ToolCallProtocol {
         } else {
             text.trim()
         }
+    }
+
+    private fun parseCommandStyleToolCall(text: String): ToolCall? {
+        val compact = text.trim()
+        if (compact.isBlank()) return null
+
+        val listFilesRegex =
+            Regex("(?is)^\\s*list_files\\b(?:\\s|\\(|:)+(?:path\\s*[=:]\\s*)?[\"']?([^\\s\"'\\),`]+)")
+        listFilesRegex.find(compact)?.groupValues?.getOrNull(1)?.let { rawPath ->
+            val path = rawPath.trim()
+            if (path.startsWith("/")) {
+                return ToolCall("list_files", mapOf("path" to path))
+            }
+        }
+
+        val readFileRegex =
+            Regex("(?is)^\\s*read_file\\b(?:\\s|\\(|:)+(?:path\\s*[=:]\\s*)?[\"']?([^\\s\"'\\),`]+)")
+        readFileRegex.find(compact)?.groupValues?.getOrNull(1)?.let { rawPath ->
+            val path = rawPath.trim()
+            if (path.startsWith("/")) {
+                return ToolCall("read_file", mapOf("path" to path))
+            }
+        }
+
+        return null
     }
 
     private fun jsonToMap(json: JsonObject): Map<String, Any> {

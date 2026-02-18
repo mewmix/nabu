@@ -290,6 +290,16 @@ class ChatViewModel(
         val appContext = context.applicationContext
 
         viewModelScope.launch(Dispatchers.IO) {
+            fun summarizeToolResult(result: ToolResult): String {
+                val cleaned = result.output.trim()
+                val clipped = if (cleaned.length > 700) "${cleaned.take(700)}..." else cleaned
+                return if (result.isError) {
+                    "Tool ${result.toolName} failed: ${if (clipped.isNotEmpty()) clipped else "no error details"}"
+                } else {
+                    "Tool ${result.toolName} result:\n$clipped"
+                }
+            }
+
             suspend fun executeToolCall(toolCall: ToolCall): ToolResult {
                 val tool = ToolRegistry.getTool(toolCall.toolName)
                 if (tool == null || !tool.isAvailable) {
@@ -345,7 +355,11 @@ class ChatViewModel(
                 }
             }
 
-            fun runInference(conversation: List<LlmMessage>, remainingToolCalls: Int) {
+            fun runInference(
+                conversation: List<LlmMessage>,
+                remainingToolCalls: Int,
+                lastToolResult: ToolResult? = null
+            ) {
                 responseBuilder.clear()
                 sentenceBuilder.clear()
                 var suppressSpeechForThisPass = false
@@ -370,12 +384,34 @@ class ChatViewModel(
                         return@sendMessage
                     }
 
+                    if (partial.isNotEmpty()) {
+                        responseBuilder.append(partial)
+                        if (partial.contains("<tool_call>", ignoreCase = true)) {
+                            suppressSpeechForThisPass = true
+                            sentenceBuilder.clear()
+                        } else {
+                            sentenceBuilder.append(partial)
+                        }
+                    }
+
                     val finalResponse = responseBuilder.toString()
                     val toolCall = ToolCallProtocol.extractToolCall(finalResponse)
+                    DebugLogger.log(
+                        "ChatViewModel: final response len=${finalResponse.length}, " +
+                            "toolDetected=${toolCall != null}, remainingToolCalls=$remainingToolCalls"
+                    )
+                    if (toolCall == null && finalResponse.isNotBlank()) {
+                        DebugLogger.log("ChatViewModel: final response preview: ${finalResponse.take(220)}")
+                    }
                     if (toolCall != null && remainingToolCalls > 0) {
+                        DebugLogger.log("ChatViewModel: model requested tool ${toolCall.toolName} with ${toolCall.arguments}")
                         updateAssistantPlaceholder("Running tool ${toolCall.toolName}...")
                         viewModelScope.launch(Dispatchers.IO) {
                             val result = executeToolCall(toolCall)
+                            DebugLogger.log(
+                                "ChatViewModel: tool ${toolCall.toolName} finished " +
+                                    "(error=${result.isError}, outputLength=${result.output.length})"
+                            )
                             val followUpConversation = conversation + listOf(
                                 LlmMessage(role = "model", content = finalResponse),
                                 LlmMessage(
@@ -383,9 +419,26 @@ class ChatViewModel(
                                     content = ToolCallProtocol.formatToolResultForModel(result)
                                 )
                             )
-                            runInference(followUpConversation, remainingToolCalls - 1)
+                            runInference(
+                                followUpConversation,
+                                remainingToolCalls - 1,
+                                lastToolResult = result
+                            )
                         }
                         return@sendMessage
+                    }
+
+                    val shouldFallbackToToolResult = lastToolResult != null && (
+                        finalResponse.isBlank() ||
+                            toolCall != null ||
+                            finalResponse.contains("<tool_call>", ignoreCase = true)
+                        )
+                    val resolvedResponse = if (shouldFallbackToToolResult) {
+                        summarizeToolResult(lastToolResult!!)
+                    } else if (finalResponse.isBlank()) {
+                        "No model response generated."
+                    } else {
+                        finalResponse
                     }
 
                     if (benchmarkEnabled) {
@@ -393,8 +446,8 @@ class ChatViewModel(
                         BenchmarkManager.profileSystem(context)
                     }
                     finalizeAssistantResponse(
-                        finalResponse = finalResponse,
-                        speakOutput = toolCall == null
+                        finalResponse = resolvedResponse,
+                        speakOutput = toolCall == null && !shouldFallbackToToolResult
                     )
                 }
             }

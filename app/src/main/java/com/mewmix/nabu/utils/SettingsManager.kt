@@ -252,7 +252,7 @@ object SettingsManager {
         DatabaseManager.setSetting(context, KEY_LLM_TTFT_TIMEOUT_MS, value.toString())
     }
 
-    fun getLlmTtftTimeoutMs(context: Context, default: Long = 10_000L): Long {
+    fun getLlmTtftTimeoutMs(context: Context, default: Long = 30_000L): Long {
         return DatabaseManager.getSetting(context, KEY_LLM_TTFT_TIMEOUT_MS)?.toLongOrNull() ?: default
     }
 
@@ -260,7 +260,7 @@ object SettingsManager {
         DatabaseManager.setSetting(context, KEY_LLM_TOTAL_TIMEOUT_MS, value.toString())
     }
 
-    fun getLlmTotalTimeoutMs(context: Context, default: Long = 60_000L): Long {
+    fun getLlmTotalTimeoutMs(context: Context, default: Long = 180_000L): Long {
         return DatabaseManager.getSetting(context, KEY_LLM_TOTAL_TIMEOUT_MS)?.toLongOrNull() ?: default
     }
 
