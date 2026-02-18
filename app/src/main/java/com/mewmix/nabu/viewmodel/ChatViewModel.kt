@@ -368,15 +368,13 @@ class ChatViewModel(
                         updateAssistantPlaceholder("Running tool ${toolCall.toolName}...")
                         viewModelScope.launch(Dispatchers.IO) {
                             val result = executeToolCall(toolCall)
-                            conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
-                            conversationHistory.add(
-                                ConversationTurn(
-                                    ConversationRole.USER,
-                                    ToolCallProtocol.formatToolResultForModel(result)
+                            val followUpConversation = conversation + listOf(
+                                LlmMessage(role = "model", content = finalResponse),
+                                LlmMessage(
+                                    role = "user",
+                                    content = ToolCallProtocol.formatToolResultForModel(result)
                                 )
                             )
-                            persistConversationMessages()
-                            val followUpConversation = prepareConversationForModel(backendMaxTokens)
                             runInference(followUpConversation, remainingToolCalls - 1)
                         }
                         return@sendMessage
