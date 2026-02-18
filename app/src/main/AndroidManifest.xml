@@ -65,6 +65,10 @@
                     android:scheme="nabu"
                     android:host="auth"
                     android:pathPrefix="/callback" />
+                <data
+                    android:scheme="nabu"
+                    android:host="auth"
+                    android:pathPrefix="/auth/callback" />
             </intent-filter>
         </activity>
 

@@ -95,6 +95,8 @@ fun SettingsScreen() {
     val codexAuth = remember { CodexAuthenticator() }
     val geminiClient = remember { GeminiApiClient(geminiAuth) }
     val codexClient = remember { CodexApiClient(codexAuth) }
+    var geminiOAuthClientId by remember { mutableStateOf(SettingsManager.getGeminiOAuthClientId(context)) }
+    var geminiOAuthRedirectUri by remember { mutableStateOf(SettingsManager.getGeminiOAuthRedirectUri(context)) }
     var geminiConnected by remember { mutableStateOf(geminiAuth.hasStoredSession(context)) }
     var codexConnected by remember { mutableStateOf(codexAuth.hasStoredSession(context)) }
     var testingGemini by remember { mutableStateOf(false) }
@@ -495,12 +497,38 @@ fun SettingsScreen() {
                 style = MaterialTheme.typography.titleMedium
             )
 
+            TextField(
+                value = geminiOAuthClientId,
+                onValueChange = { value ->
+                    geminiOAuthClientId = value
+                    SettingsManager.setGeminiOAuthClientId(context, value)
+                },
+                label = { Text("Gemini OAuth Client ID") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = geminiOAuthRedirectUri,
+                onValueChange = { value ->
+                    geminiOAuthRedirectUri = value
+                    SettingsManager.setGeminiOAuthRedirectUri(context, value)
+                },
+                label = { Text("Gemini Redirect URI") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
             Text(
                 text = if (geminiConnected) "Gemini: Connected" else "Gemini: Not connected",
                 style = MaterialTheme.typography.bodySmall
             )
             Button(
-                onClick = { geminiAuth.initiateLogin(context) },
+                onClick = {
+                    if (geminiOAuthClientId.isBlank()) {
+                        geminiStatus = "Gemini OAuth Client ID is required."
+                    } else {
+                        geminiAuth.initiateLogin(context)
+                    }
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (geminiConnected) "Reconnect Gemini Account" else "Connect Gemini Account")

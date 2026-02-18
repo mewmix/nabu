@@ -54,9 +54,18 @@ class OAuthCallbackActivity : ComponentActivity() {
 
     private fun resolveProvider(uri: Uri): String? {
         if (uri.scheme != "nabu" || uri.host != "auth") return null
+        uri.getQueryParameter("provider")?.let { provider ->
+            if (provider == "google" || provider == "codex") return provider
+        }
         val segments = uri.pathSegments
-        if (segments.size < 2) return null
-        if (segments[0] != "callback") return null
-        return segments[1]
+        if (segments.isEmpty()) return null
+        if (segments[0] == "callback" && segments.size >= 2) {
+            return segments[1]
+        }
+        if (segments.size >= 2 && segments[0] == "auth" && segments[1] == "callback") {
+            val state = uri.getQueryParameter("state")
+            return OAuthSessionStore.providerForState(this, state)
+        }
+        return null
     }
 }

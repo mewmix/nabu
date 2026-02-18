@@ -4,25 +4,35 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.mewmix.nabu.utils.DebugLogger
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 class CodexAuthenticator : OAuthManager {
     companion object {
         const val PROVIDER_ID = "codex"
+        private const val LOOPBACK_TIMEOUT_MS = 5 * 60 * 1000L
     }
 
     // Matches Codex CLI OAuth defaults from openai/codex.
     private val clientId = "app_EMoamEEZ73f0CkXaXp7hrann"
-    private val redirectUri = "nabu://auth/callback/codex"
+    private val defaultRedirectUri = "nabu://auth/callback/codex"
     private val authUrl = "https://auth.openai.com/oauth/authorize"
     private val tokenUrl = "https://auth.openai.com/oauth/token"
     private val scopes = "openid profile email offline_access"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var activeLoopback: OAuthLoopbackReceiver.Session? = null
 
     override fun initiateLogin(context: Context) {
         val appContext = context.applicationContext
-        val session = OAuthSessionStore.createSession(appContext, PROVIDER_ID)
+        activeLoopback?.close()
+        val loopback = OAuthLoopbackReceiver.start("/auth/callback")
+        activeLoopback = loopback
+        val redirectUri = loopback.redirectUri
+        val session = OAuthSessionStore.createSession(appContext, PROVIDER_ID, redirectUri)
 
         val authUri = Uri.parse(authUrl).buildUpon()
             .appendQueryParameter("response_type", "code")
@@ -41,13 +51,31 @@ class CodexAuthenticator : OAuthManager {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+
+        scope.launch {
+            val callbackUri = loopback.awaitCallback(LOOPBACK_TIMEOUT_MS)
+            if (callbackUri != null) {
+                val handled = handleCallbackUri(appContext, callbackUri)
+                DebugLogger.log("CodexAuthenticator: Loopback callback handled=$handled")
+            } else {
+                OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
+                DebugLogger.log("CodexAuthenticator: Loopback callback timed out")
+            }
+            if (activeLoopback === loopback) {
+                activeLoopback = null
+            }
+            loopback.close()
+        }
     }
 
     override suspend fun handleCallback(context: Context, intent: Intent): Boolean {
         val data = intent.data ?: return false
+        return handleCallbackUri(context.applicationContext, data)
+    }
+
+    private suspend fun handleCallbackUri(appContext: Context, data: Uri): Boolean {
         if (!isExpectedCallback(data)) return false
 
-        val appContext = context.applicationContext
         val error = data.getQueryParameter("error")
         if (!error.isNullOrBlank()) {
             OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
@@ -69,6 +97,7 @@ class CodexAuthenticator : OAuthManager {
             DebugLogger.log("CodexAuthenticator: Callback missing code")
             return false
         }
+        val redirectUri = session.redirectUri ?: defaultRedirectUri
 
         val tokenResponse = withContext(Dispatchers.IO) {
             OAuthHttpClient.postForm(
@@ -160,13 +189,18 @@ class CodexAuthenticator : OAuthManager {
 
     override fun logout(context: Context) {
         val appContext = context.applicationContext
+        activeLoopback?.close()
+        activeLoopback = null
         OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
         OAuthTokenStore.clear(appContext, PROVIDER_ID)
         DebugLogger.log("CodexAuthenticator: Logout")
     }
 
     private fun isExpectedCallback(uri: Uri): Boolean =
-        uri.scheme == "nabu" &&
+        (uri.scheme == "nabu" &&
             uri.host == "auth" &&
-            uri.path == "/callback/codex"
+            (uri.path == "/callback/codex" || uri.path == "/auth/callback")) ||
+            ((uri.scheme == "http" || uri.scheme == "https") &&
+                (uri.host == "127.0.0.1" || uri.host == "localhost") &&
+                uri.path == "/auth/callback")
 }

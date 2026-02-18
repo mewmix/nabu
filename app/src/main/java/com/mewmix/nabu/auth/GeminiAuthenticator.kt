@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.mewmix.nabu.utils.DebugLogger
+import com.mewmix.nabu.utils.SettingsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -12,16 +13,20 @@ class GeminiAuthenticator : OAuthManager {
         const val PROVIDER_ID = "google"
     }
 
-    // Configure these for your Google OAuth client (installed application type).
-    private val clientId = "YOUR_GEMINI_CLIENT_ID"
-    private val redirectUri = "nabu://auth/callback/google"
+    private val defaultRedirectUri = "nabu://auth/callback/google"
     private val authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
     private val tokenUrl = "https://oauth2.googleapis.com/token"
     private val scopes = "https://www.googleapis.com/auth/cloud-platform"
 
     override fun initiateLogin(context: Context) {
         val appContext = context.applicationContext
-        val session = OAuthSessionStore.createSession(appContext, PROVIDER_ID)
+        val clientId = SettingsManager.getGeminiOAuthClientId(appContext)
+        if (clientId.isBlank()) {
+            DebugLogger.log("GeminiAuthenticator: Missing OAuth client ID. Configure Gemini OAuth Client ID in Settings.")
+            return
+        }
+        val redirectUri = SettingsManager.getGeminiOAuthRedirectUri(appContext, defaultRedirectUri)
+        val session = OAuthSessionStore.createSession(appContext, PROVIDER_ID, redirectUri)
 
         val authUri = Uri.parse(authUrl).buildUpon()
             .appendQueryParameter("client_id", clientId)
@@ -47,6 +52,11 @@ class GeminiAuthenticator : OAuthManager {
         if (!isExpectedCallback(data)) return false
 
         val appContext = context.applicationContext
+        val clientId = SettingsManager.getGeminiOAuthClientId(appContext)
+        if (clientId.isBlank()) {
+            DebugLogger.log("GeminiAuthenticator: Callback received but Gemini OAuth client ID is missing")
+            return false
+        }
         val error = data.getQueryParameter("error")
         if (!error.isNullOrBlank()) {
             OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
@@ -68,6 +78,10 @@ class GeminiAuthenticator : OAuthManager {
             DebugLogger.log("GeminiAuthenticator: Callback missing code")
             return false
         }
+        val redirectUri = session.redirectUri ?: SettingsManager.getGeminiOAuthRedirectUri(
+            appContext,
+            defaultRedirectUri
+        )
 
         val tokenResponse = withContext(Dispatchers.IO) {
             OAuthHttpClient.postForm(
@@ -119,6 +133,8 @@ class GeminiAuthenticator : OAuthManager {
 
     suspend fun getValidAccessToken(context: Context): String? {
         val appContext = context.applicationContext
+        val clientId = SettingsManager.getGeminiOAuthClientId(appContext)
+        if (clientId.isBlank()) return null
         val tokens = OAuthTokenStore.load(appContext, PROVIDER_ID) ?: return null
         if (!tokens.isExpired()) return tokens.accessToken
         val refreshToken = tokens.refreshToken ?: return null
@@ -161,5 +177,5 @@ class GeminiAuthenticator : OAuthManager {
     private fun isExpectedCallback(uri: Uri): Boolean =
         uri.scheme == "nabu" &&
             uri.host == "auth" &&
-            uri.path == "/callback/google"
+            (uri.path == "/callback/google" || uri.path == "/auth/callback")
 }

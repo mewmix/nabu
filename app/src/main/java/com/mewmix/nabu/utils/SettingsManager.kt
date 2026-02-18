@@ -37,6 +37,8 @@ object SettingsManager {
     private const val KEY_METHOD_TRACING = "method_tracing"
     private const val KEY_API_ENABLED = "api_enabled"
     private const val KEY_API_LAN_ENABLED = "api_lan_enabled"
+    private const val KEY_GEMINI_OAUTH_CLIENT_ID = "gemini_oauth_client_id"
+    private const val KEY_GEMINI_OAUTH_REDIRECT_URI = "gemini_oauth_redirect_uri"
 
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
@@ -115,6 +117,25 @@ object SettingsManager {
 
     fun getTtsEngine(context: Context, default: String = "kokoro"): String =
         DatabaseManager.getSetting(context, "tts_engine") ?: default
+
+    fun setGeminiOAuthClientId(context: Context, clientId: String) {
+        DatabaseManager.setSetting(context, KEY_GEMINI_OAUTH_CLIENT_ID, clientId.trim())
+    }
+
+    fun getGeminiOAuthClientId(context: Context): String =
+        DatabaseManager.getSetting(context, KEY_GEMINI_OAUTH_CLIENT_ID).orEmpty().trim()
+
+    fun setGeminiOAuthRedirectUri(context: Context, redirectUri: String) {
+        DatabaseManager.setSetting(context, KEY_GEMINI_OAUTH_REDIRECT_URI, redirectUri.trim())
+    }
+
+    fun getGeminiOAuthRedirectUri(
+        context: Context,
+        default: String = "nabu://auth/callback/google"
+    ): String {
+        val value = DatabaseManager.getSetting(context, KEY_GEMINI_OAUTH_REDIRECT_URI).orEmpty().trim()
+        return if (value.isBlank()) default else value
+    }
 
     fun setInitComplete(context: Context, complete: Boolean) {
         DatabaseManager.setSetting(context, KEY_INIT_COMPLETE, if (complete) "1" else "0")
