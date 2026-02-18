@@ -25,7 +25,7 @@ class ToolCallProtocolTest {
     }
 
     @Test
-    fun extractToolCall_parsesBareJson() {
+    fun extractToolCall_ignoresBareJsonWithoutWrapper() {
         val text = "{" +
             "\"tool\":\"read_file\"," +
             "\"arguments\":{\"path\":\"/etc/hosts\"}" +
@@ -33,9 +33,7 @@ class ToolCallProtocolTest {
 
         val toolCall = ToolCallProtocol.extractToolCall(text)
 
-        assertNotNull(toolCall)
-        assertEquals("read_file", toolCall?.toolName)
-        assertEquals("/etc/hosts", toolCall?.arguments?.get("path"))
+        assertNull(toolCall)
     }
 
     @Test

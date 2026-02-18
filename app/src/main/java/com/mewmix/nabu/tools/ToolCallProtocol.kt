@@ -60,11 +60,6 @@ object ToolCallProtocol {
             return parseToolCallJson(fencedJson)
         }
 
-        val trimmed = text.trim()
-        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-            return parseToolCallJson(trimmed)
-        }
-
         return null
     }
 
@@ -86,12 +81,13 @@ object ToolCallProtocol {
                 json.optString("toolName")
             ).firstOrNull { it.isNotBlank() } ?: return null
 
-            val argumentsValue = when (val raw = json.opt("arguments") ?: json.opt("args")) {
-                is JsonObject -> raw
-                is String -> runCatching { JsonParser.parseString(raw).asJsonObject }.getOrNull()
+            val rawArguments = json.opt("arguments") ?: json.opt("args") ?: return null
+            val argumentsValue = when (rawArguments) {
+                is JsonObject -> rawArguments
+                is String -> runCatching { JsonParser.parseString(rawArguments).asJsonObject }.getOrNull()
                 else -> null
-            }
-            val arguments = if (argumentsValue != null) jsonToMap(argumentsValue) else emptyMap()
+            } ?: return null
+            val arguments = jsonToMap(argumentsValue)
 
             ToolCall(toolName = toolName, arguments = arguments)
         }.getOrNull()
