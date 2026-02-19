@@ -123,6 +123,30 @@ object GlaiveBridge {
                 parameters = mapOf("path" to "The file path.", "content" to "The text content.")
             )
         )
+        ToolRegistry.register(
+            Tool(
+                name = "create_dir",
+                description = "Create a directory path recursively.",
+                parameters = mapOf("path" to "The directory path to create.")
+            )
+        )
+        ToolRegistry.register(
+            Tool(
+                name = "delete_file",
+                description = "Delete a file or directory recursively.",
+                parameters = mapOf("path" to "The file or directory path to delete.")
+            )
+        )
+        ToolRegistry.register(
+            Tool(
+                name = "search_files",
+                description = "Search files under a root path by query string.",
+                parameters = mapOf(
+                    "root_path" to "Root directory to search under.",
+                    "query" to "Name fragment or search query."
+                )
+            )
+        )
     }
 
     internal fun createExecutionIntent(toolName: String, toolParamsJson: String?): Intent {
