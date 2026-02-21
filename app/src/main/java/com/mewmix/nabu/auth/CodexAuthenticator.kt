@@ -14,6 +14,7 @@ class CodexAuthenticator : OAuthManager {
     companion object {
         const val PROVIDER_ID = "codex"
         private const val LOOPBACK_TIMEOUT_MS = 5 * 60 * 1000L
+        private const val CODEX_LOOPBACK_PORT = 1455
     }
 
     // Matches Codex CLI OAuth defaults from openai/codex.
@@ -28,9 +29,11 @@ class CodexAuthenticator : OAuthManager {
     override fun initiateLogin(context: Context) {
         val appContext = context.applicationContext
         activeLoopback?.close()
-        val loopback = OAuthLoopbackReceiver.start("/auth/callback")
+        val loopback = runCatching {
+            OAuthLoopbackReceiver.start("/auth/callback", preferredPort = CODEX_LOOPBACK_PORT)
+        }.getOrNull()
         activeLoopback = loopback
-        val redirectUri = loopback.redirectUri
+        val redirectUri = loopback?.redirectUri ?: defaultRedirectUri
         val session = OAuthSessionStore.createSession(appContext, PROVIDER_ID, redirectUri)
 
         val authUri = Uri.parse(authUrl).buildUpon()
@@ -43,6 +46,7 @@ class CodexAuthenticator : OAuthManager {
             .appendQueryParameter("code_challenge_method", "S256")
             .appendQueryParameter("id_token_add_organizations", "true")
             .appendQueryParameter("codex_cli_simplified_flow", "true")
+            .appendQueryParameter("originator", "nabu")
             .build()
 
         DebugLogger.log("CodexAuthenticator: Initiating login with URL: $authUri")
@@ -51,19 +55,26 @@ class CodexAuthenticator : OAuthManager {
         }
         context.startActivity(intent)
 
-        scope.launch {
-            val callbackUri = loopback.awaitCallback(LOOPBACK_TIMEOUT_MS)
-            if (callbackUri != null) {
-                val handled = handleCallbackUri(appContext, callbackUri)
-                DebugLogger.log("CodexAuthenticator: Loopback callback handled=$handled")
-            } else {
-                OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
-                DebugLogger.log("CodexAuthenticator: Loopback callback timed out")
+        if (loopback != null) {
+            scope.launch {
+                val callbackUri = loopback.awaitCallback(LOOPBACK_TIMEOUT_MS)
+                if (callbackUri != null) {
+                    val handled = handleCallbackUri(appContext, callbackUri)
+                    DebugLogger.log("CodexAuthenticator: Loopback callback handled=$handled")
+                } else {
+                    OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
+                    DebugLogger.log("CodexAuthenticator: Loopback callback timed out")
+                }
+                if (activeLoopback === loopback) {
+                    activeLoopback = null
+                }
+                loopback.close()
             }
-            if (activeLoopback === loopback) {
-                activeLoopback = null
-            }
-            loopback.close()
+        } else {
+            DebugLogger.log(
+                "CodexAuthenticator: Loopback bind on :$CODEX_LOOPBACK_PORT unavailable, " +
+                    "falling back to custom-scheme callback."
+            )
         }
     }
 

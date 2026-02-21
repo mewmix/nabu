@@ -30,10 +30,21 @@ class CodexApiClient(
         val accessToken = authenticator.getValidAccessToken(context)
             ?: return Result.failure(IllegalStateException("Codex account is not authenticated."))
         val accountId = authenticator.getAccountId(context)
+            ?: JwtUtils.codexAccountId(accessToken, null)
+            ?: return Result.failure(
+                IllegalStateException("Codex account ID is missing from OAuth token.")
+            )
 
         val payload = JSONObject().put("model", model).put("store", false)
+        val instructions = conversation
+            .filter { it.role.equals("system", ignoreCase = true) && it.content.isNotBlank() }
+            .joinToString("\n\n") { it.content.trim() }
+        if (instructions.isNotBlank()) {
+            payload.put("instructions", instructions)
+        }
         val input = JSONArray()
         conversation
+            .filterNot { it.role.equals("system", ignoreCase = true) }
             .filter { it.content.isNotBlank() }
             .forEach { message ->
                 input.put(
@@ -67,11 +78,12 @@ class CodexApiClient(
 
         val headers = mutableMapOf(
             "Authorization" to "Bearer $accessToken",
-            "User-Agent" to "Nabu-Android/1.0"
+            "User-Agent" to "Nabu-Android/1.0",
+            "OpenAI-Beta" to "responses=experimental",
+            "originator" to "nabu",
+            "Accept" to "text/event-stream"
         )
-        if (!accountId.isNullOrBlank()) {
-            headers["ChatGPT-Account-Id"] = accountId
-        }
+        headers["chatgpt-account-id"] = accountId
 
         val response = withContext(Dispatchers.IO) {
             OAuthHttpClient.postJson(
@@ -90,14 +102,16 @@ class CodexApiClient(
         val accessToken = authenticator.getValidAccessToken(context)
             ?: return Result.failure(IllegalStateException("Codex account is not authenticated."))
         val accountId = authenticator.getAccountId(context)
+            ?: JwtUtils.codexAccountId(accessToken, null)
+            ?: return Result.failure(IllegalStateException("Codex account ID is missing from OAuth token."))
         val headers = mutableMapOf(
             "Authorization" to "Bearer $accessToken",
             "User-Agent" to "Nabu-Android/1.0",
-            "Accept" to "application/json"
+            "Accept" to "application/json",
+            "OpenAI-Beta" to "responses=experimental",
+            "originator" to "nabu"
         )
-        if (!accountId.isNullOrBlank()) {
-            headers["ChatGPT-Account-Id"] = accountId
-        }
+        headers["chatgpt-account-id"] = accountId
 
         val response = withContext(Dispatchers.IO) {
             OAuthHttpClient.getJson(

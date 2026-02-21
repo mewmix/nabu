@@ -35,12 +35,14 @@ internal object OAuthLoopbackReceiver {
 
     fun start(
         callbackPath: String = "/auth/callback",
-        host: String = "127.0.0.1"
+        host: String = "127.0.0.1",
+        preferredPort: Int? = null
     ): Session {
         val normalizedPath = if (callbackPath.startsWith("/")) callbackPath else "/$callbackPath"
         val callback = CompletableDeferred<Uri?>()
         val closed = AtomicBoolean(false)
-        val serverSocket = ServerSocket(0, 8, InetAddress.getByName(host)).apply {
+        val bindPort = preferredPort?.takeIf { it in 1..65535 } ?: 0
+        val serverSocket = ServerSocket(bindPort, 8, InetAddress.getByName(host)).apply {
             soTimeout = 1000
         }
         val port = serverSocket.localPort
