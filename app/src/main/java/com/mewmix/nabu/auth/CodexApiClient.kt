@@ -69,13 +69,40 @@ class CodexApiClient(
             )
 
         val sessionId = resolveSessionId(context.applicationContext)
+            val toolsArray = JSONArray()
+            com.mewmix.nabu.tools.ToolRegistry.tools.value
+                .filter { it.isAvailable }
+                .forEach { tool ->
+                    val props = JSONObject()
+                    tool.parameters.forEach { (k, v) ->
+                        props.put(k, JSONObject().put("type", "string").put("description", v))
+                    }
+                    toolsArray.put(
+                        JSONObject()
+                            .put("type", "function")
+                            .put(
+                                "function",
+                                JSONObject()
+                                    .put("name", tool.name)
+                                    .put("description", tool.description)
+                                    .put(
+                                        "parameters",
+                                        JSONObject()
+                                            .put("type", "object")
+                                            .put("properties", props)
+                                            .put("required", JSONArray(tool.parameters.keys))
+                                    )
+                            )
+                    )
+                }
+
         val payload = JSONObject()
             .put("model", model)
             .put("store", false)
             .put("stream", true)
             .put("text", JSONObject().put("verbosity", "medium"))
             .put("include", JSONArray().put("reasoning.encrypted_content"))
-            .put("tools", JSONArray())
+            .put("tools", toolsArray)
             .put("tool_choice", "auto")
             .put("parallel_tool_calls", true)
             .put("prompt_cache_key", sessionId)
@@ -316,8 +343,23 @@ class CodexApiClient(
             val content = item.optJSONArray("content") ?: continue
             for (j in 0 until content.length()) {
                 val contentItem = content.optJSONObject(j) ?: continue
-                val text = contentItem.optString("text").ifBlank { null } ?: continue
-                chunks += text
+                val text = contentItem.optString("text").ifBlank { null }
+                if (text != null) {
+                    chunks += text
+                }
+                
+                val toolCalls = contentItem.optJSONArray("tool_calls")
+                if (toolCalls != null) {
+                    for (k in 0 until toolCalls.length()) {
+                        val tc = toolCalls.optJSONObject(k) ?: continue
+                        val tcFunction = tc.optJSONObject("function")
+                        val tcName = tcFunction?.optString("name")?.ifBlank { null } ?: tc.optString("name")
+                        val tcArgs = tcFunction?.optString("arguments")?.ifBlank { null } ?: tc.optString("arguments") ?: "{}"
+                        if (tcName.isNotBlank()) {
+                            chunks += "<tool_call>{\"name\":\"$tcName\",\"arguments\":$tcArgs}</tool_call>"
+                        }
+                    }
+                }
             }
         }
         return chunks.joinToString("").trim().ifBlank { null }
@@ -372,12 +414,12 @@ class CodexApiClient(
             }
         }
 
+        if (!completedText.isNullOrBlank()) {
+            return completedText
+        }
         val deltaText = deltas.toString().trim()
         if (deltaText.isNotBlank()) {
             return deltaText
-        }
-        if (!completedText.isNullOrBlank()) {
-            return completedText
         }
         DebugLogger.log("CodexApiClient: SSE response had no output text (len=${body.length})")
         throw IllegalStateException("Codex returned no text output.")
@@ -486,7 +528,7 @@ class CodexApiClient(
                             }
                             completedText = responseJson?.let { extractOutputText(it) } ?: completedText
                             val deltaText = deltas.toString().trim()
-                            val resolvedText = if (deltaText.isNotBlank()) deltaText else completedText.orEmpty().trim()
+                            val resolvedText = if (!completedText.isNullOrBlank()) completedText.orEmpty() else deltaText
                             if (!completion.isCompleted) {
                                 if (resolvedText.isNotBlank()) {
                                     completion.complete(Result.success(resolvedText))
@@ -526,7 +568,7 @@ class CodexApiClient(
                     DebugLogger.log("CodexApiClient: websocket closed code=$code reason=$reason")
                     if (!completion.isCompleted) {
                         val deltaText = deltas.toString().trim()
-                        val resolvedText = if (deltaText.isNotBlank()) deltaText else completedText.orEmpty().trim()
+                        val resolvedText = if (!completedText.isNullOrBlank()) completedText.orEmpty() else deltaText
                         if (resolvedText.isNotBlank()) {
                             completion.complete(Result.success(resolvedText))
                         } else {
