@@ -15,6 +15,7 @@ class CodexAuthenticator : OAuthManager {
         const val PROVIDER_ID = "codex"
         private const val LOOPBACK_TIMEOUT_MS = 5 * 60 * 1000L
         private const val CODEX_LOOPBACK_PORT = 1455
+        private const val ORIGINATOR = "codex_cli_rs"
     }
 
     // Matches Codex CLI OAuth defaults from openai/codex.
@@ -29,9 +30,15 @@ class CodexAuthenticator : OAuthManager {
     override fun initiateLogin(context: Context) {
         val appContext = context.applicationContext
         activeLoopback?.close()
-        val loopback = runCatching {
-            OAuthLoopbackReceiver.start("/auth/callback", preferredPort = CODEX_LOOPBACK_PORT)
-        }.getOrNull()
+        val loopbackAttempt = runCatching {
+            OAuthLoopbackReceiver.start(
+                callbackPath = "/auth/callback",
+                bindHost = "127.0.0.1",
+                redirectHost = "localhost",
+                preferredPort = CODEX_LOOPBACK_PORT
+            )
+        }
+        val loopback = loopbackAttempt.getOrNull()
         activeLoopback = loopback
         val redirectUri = loopback?.redirectUri ?: defaultRedirectUri
         val session = OAuthSessionStore.createSession(appContext, PROVIDER_ID, redirectUri)
@@ -46,7 +53,7 @@ class CodexAuthenticator : OAuthManager {
             .appendQueryParameter("code_challenge_method", "S256")
             .appendQueryParameter("id_token_add_organizations", "true")
             .appendQueryParameter("codex_cli_simplified_flow", "true")
-            .appendQueryParameter("originator", "nabu")
+            .appendQueryParameter("originator", ORIGINATOR)
             .build()
 
         DebugLogger.log("CodexAuthenticator: Initiating login with URL: $authUri")
@@ -71,6 +78,12 @@ class CodexAuthenticator : OAuthManager {
                 loopback.close()
             }
         } else {
+            loopbackAttempt.exceptionOrNull()?.let { throwable ->
+                DebugLogger.log(
+                    "CodexAuthenticator: Loopback bind failed on :$CODEX_LOOPBACK_PORT " +
+                        "(${throwable.javaClass.simpleName}: ${throwable.message})"
+                )
+            }
             DebugLogger.log(
                 "CodexAuthenticator: Loopback bind on :$CODEX_LOOPBACK_PORT unavailable, " +
                     "falling back to custom-scheme callback."

@@ -15,8 +15,8 @@ android {
         applicationId = "com.mewmix.nabu"
         minSdk = 29
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.5.5"
+        versionCode = 13
+        versionName = "0.5.7"
 
         val gitCommitHashProvider = providers.exec {
             commandLine("git", "rev-parse", "--short=7", "HEAD")
@@ -88,6 +88,7 @@ dependencies {
     implementation("com.google.mediapipe:tasks-core:latest.release")
     implementation("com.google.mediapipe:tasks-genai:latest.release")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0")
     implementation("io.ktor:ktor-server-core:2.3.12")
     implementation("io.ktor:ktor-server-cio:2.3.12")
 

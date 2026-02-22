@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 
 class CodexOAuthBackend(
     private val context: Context,
+    private val model: String = "gpt-5.3-codex",
     private val apiClient: CodexApiClient = CodexApiClient()
 ) : LlmBackend {
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -27,7 +28,8 @@ class CodexOAuthBackend(
         activeJob = scope.launch {
             val result = apiClient.sendConversation(
                 context = context.applicationContext,
-                conversation = conversation
+                conversation = conversation,
+                model = model
             )
             if (!isActive) return@launch
             result.fold(

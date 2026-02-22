@@ -243,8 +243,7 @@ class ChatViewModel(
     }
 
     fun selectModel(modelId: String) {
-        val model = _availableModels.value.find { it.id == modelId }
-            ?: modelManager.getModel(modelId)
+        val model = resolveModelById(modelId)
         if (model != null && model.isDownloaded) {
             setActiveModel(model)
         }
@@ -493,8 +492,7 @@ class ChatViewModel(
                 applyConversation(conversation)
             }
             conversation?.modelId?.let { modelId ->
-                val model = _availableModels.value.find { it.id == modelId && it.isDownloaded }
-                    ?: modelManager.getModel(modelId)?.takeIf { it.isDownloaded }
+                val model = resolveModelById(modelId)
                 if (model != null) {
                     withContext(Dispatchers.Main) {
                         setActiveModel(model, persistConversation = false)
@@ -512,8 +510,7 @@ class ChatViewModel(
                 applyConversation(conversation)
             }
             conversation?.modelId?.let { modelId ->
-                val model = _availableModels.value.find { it.id == modelId && it.isDownloaded }
-                    ?: modelManager.getModel(modelId)?.takeIf { it.isDownloaded }
+                val model = resolveModelById(modelId)
                 if (model != null) {
                     withContext(Dispatchers.Main) {
                         setActiveModel(model, persistConversation = false)
@@ -571,16 +568,31 @@ class ChatViewModel(
         _activeModel.value = model
         llmBackend?.close()
 
-        when (model.backend) {
-            "codex_oauth" -> {
-                llmBackend = CodexOAuthBackend(context)
+        val remoteSelection = OAuthRemoteModels.detectSelection(model.id, model.backend)
+        when (remoteSelection?.provider) {
+            OAuthRemoteModels.Provider.CODEX -> {
+                llmBackend = CodexOAuthBackend(
+                    context = context,
+                    model = remoteSelection.modelSlug
+                )
+                DebugLogger.log(
+                    "ChatViewModel: selected remote model provider=codex model=${remoteSelection.modelSlug} " +
+                        "endpoint=chatgpt.com/backend-api/codex/responses"
+                )
                 llmBackend?.initialize()
             }
-            "gemini_oauth" -> {
-                llmBackend = GeminiOAuthBackend(context)
+            OAuthRemoteModels.Provider.GEMINI -> {
+                llmBackend = GeminiOAuthBackend(
+                    context = context,
+                    model = remoteSelection.modelSlug
+                )
+                DebugLogger.log(
+                    "ChatViewModel: selected remote model provider=gemini model=${remoteSelection.modelSlug} " +
+                        "endpoint=generativelanguage.googleapis.com/v1beta/models/*:generateContent"
+                )
                 llmBackend?.initialize()
             }
-            else -> {
+            null -> {
                 val taskFile = File(context.filesDir, "models/${model.id}.task")
                 val ggufFile = File(context.filesDir, "models/${model.id}.gguf")
 
@@ -641,6 +653,16 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    private fun resolveModelById(modelId: String): Model? {
+        val normalizedId = OAuthRemoteModels.normalizeModelId(modelId)
+        return _availableModels.value.find { it.id == normalizedId && it.isDownloaded }
+            ?: _availableModels.value.find { it.id == modelId && it.isDownloaded }
+            ?: modelManager.getModel(normalizedId)?.takeIf { it.isDownloaded }
+            ?: modelManager.getModel(modelId)?.takeIf { it.isDownloaded }
+            ?: OAuthRemoteModels.syntheticModelForId(normalizedId)
+            ?: OAuthRemoteModels.syntheticModelForId(modelId)
     }
 
     private fun generateConversationTitle(): String {

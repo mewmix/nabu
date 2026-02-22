@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 
 class GeminiOAuthBackend(
     private val context: Context,
+    private val model: String = "gemini-2.5-flash",
     private val apiClient: GeminiApiClient = GeminiApiClient()
 ) : LlmBackend {
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -27,7 +28,8 @@ class GeminiOAuthBackend(
         activeJob = scope.launch {
             val result = apiClient.sendConversation(
                 context = context.applicationContext,
-                conversation = conversation
+                conversation = conversation,
+                model = model
             )
             if (!isActive) return@launch
             result.fold(

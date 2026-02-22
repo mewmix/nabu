@@ -270,7 +270,17 @@ fun ChatScreen(
                             } else {
                                 availableModels.forEach { model ->
                                     DropdownMenuItem(
-                                        text = { Text(model.name) },
+                                        text = {
+                                            Column {
+                                                Text(model.name)
+                                                if (model.description.isNotBlank()) {
+                                                    Text(
+                                                        text = model.description,
+                                                        style = MaterialTheme.typography.bodySmall
+                                                    )
+                                                }
+                                            }
+                                        },
                                         onClick = {
                                             modelMenuExpanded = false
                                             viewModel.selectModel(model.id)

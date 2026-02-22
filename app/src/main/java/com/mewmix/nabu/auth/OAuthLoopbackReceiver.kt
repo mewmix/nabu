@@ -1,6 +1,7 @@
 package com.mewmix.nabu.auth
 
 import android.net.Uri
+import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedReader
@@ -35,18 +36,22 @@ internal object OAuthLoopbackReceiver {
 
     fun start(
         callbackPath: String = "/auth/callback",
-        host: String = "127.0.0.1",
+        bindHost: String = "127.0.0.1",
+        redirectHost: String = bindHost,
         preferredPort: Int? = null
     ): Session {
         val normalizedPath = if (callbackPath.startsWith("/")) callbackPath else "/$callbackPath"
         val callback = CompletableDeferred<Uri?>()
         val closed = AtomicBoolean(false)
         val bindPort = preferredPort?.takeIf { it in 1..65535 } ?: 0
-        val serverSocket = ServerSocket(bindPort, 8, InetAddress.getByName(host)).apply {
+        val serverSocket = ServerSocket(bindPort, 8, InetAddress.getByName(bindHost)).apply {
             soTimeout = 1000
         }
         val port = serverSocket.localPort
-        val redirectUri = "http://$host:$port$normalizedPath"
+        val redirectUri = "http://$redirectHost:$port$normalizedPath"
+        DebugLogger.log(
+            "OAuthLoopbackReceiver: Listening on $redirectUri (bind=$bindHost:$port)"
+        )
 
         val worker = Thread {
             while (!closed.get()) {
@@ -60,11 +65,16 @@ internal object OAuthLoopbackReceiver {
                         val requestLine = reader.readLine().orEmpty()
                         val requestPath = parseRequestPath(requestLine)
                         val requestUri = if (requestPath != null) {
-                            Uri.parse("http://$host:$port$requestPath")
+                            Uri.parse("http://$redirectHost:$port$requestPath")
                         } else {
                             null
                         }
                         val matched = requestUri?.path == normalizedPath
+                        if (requestLine.isNotBlank()) {
+                            DebugLogger.log(
+                                "OAuthLoopbackReceiver: request='$requestLine' matched=$matched uri=$requestUri"
+                            )
+                        }
 
                         val body = if (matched) {
                             "Authentication completed. Return to Nabu."
@@ -84,6 +94,7 @@ internal object OAuthLoopbackReceiver {
 
                         if (matched && !callback.isCompleted) {
                             callback.complete(requestUri)
+                            DebugLogger.log("OAuthLoopbackReceiver: Callback captured ($requestUri)")
                             closed.set(true)
                             runCatching { serverSocket.close() }
                             shouldStop = true
@@ -95,6 +106,7 @@ internal object OAuthLoopbackReceiver {
                 } catch (_: SocketTimeoutException) {
                     continue
                 } catch (_: Exception) {
+                    DebugLogger.log("OAuthLoopbackReceiver: Listener terminated unexpectedly")
                     if (!callback.isCompleted) {
                         callback.complete(null)
                     }
