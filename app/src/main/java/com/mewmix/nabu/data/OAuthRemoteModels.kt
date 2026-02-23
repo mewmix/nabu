@@ -13,7 +13,7 @@ object OAuthRemoteModels {
     const val LEGACY_CODEX_MODEL_ID = "codex-byos-oauth"
     const val LEGACY_GEMINI_MODEL_ID = "gemini-byos-oauth"
 
-    const val DEFAULT_CODEX_MODEL = "gpt-5.3-codex-spark"
+    const val DEFAULT_CODEX_MODEL = "gpt-5.3-codex"
     const val DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
     enum class Provider {
@@ -54,12 +54,6 @@ object OAuthRemoteModels {
     private val codexSpecs = listOf(
         RemoteModelSpec(
             provider = Provider.CODEX,
-            modelSlug = "gpt-5.3-codex-spark",
-            title = "Codex · GPT-5.3 Codex Spark",
-            endpointLabel = "chatgpt.com/backend-api/codex/responses"
-        ),
-        RemoteModelSpec(
-            provider = Provider.CODEX,
             modelSlug = "gpt-5.3-codex",
             title = "Codex · GPT-5.3 Codex",
             endpointLabel = "chatgpt.com/backend-api/codex/responses"
@@ -68,12 +62,6 @@ object OAuthRemoteModels {
             provider = Provider.CODEX,
             modelSlug = "gpt-5-codex",
             title = "Codex · GPT-5 Codex",
-            endpointLabel = "chatgpt.com/backend-api/codex/responses"
-        ),
-        RemoteModelSpec(
-            provider = Provider.CODEX,
-            modelSlug = "codex-mini-latest",
-            title = "Codex · Mini Latest",
             endpointLabel = "chatgpt.com/backend-api/codex/responses"
         )
     )
