@@ -242,39 +242,63 @@ class CodexApiClient(
             .filter { it.content.isNotBlank() }
             .forEach { message ->
                 val normalizedRole = mapRole(message.role)
+                val textContent = message.content.trim()
+
                 if (normalizedRole == "assistant") {
-                    if (!includeAssistantHistory) {
-                        return@forEach
-                    }
+                    if (!includeAssistantHistory) return@forEach
                     assistantInputCount += 1
-                    input.put(
-                        JSONObject()
-                            .put("type", "message")
-                            .put("role", "assistant")
-                            .put(
-                                "content",
-                                JSONArray().put(
-                                    JSONObject()
-                                        .put("type", "output_text")
-                                        .put("text", message.content)
-                                )
+
+                    val tcMatch = "<tool_call>(.*?)</tool_call>".toRegex(RegexOption.DOT_MATCHES_ALL).find(textContent)
+                    if (tcMatch != null) {
+                        val beforeText = textContent.substring(0, tcMatch.range.first).trim()
+                        if (beforeText.isNotBlank()) {
+                            input.put(
+                                JSONObject().put("type", "message").put("role", "assistant")
+                                    .put("content", JSONArray().put(JSONObject().put("type", "output_text").put("text", beforeText)))
                             )
-                    )
+                        }
+
+                        val jsonPayload = runCatching { JSONObject(tcMatch.groupValues[1]) }.getOrNull()
+                        val name = jsonPayload?.optString("name")?.ifBlank { null } ?: "unknown"
+                        val args = jsonPayload?.opt("arguments")?.toString() ?: "{}"
+                        // Deterministic ID mapping for tool_call <-> function_call_output
+                        val callId = "call_${name.hashCode()}"
+
+                        input.put(
+                            JSONObject()
+                                .put("type", "function_call")
+                                .put("id", callId)
+                                .put("name", name)
+                                .put("arguments", args)
+                        )
+                    } else {
+                        input.put(
+                            JSONObject().put("type", "message").put("role", "assistant")
+                                .put("content", JSONArray().put(JSONObject().put("type", "output_text").put("text", textContent)))
+                        )
+                    }
                 } else {
                     userInputCount += 1
-                    input.put(
-                        JSONObject()
-                            .put("type", "message")
-                            .put("role", "user")
-                            .put(
-                                "content",
-                                JSONArray().put(
-                                    JSONObject()
-                                        .put("type", "input_text")
-                                        .put("text", message.content)
-                                )
-                            )
-                    )
+                    val trMatch = "<tool_call_result>.*?<name>(.*?)</name>.*?<output>(.*?)</output>.*?</tool_call_result>"
+                        .toRegex(RegexOption.DOT_MATCHES_ALL).find(textContent)
+
+                    if (trMatch != null) {
+                        val name = trMatch.groupValues[1].trim()
+                        val outputText = trMatch.groupValues[2].trim()
+                        val callId = "call_${name.hashCode()}"
+
+                        input.put(
+                            JSONObject()
+                                .put("type", "function_call_output")
+                                .put("call_id", callId)
+                                .put("output", outputText)
+                        )
+                    } else {
+                        input.put(
+                            JSONObject().put("type", "message").put("role", "user")
+                                .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", textContent)))
+                        )
+                    }
                 }
             }
 
