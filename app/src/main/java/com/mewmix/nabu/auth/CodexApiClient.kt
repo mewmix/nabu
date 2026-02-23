@@ -362,6 +362,13 @@ class CodexApiClient(
         val chunks = mutableListOf<String>()
         for (i in 0 until output.length()) {
             val item = output.optJSONObject(i) ?: continue
+            if (item.optString("type") == "function_call") {
+                val tcName = item.optString("name").ifBlank { "unknown" }
+                val tcArgs = item.optString("arguments").ifBlank { "{}" }
+                chunks += "<tool_call>{\"name\":\"$tcName\",\"arguments\":$tcArgs}</tool_call>"
+                continue
+            }
+
             val content = item.optJSONArray("content") ?: continue
             for (j in 0 until content.length()) {
                 val contentItem = content.optJSONObject(j) ?: continue
@@ -375,11 +382,9 @@ class CodexApiClient(
                     for (k in 0 until toolCalls.length()) {
                         val tc = toolCalls.optJSONObject(k) ?: continue
                         val tcFunction = tc.optJSONObject("function")
-                        val tcName = tcFunction?.optString("name")?.ifBlank { null } ?: tc.optString("name")
+                        val tcName = tcFunction?.optString("name")?.ifBlank { null } ?: tc.optString("name").ifBlank { "unknown" }
                         val tcArgs = tcFunction?.optString("arguments")?.ifBlank { null } ?: tc.optString("arguments") ?: "{}"
-                        if (tcName.isNotBlank()) {
-                            chunks += "<tool_call>{\"name\":\"$tcName\",\"arguments\":$tcArgs}</tool_call>"
-                        }
+                        chunks += "<tool_call>{\"name\":\"$tcName\",\"arguments\":$tcArgs}</tool_call>"
                     }
                 }
             }
