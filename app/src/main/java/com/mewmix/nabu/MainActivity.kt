@@ -23,7 +23,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +65,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -92,7 +90,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 import java.util.Locale
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.TtsModelValidator
@@ -370,16 +367,6 @@ sealed class Screen {
     object Credits : Screen()
 }
 
-private val featureScreens = listOf(Screen.Basic, Screen.Mixer, Screen.Book, Screen.More)
-
-private fun Screen.asFeature(): Screen? = when (this) {
-    Screen.Basic -> Screen.Basic
-    Screen.Mixer -> Screen.Mixer
-    Screen.Book -> Screen.Book
-    Screen.More, Screen.Creations, Screen.Settings, Screen.Models, Screen.Credits, Screen.DebugLog -> Screen.More
-    Screen.Chat -> null
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -413,7 +400,6 @@ fun MainScreen(
     }
 
     val currentScreen = screenStack.last()
-    val currentFeature = currentScreen.asFeature()
     val navigateTo: (Screen) -> Unit = { screen ->
         if (screenStack.lastOrNull() != screen) {
             screenStack.add(screen)
@@ -465,26 +451,6 @@ fun MainScreen(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .pointerInput(currentScreen, screenStack.size) {
-                        var totalDrag = 0f
-                        detectDragGestures(
-                            onDragStart = { totalDrag = 0f },
-                            onDragCancel = { totalDrag = 0f },
-                            onDragEnd = {
-                                val feature = currentFeature ?: return@detectDragGestures
-                                val index = featureScreens.indexOf(feature)
-                                if (abs(totalDrag) > 96f && index != -1) {
-                                    when {
-                                        totalDrag > 0f && index > 0 -> navigateTo(featureScreens[index - 1])
-                                        totalDrag < 0f && index < featureScreens.lastIndex -> navigateTo(featureScreens[index + 1])
-                                    }
-                                }
-                                totalDrag = 0f
-                            }
-                        ) { _, dragAmount ->
-                            totalDrag += dragAmount.x
-                        }
-                    }
             ) {
                 when (currentScreen) {
                     Screen.Basic -> BasicScreen(
