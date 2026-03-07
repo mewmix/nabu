@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,6 +31,7 @@ import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mewmix.nabu.ui.brutalist.Brutal
@@ -48,6 +52,9 @@ import com.mewmix.nabu.utils.StyleLoader
 import com.mewmix.nabu.utils.createAudioFromStyleVector
 import com.mewmix.nabu.utils.mixStyles
 import com.mewmix.nabu.utils.SettingsManager
+import com.mewmix.nabu.utils.VoiceMixConfig
+import com.mewmix.nabu.utils.VoiceMixFavorite
+import com.mewmix.nabu.utils.filterToAvailableStyles
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalButtonText
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
@@ -125,17 +132,68 @@ fun MixerScreen(
     var shouldSaveFile by remember { mutableStateOf(false) }
 
     val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
-    val initial = remember {
-        loadStyleConfig(context) ?: Triple(
-            listOf(defaultVoice),
-            mapOf(defaultVoice to 1f),
-            InterpolationMode.LINEAR
+    val initial = remember(defaultVoice) {
+        SettingsManager.getVoiceMixConfig(context, defaultVoice)
+    }
+
+    var selectedStyles by remember { mutableStateOf(initial.styles) }
+    var weights by remember { mutableStateOf(initial.weights) }
+    var interpolationMode by remember { mutableStateOf(initial.interpolationMode) }
+    var favorites by remember {
+        mutableStateOf(SettingsManager.getVoiceMixFavorites(context))
+    }
+
+    fun persistVoiceMixConfig(
+        styles: List<String> = selectedStyles,
+        styleWeights: Map<String, Float> = weights,
+        mode: InterpolationMode = interpolationMode,
+    ) {
+        SettingsManager.setVoiceMixConfig(
+            context,
+            VoiceMixConfig(
+                styles = styles,
+                weights = styleWeights,
+                interpolationMode = mode
+            )
         )
     }
 
-    var selectedStyles by remember { mutableStateOf(initial.first) }
-    var weights by remember { mutableStateOf(initial.second) }
-    var interpolationMode by remember { mutableStateOf(initial.third) }
+    fun persistFavorites(updated: List<VoiceMixFavorite>) {
+        favorites = updated
+        SettingsManager.setVoiceMixFavorites(context, updated)
+    }
+
+    LaunchedEffect(styleLoader.names) {
+        if (styleLoader.names.isNotEmpty()) {
+            val fallback = styleLoader.names.first()
+            val sanitized = VoiceMixConfig(
+                styles = selectedStyles,
+                weights = weights,
+                interpolationMode = interpolationMode
+            ).filterToAvailableStyles(styleLoader.names, fallback)
+            if (sanitized.styles != selectedStyles ||
+                sanitized.weights != weights ||
+                sanitized.interpolationMode != interpolationMode
+            ) {
+                selectedStyles = sanitized.styles
+                weights = sanitized.weights
+                interpolationMode = sanitized.interpolationMode
+                persistVoiceMixConfig(sanitized.styles, sanitized.weights, sanitized.interpolationMode)
+            }
+            val sanitizedFavorites = favorites.mapNotNull { favorite ->
+                favorite.copy(
+                    styles = favorite.styles.filter { it in styleLoader.names }.ifEmpty { listOf(fallback) },
+                    weights = favorite.styles
+                        .filter { it in styleLoader.names }
+                        .ifEmpty { listOf(fallback) }
+                        .associateWith { style -> (favorite.weights[style] ?: 1f).coerceIn(0f, 1f) }
+                )
+            }
+            if (sanitizedFavorites != favorites) {
+                persistFavorites(sanitizedFavorites)
+            }
+        }
+    }
 
     PanelBox(
         modifier = Modifier
@@ -193,23 +251,58 @@ fun MixerScreen(
                 onAddStyle = {
                     selectedStyles = selectedStyles + it
                     weights = weights + (it to 1f)
-                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                    persistVoiceMixConfig()
                 },
                 onRemoveStyle = {
                     selectedStyles = selectedStyles - it
                     weights = weights - it
-                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                    if (selectedStyles.isEmpty()) {
+                        selectedStyles = listOf(defaultVoice)
+                        weights = mapOf(defaultVoice to 1f)
+                    }
+                    persistVoiceMixConfig()
                 }
             )
         }
 
         if (isKokoroLoaded) {
+            VoiceFavoritesSection(
+                favorites = favorites,
+                onSaveFavorite = { name ->
+                    val trimmed = name.trim()
+                    if (trimmed.isNotEmpty()) {
+                        val updated = favorites.filterNot { it.name.equals(trimmed, ignoreCase = true) } +
+                            VoiceMixFavorite(
+                                name = trimmed,
+                                styles = selectedStyles,
+                                weights = weights,
+                                interpolationMode = interpolationMode
+                            )
+                        persistFavorites(updated)
+                    }
+                },
+                onApplyFavorite = { favorite ->
+                    val config = VoiceMixConfig(
+                        styles = favorite.styles,
+                        weights = favorite.weights,
+                        interpolationMode = favorite.interpolationMode
+                    ).filterToAvailableStyles(styleLoader.names, defaultVoice)
+                    selectedStyles = config.styles
+                    weights = config.weights
+                    interpolationMode = config.interpolationMode
+                    persistVoiceMixConfig()
+                },
+                onDeleteFavorite = { name ->
+                    persistFavorites(favorites.filterNot { it.name.equals(name, ignoreCase = true) })
+                }
+            )
+
             WeightSliders(
                 selectedStyles = selectedStyles,
                 weights = weights,
                 onWeightChanged = { style, value ->
-                    weights = weights.toMutableMap().apply { put(style, value) }
-                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                    weights = weights.toMutableMap().apply { put(style, value.coerceIn(0f, 1f)) }
+                    persistVoiceMixConfig()
                 }
             )
 
@@ -217,7 +310,7 @@ fun MixerScreen(
                 currentMode = interpolationMode,
                 onModeSelected = {
                     interpolationMode = it
-                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                    persistVoiceMixConfig()
                 }
             )
         }
@@ -226,6 +319,8 @@ fun MixerScreen(
         LaunchedEffect(isSupertonicLoaded, supertonicStyles) {
             if (isSupertonicLoaded && supertonicStyles.isNotEmpty() && selectedStyles.firstOrNull() !in supertonicStyles) {
                 selectedStyles = listOf(supertonicStyles.first())
+                weights = mapOf(selectedStyles.first() to (weights[selectedStyles.first()] ?: 1f))
+                persistVoiceMixConfig()
             }
         }
 
@@ -233,7 +328,11 @@ fun MixerScreen(
             SingleStyleSelector(
                 styleNames = supertonicStyles,
                 selectedStyle = selectedStyles.firstOrNull(),
-                onSelected = { selectedStyles = listOf(it) }
+                onSelected = {
+                    selectedStyles = listOf(it)
+                    weights = mapOf(it to (weights[it] ?: 1f))
+                    persistVoiceMixConfig()
+                }
             )
 
             PanelRow(name = "Supertonic Steps") {
@@ -386,22 +485,6 @@ fun MixerScreen(
 }
 }
 
-private fun loadStyleConfig(context: android.content.Context): Triple<List<String>, Map<String, Float>, InterpolationMode>? {
-    val prefs = context.getSharedPreferences("mixer_config", android.content.Context.MODE_PRIVATE)
-    val saved = prefs.getString("styles", null) ?: return null
-    val mode = prefs.getString("mode", InterpolationMode.LINEAR.name) ?: InterpolationMode.LINEAR.name
-    val styles = mutableListOf<String>()
-    val weights = mutableMapOf<String, Float>()
-    saved.split(',').forEach { entry ->
-        val parts = entry.split('|')
-        if (parts.size == 2) {
-            styles.add(parts[0])
-            weights[parts[0]] = parts[1].toFloatOrNull() ?: 1f
-        }
-    }
-    return Triple(styles, weights, InterpolationMode.valueOf(mode))
-}
-
 private fun generateAudio(
     text: String,
     style: Array<FloatArray>, // This is still used for Kokoro mixing
@@ -470,20 +553,6 @@ private fun generateAudio(
             withContext(Dispatchers.Main) { onComplete() }
         }
     }
-}
-
-private fun saveStyleConfig(
-    context: android.content.Context,
-    styles: List<String>,
-    weights: Map<String, Float>,
-    mode: InterpolationMode
-) {
-    val prefs = context.getSharedPreferences("mixer_config", android.content.Context.MODE_PRIVATE)
-    val styleString = styles.joinToString(",") { "${it}|${weights[it] ?: 1f}" }
-    prefs.edit()
-        .putString("styles", styleString)
-        .putString("mode", mode.name)
-        .apply()
 }
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
@@ -647,12 +716,119 @@ fun WeightSliders(
 
         selectedStyles.forEach { style ->
             PanelRow(name = style) {
-                BrutalSlider(
-                    value = weights[style] ?: 0f,
-                    onValueChange = { onWeightChanged(style, it) },
-                    modifier = Modifier.weight(1f)
+                val currentWeight = (weights[style] ?: 0f).coerceIn(0f, 1f)
+                key(style, currentWeight) {
+                    var input by remember { mutableStateOf(formatWeightInput(currentWeight)) }
+                    BrutalSlider(
+                        value = currentWeight,
+                        onValueChange = {
+                            input = formatWeightInput(it)
+                            onWeightChanged(style, it)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextField(
+                        value = input,
+                        onValueChange = { candidate ->
+                            if (isValidWeightInput(candidate)) {
+                                input = candidate
+                                candidate.toFloatOrNull()?.let { onWeightChanged(style, it.coerceIn(0f, 1f)) }
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.width(88.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Brutal.panelBg,
+                            unfocusedContainerColor = Brutal.panelBg,
+                            focusedIndicatorColor = Brutal.hairline,
+                            unfocusedIndicatorColor = Brutal.hairline,
+                            focusedTextColor = Brutal.textBright,
+                            unfocusedTextColor = Brutal.textBright
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun VoiceFavoritesSection(
+    favorites: List<VoiceMixFavorite>,
+    onSaveFavorite: (String) -> Unit,
+    onApplyFavorite: (VoiceMixFavorite) -> Unit,
+    onDeleteFavorite: (String) -> Unit,
+) {
+    var favoriteName by remember { mutableStateOf("") }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("FAVORITES:", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextField(
+                value = favoriteName,
+                onValueChange = { favoriteName = it },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                placeholder = { Text("Name this mix", color = Brutal.textDim) },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Brutal.panelBg,
+                    unfocusedContainerColor = Brutal.panelBg,
+                    focusedIndicatorColor = Brutal.hairline,
+                    unfocusedIndicatorColor = Brutal.hairline,
+                    focusedTextColor = Brutal.textBright,
+                    unfocusedTextColor = Brutal.textBright
                 )
-                Text(text = "%.2f".format(weights[style] ?: 0f))
+            )
+            BrutalButton(
+                onClick = {
+                    val trimmed = favoriteName.trim()
+                    if (trimmed.isNotEmpty()) {
+                        onSaveFavorite(trimmed)
+                        favoriteName = ""
+                    }
+                },
+                enabled = favoriteName.isNotBlank()
+            ) {
+                Text("Save", color = Brutal.textBright)
+            }
+        }
+
+        if (favorites.isEmpty()) {
+            Text(
+                text = "No saved mixes yet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Brutal.textDim
+            )
+        } else {
+            favorites.forEach { favorite ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Brutal.hairline, RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(favorite.name, color = Brutal.textBright, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = "${favorite.styles.joinToString(" + ")} • ${favorite.interpolationMode.displayName}",
+                        color = Brutal.textDim,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BrutalButton(onClick = { onApplyFavorite(favorite) }) {
+                            Text("Load", color = Brutal.textBright)
+                        }
+                        BrutalButton(onClick = { onDeleteFavorite(favorite.name) }) {
+                            Text("Delete", color = Brutal.red)
+                        }
+                    }
+                }
             }
         }
     }
@@ -684,3 +860,13 @@ fun InterpolationModeSelector(
         }
     }
 }
+
+private fun formatWeightInput(value: Float): String =
+    "%.2f".format(value.coerceIn(0f, 1f))
+
+private fun isValidWeightInput(input: String): Boolean {
+    if (input.isEmpty() || input == ".") return true
+    return WEIGHT_INPUT_REGEX.matches(input)
+}
+
+private val WEIGHT_INPUT_REGEX = Regex("^(0?(\\.\\d{0,2})?|1(\\.0{0,2})?)$")

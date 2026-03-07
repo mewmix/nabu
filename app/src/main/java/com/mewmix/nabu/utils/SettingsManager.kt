@@ -5,6 +5,8 @@ import com.mewmix.nabu.chat.LlmRuntimeConfig
 import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import com.mewmix.nabu.chat.MediaPipeRuntimeConfig
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.mewmix.nabu.kokoro.RunEp
 import kotlin.math.max
 import kotlin.math.min
@@ -40,6 +42,16 @@ object SettingsManager {
     private const val KEY_GEMINI_OAUTH_CLIENT_ID = "gemini_oauth_client_id"
     private const val KEY_GEMINI_OAUTH_REDIRECT_URI = "gemini_oauth_redirect_uri"
     private const val KEY_GEMINI_OAUTH_PROJECT_ID = "gemini_oauth_project_id"
+    private const val KEY_VOICE_MIX_CONFIG = "voice_mix_config"
+    private const val KEY_VOICE_MIX_FAVORITES = "voice_mix_favorites"
+    private const val KEY_CHAT_SYSTEM_PROMPT = "chat_system_prompt"
+    private const val LEGACY_MIXER_PREFS = "mixer_config"
+    private const val LEGACY_MIXER_STYLES = "styles"
+    private const val LEGACY_MIXER_MODE = "mode"
+
+    private val gson = Gson()
+    private val voiceMixFavoritesType =
+        TypeToken.getParameterized(List::class.java, VoiceMixFavorite::class.java).type
 
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
@@ -94,6 +106,97 @@ object SettingsManager {
     fun getSpeed(context: Context, default: Float = 1.0f): Float =
         DatabaseManager.getSetting(context, "speed")?.toFloat() ?: default
 
+    fun setVoiceMixConfig(context: Context, config: VoiceMixConfig) {
+        val defaultStyle = config.styles.firstOrNull().orEmpty().ifBlank { "af_sky" }
+        DatabaseManager.setSetting(
+            context,
+            KEY_VOICE_MIX_CONFIG,
+            gson.toJson(config.normalized(defaultStyle))
+        )
+    }
+
+    fun getVoiceMixConfig(context: Context, defaultStyle: String = "af_sky"): VoiceMixConfig {
+        val saved = DatabaseManager.getSetting(context, KEY_VOICE_MIX_CONFIG)
+            ?.let { json -> runCatching { gson.fromJson(json, VoiceMixConfig::class.java) }.getOrNull() }
+            ?.normalized(defaultStyle)
+        if (saved != null) {
+            return saved
+        }
+
+        val migrated = readLegacyVoiceMixConfig(context, defaultStyle)
+        if (migrated != null) {
+            setVoiceMixConfig(context, migrated)
+            return migrated
+        }
+
+        return VoiceMixConfig(
+            styles = listOf(defaultStyle),
+            weights = mapOf(defaultStyle to 1f),
+            interpolationMode = InterpolationMode.LINEAR
+        )
+    }
+
+    fun setVoiceMixFavorites(context: Context, favorites: List<VoiceMixFavorite>) {
+        val normalized = favorites
+            .mapNotNull { favorite ->
+                val name = favorite.name.trim()
+                if (name.isEmpty()) {
+                    null
+                } else {
+                    favorite.copy(name = name).toConfig().normalized(
+                        favorite.styles.firstOrNull().orEmpty().ifBlank { "af_sky" }
+                    ).let { config ->
+                        favorite.copy(
+                            name = name,
+                            styles = config.styles,
+                            weights = config.weights,
+                            interpolationMode = config.interpolationMode
+                        )
+                    }
+                }
+            }
+            .distinctBy { it.name.lowercase() }
+        DatabaseManager.setSetting(context, KEY_VOICE_MIX_FAVORITES, gson.toJson(normalized, voiceMixFavoritesType))
+    }
+
+    fun getVoiceMixFavorites(context: Context): List<VoiceMixFavorite> {
+        val saved = DatabaseManager.getSetting(context, KEY_VOICE_MIX_FAVORITES).orEmpty()
+        if (saved.isBlank()) {
+            return emptyList()
+        }
+        return runCatching {
+            gson.fromJson<List<VoiceMixFavorite>>(saved, voiceMixFavoritesType)
+                ?.mapNotNull { favorite ->
+                    val name = favorite.name.trim()
+                    if (name.isEmpty()) {
+                        null
+                    } else {
+                        val config = favorite.toConfig().normalized(
+                            favorite.styles.firstOrNull().orEmpty().ifBlank { "af_sky" }
+                        )
+                        favorite.copy(
+                            name = name,
+                            styles = config.styles,
+                            weights = config.weights,
+                            interpolationMode = config.interpolationMode
+                        )
+                    }
+                }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
+    fun setChatSystemPrompt(context: Context, prompt: String) {
+        DatabaseManager.setSetting(context, KEY_CHAT_SYSTEM_PROMPT, prompt)
+    }
+
+    fun getChatSystemPrompt(
+        context: Context,
+        default: String = "You are a helpful AI assistant."
+    ): String {
+        return DatabaseManager.getSetting(context, KEY_CHAT_SYSTEM_PROMPT) ?: default
+    }
+
     fun setTtsEnabled(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "tts_enabled", if (enabled) "1" else "0")
     }
@@ -144,6 +247,40 @@ object SettingsManager {
 
     fun getGeminiOAuthProjectId(context: Context): String =
         DatabaseManager.getSetting(context, KEY_GEMINI_OAUTH_PROJECT_ID).orEmpty().trim()
+
+    private fun readLegacyVoiceMixConfig(
+        context: Context,
+        defaultStyle: String,
+    ): VoiceMixConfig? {
+        val prefs = context.getSharedPreferences(LEGACY_MIXER_PREFS, Context.MODE_PRIVATE)
+        val savedStyles = prefs.getString(LEGACY_MIXER_STYLES, null) ?: return null
+        val mode = prefs.getString(LEGACY_MIXER_MODE, InterpolationMode.LINEAR.name)
+            ?.let { name -> runCatching { InterpolationMode.valueOf(name) }.getOrNull() }
+            ?: InterpolationMode.LINEAR
+
+        val styles = mutableListOf<String>()
+        val weights = mutableMapOf<String, Float>()
+        savedStyles.split(',').forEach { entry ->
+            val parts = entry.split('|')
+            if (parts.size == 2) {
+                val style = parts[0].trim()
+                if (style.isNotEmpty()) {
+                    styles += style
+                    weights[style] = parts[1].toFloatOrNull()?.coerceIn(0f, 1f) ?: 1f
+                }
+            }
+        }
+
+        return if (styles.isEmpty()) {
+            null
+        } else {
+            VoiceMixConfig(
+                styles = styles,
+                weights = weights,
+                interpolationMode = mode
+            ).normalized(defaultStyle)
+        }
+    }
 
     fun setInitComplete(context: Context, complete: Boolean) {
         DatabaseManager.setSetting(context, KEY_INIT_COMPLETE, if (complete) "1" else "0")

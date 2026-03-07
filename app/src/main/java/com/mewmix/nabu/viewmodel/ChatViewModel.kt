@@ -33,8 +33,13 @@ import com.mewmix.nabu.utils.PhonemeConverter
 import com.mewmix.nabu.utils.PlayerState
 import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.StyleLoader
+import com.mewmix.nabu.utils.VoiceMixConfig
+import com.mewmix.nabu.utils.VoiceMixFavorite
 import com.mewmix.nabu.utils.createAudioFromStyleVector
+import com.mewmix.nabu.utils.filterToAvailableStyles
 import com.mewmix.nabu.utils.mixStyles
+import com.mewmix.nabu.utils.normalized
+import com.mewmix.nabu.utils.toConfig
 import com.mewmix.nabu.tools.GlaiveBridge
 import com.mewmix.nabu.tools.ToolCall
 import com.mewmix.nabu.tools.ToolCallProtocol
@@ -64,6 +69,7 @@ class ChatViewModel(
         private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
         private const val MAX_TOOL_CALLS_PER_TURN = 4
         private const val TOOL_EXECUTION_TIMEOUT_MS = 30_000L
+        private const val DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
         private val TOKEN_REGEX = Regex("\\S+")
     }
 
@@ -71,6 +77,7 @@ class ChatViewModel(
     private val phonemeConverter = PhonemeConverter(context)
     val styleLoader = StyleLoader(context)
     private val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
+    private val initialVoiceMixConfig = SettingsManager.getVoiceMixConfig(context, defaultVoice)
     private val audioPlayer: AudioPlayer = KokoroAudioPlayer(viewModelScope) { newState ->
         _playerState.value = newState
     }
@@ -110,17 +117,20 @@ class ChatViewModel(
     val ttsEnabled = _ttsEnabled.asStateFlow()
 
     // Mixer State
-    private val _selectedStyles = MutableStateFlow(listOf(defaultVoice))
+    private val _selectedStyles = MutableStateFlow(initialVoiceMixConfig.styles)
     val selectedStyles = _selectedStyles.asStateFlow()
 
-    private val _weights = MutableStateFlow(mapOf(defaultVoice to 1f))
+    private val _weights = MutableStateFlow(initialVoiceMixConfig.weights)
     val weights = _weights.asStateFlow()
 
-    private val _interpolationMode = MutableStateFlow(InterpolationMode.LINEAR)
+    private val _interpolationMode = MutableStateFlow(initialVoiceMixConfig.interpolationMode)
     val interpolationMode = _interpolationMode.asStateFlow()
 
-    private val _speed = MutableStateFlow(1.0f)
+    private val _speed = MutableStateFlow(SettingsManager.getSpeed(context))
     val speed = _speed.asStateFlow()
+
+    private val _voiceFavorites = MutableStateFlow(SettingsManager.getVoiceMixFavorites(context))
+    val voiceFavorites = _voiceFavorites.asStateFlow()
 
     private data class QueuedAudio(val index: Int, val audio: FloatArray, val sampleRate: Int)
 
@@ -181,11 +191,27 @@ class ChatViewModel(
     fun refreshStyles() {
         val available = styleLoader.names
         if (available.isNotEmpty()) {
-            val current = _selectedStyles.value
-            if (current.isEmpty() || current.any { it !in available }) {
-                val default = available.first()
-                _selectedStyles.value = listOf(default)
-                _weights.value = mapOf(default to 1f)
+            val fallback = available.first()
+            val sanitized = currentVoiceMixConfig()
+                .filterToAvailableStyles(available, fallback)
+            if (sanitized != currentVoiceMixConfig()) {
+                applyVoiceMixConfig(sanitized, persist = true)
+            }
+            val sanitizedFavorites = _voiceFavorites.value.mapNotNull { favorite ->
+                favorite.toConfig()
+                    .filterToAvailableStyles(available, fallback)
+                    .takeIf { it.styles.isNotEmpty() }
+                    ?.let { config ->
+                        favorite.copy(
+                            styles = config.styles,
+                            weights = config.weights,
+                            interpolationMode = config.interpolationMode
+                        )
+                    }
+            }
+            if (sanitizedFavorites != _voiceFavorites.value) {
+                _voiceFavorites.value = sanitizedFavorites
+                SettingsManager.setVoiceMixFavorites(context, sanitizedFavorites)
             }
         }
     }
@@ -667,7 +693,8 @@ class ChatViewModel(
     }
 
     // System Prompt & Token Usage
-    private val _systemPrompt = MutableStateFlow("You are a helpful AI assistant.")
+    private val _systemPrompt =
+        MutableStateFlow(SettingsManager.getChatSystemPrompt(context, DEFAULT_SYSTEM_PROMPT))
     val systemPrompt = _systemPrompt.asStateFlow()
 
     private val _tokenUsage = MutableStateFlow(0 to DEFAULT_MAX_CONTEXT_TOKENS)
@@ -675,6 +702,7 @@ class ChatViewModel(
 
     fun updateSystemPrompt(newPrompt: String) {
         _systemPrompt.value = newPrompt
+        SettingsManager.setChatSystemPrompt(context, newPrompt)
     }
 
     private fun prepareConversationForModel(maxTokens: Int): List<LlmMessage> {
@@ -869,6 +897,7 @@ class ChatViewModel(
         if (style !in _selectedStyles.value) {
             _selectedStyles.value += style
             _weights.value += (style to 1f)
+            persistVoiceMixConfig()
         }
     }
 
@@ -877,24 +906,75 @@ class ChatViewModel(
         _weights.value -= style
         if (_selectedStyles.value.isEmpty()) {
             addStyle(defaultVoice) // Ensure at least one style is always selected
+        } else {
+            persistVoiceMixConfig()
         }
     }
 
     fun updateWeight(style: String, value: Float) {
-        _weights.value = _weights.value.toMutableMap().apply { this[style] = value }
+        _weights.value = _weights.value.toMutableMap().apply { this[style] = value.coerceIn(0f, 1f) }
+        persistVoiceMixConfig()
     }
 
     fun updateInterpolationMode(mode: InterpolationMode) {
         _interpolationMode.value = mode
+        persistVoiceMixConfig()
     }
 
     fun updateSpeed(newSpeed: Float) {
         _speed.value = newSpeed
+        SettingsManager.setSpeed(context, newSpeed)
+    }
+
+    fun saveCurrentFavorite(name: String) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) return
+        val favorite = VoiceMixFavorite(
+            name = trimmedName,
+            styles = _selectedStyles.value,
+            weights = _weights.value,
+            interpolationMode = _interpolationMode.value
+        )
+        val updated = _voiceFavorites.value
+            .filterNot { it.name.equals(trimmedName, ignoreCase = true) } + favorite
+        _voiceFavorites.value = updated
+        SettingsManager.setVoiceMixFavorites(context, updated)
+    }
+
+    fun applyFavorite(favorite: VoiceMixFavorite) {
+        applyVoiceMixConfig(favorite.toConfig(), persist = true)
+    }
+
+    fun deleteFavorite(name: String) {
+        val updated = _voiceFavorites.value.filterNot { it.name.equals(name, ignoreCase = true) }
+        _voiceFavorites.value = updated
+        SettingsManager.setVoiceMixFavorites(context, updated)
     }
 
     override fun onCleared() {
         super.onCleared()
         llmBackend?.close()
         audioPlayer.stop()
+    }
+
+    private fun currentVoiceMixConfig(): VoiceMixConfig =
+        VoiceMixConfig(
+            styles = _selectedStyles.value,
+            weights = _weights.value,
+            interpolationMode = _interpolationMode.value
+        )
+
+    private fun applyVoiceMixConfig(config: VoiceMixConfig, persist: Boolean) {
+        val normalized = config.normalized(defaultVoice)
+        _selectedStyles.value = normalized.styles
+        _weights.value = normalized.weights
+        _interpolationMode.value = normalized.interpolationMode
+        if (persist) {
+            SettingsManager.setVoiceMixConfig(context, normalized)
+        }
+    }
+
+    private fun persistVoiceMixConfig() {
+        SettingsManager.setVoiceMixConfig(context, currentVoiceMixConfig())
     }
 }

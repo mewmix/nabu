@@ -82,6 +82,7 @@ fun ChatScreen(
     val weights by viewModel.weights.collectAsState()
     val interpolationMode by viewModel.interpolationMode.collectAsState()
     val speed by viewModel.speed.collectAsState()
+    val voiceFavorites by viewModel.voiceFavorites.collectAsState()
 
     var message by remember { mutableStateOf(initialMessage) }
     val listState = rememberLazyListState()
@@ -351,6 +352,13 @@ fun ChatScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Voice Settings", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+
+                    VoiceFavoritesSection(
+                        favorites = voiceFavorites,
+                        onSaveFavorite = viewModel::saveCurrentFavorite,
+                        onApplyFavorite = viewModel::applyFavorite,
+                        onDeleteFavorite = viewModel::deleteFavorite,
+                    )
                     
                     StyleSelector(
                         styleNames = viewModel.styleLoader.names,
