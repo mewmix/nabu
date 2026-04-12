@@ -8,6 +8,7 @@ import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.LlmMessage
 import com.mewmix.nabu.chat.MediaPipeBackend
 import com.mewmix.nabu.chat.VisionModelSupport
+import com.mewmix.nabu.data.findDownloadedLlmArtifact
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.kokoro.KokoroEngine
@@ -958,26 +959,23 @@ class ApiServer(
             backend = null
             backendModelId = null
 
-            val taskFile = File(context.filesDir, "models/${targetModel.id}.task")
-            val ggufFile = File(context.filesDir, "models/${targetModel.id}.gguf")
-            val isLlama = targetModel.backend == "llama" || (ggufFile.exists() && !taskFile.exists())
+            val modelDir = File(context.filesDir, "models")
+            val artifact = findDownloadedLlmArtifact(modelDir, targetModel.id, targetModel.backend)
+                ?: throw IllegalStateException(
+                    "Model file not found for ${targetModel.id} (.task/.litertlm/.gguf)"
+                )
+            val isLlama = artifact.backend == "llama"
 
             val createdBackend: LlmBackend = if (isLlama) {
-                if (!ggufFile.exists()) {
-                    throw IllegalStateException("Model file not found: ${ggufFile.absolutePath}")
-                }
                 LlamaCppBackend(
                     context = context,
-                    modelPath = ggufFile.absolutePath,
+                    modelPath = artifact.file.absolutePath,
                     initialConfig = SettingsManager.getLlmRuntimeConfig(context)
                 )
             } else {
-                if (!taskFile.exists()) {
-                    throw IllegalStateException("Model file not found: ${taskFile.absolutePath}")
-                }
                 MediaPipeBackend(
                     context = context,
-                    modelPath = taskFile.absolutePath,
+                    modelPath = artifact.file.absolutePath,
                     initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
                 )
             }
@@ -994,10 +992,9 @@ class ApiServer(
     private fun modelSupportsImageInput(model: com.mewmix.nabu.data.Model): Boolean {
         if (!VisionModelSupport.supportsImageInput(model.id)) return false
 
-        val taskFile = File(context.filesDir, "models/${model.id}.task")
-        val ggufFile = File(context.filesDir, "models/${model.id}.gguf")
-        val isLlama = model.backend == "llama" || (ggufFile.exists() && !taskFile.exists())
-        return !isLlama
+        val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
+            ?: return false
+        return artifact.backend != "llama"
     }
 
     private suspend fun runGeneration(

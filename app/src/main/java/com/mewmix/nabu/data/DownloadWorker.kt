@@ -27,7 +27,8 @@ class DownloadWorker(appContext: Context, workerParams: WorkerParameters) :
             if (!modelDir.exists()) {
                 modelDir.mkdirs()
             }
-            val destinationFile = File(modelDir, "$modelId.task")
+            val extension = llmExtensionFromDownloadUrl(downloadUrl)
+            val destinationFile = File(modelDir, "$modelId.$extension")
 
             DebugLogger.log("DownloadWorker: Starting download for model '$modelId' from: $downloadUrl")
 

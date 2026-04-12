@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
+import com.mewmix.nabu.data.importableLlmMetadata
 import com.mewmix.nabu.data.Model
 import com.mewmix.nabu.data.ModelDownloader
 import com.mewmix.nabu.data.ModelManager
@@ -111,17 +112,15 @@ fun ModelsScreen(
         uri?.let {
             val document = DocumentFile.fromSingleUri(context, it)
             val name = document?.name ?: return@let
-            val isTask = name.endsWith(".task")
-            val isGguf = name.endsWith(".gguf")
-            if (isTask || isGguf) {
+            val importable = importableLlmMetadata(name)
+            if (importable != null) {
+                val (id, backend) = importable
                 val modelDir = File(context.filesDir, "models").apply { if (!exists()) mkdirs() }
                 context.contentResolver.openInputStream(it)?.use { inputStream ->
                     File(modelDir, name).outputStream().use { output ->
                         inputStream.copyTo(output)
                     }
                 }
-                val id = if (isTask) name.removeSuffix(".task") else name.removeSuffix(".gguf")
-                val backend = if (isGguf) "llama" else "mediapipe"
                 val model = Model(
                     id = id,
                     name = id,
@@ -136,7 +135,7 @@ fun ModelsScreen(
                 DebugLogger.log("ModelsScreen: Imported $name")
                 onModelArtifactsChanged()
             } else {
-                DebugLogger.log("ModelsScreen: Selected file is not a .task or .gguf file")
+                DebugLogger.log("ModelsScreen: Selected file is not a .task, .litertlm, or .gguf file")
             }
         }
     }

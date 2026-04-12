@@ -20,12 +20,16 @@ class LlmController private constructor(val llm: LlmInference) {
                     VisionModelSupport.supportsImageInput(it.id)
             } ?: return null
 
-            val modelFile = File(ctx.filesDir, "models/${model.id}.task")
-            if (!modelFile.exists()) return null
+            val artifact = com.mewmix.nabu.data.findDownloadedLlmArtifact(
+                File(ctx.filesDir, "models"),
+                model.id,
+                model.backend
+            ) ?: return null
+            if (artifact.backend != "mediapipe") return null
 
 
             val opts = LlmInference.LlmInferenceOptions.builder()
-                .setModelPath(modelFile.absolutePath)
+                .setModelPath(artifact.file.absolutePath)
                 .setMaxTokens(4096)
                 .build()
             return LlmController(LlmInference.createFromOptions(ctx, opts))

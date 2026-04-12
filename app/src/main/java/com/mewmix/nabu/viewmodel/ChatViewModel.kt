@@ -17,6 +17,7 @@ import com.mewmix.nabu.data.ConversationRole
 import com.mewmix.nabu.data.ConversationSummary
 import com.mewmix.nabu.data.ConversationTurn
 import com.mewmix.nabu.data.Model
+import com.mewmix.nabu.data.findDownloadedLlmArtifact
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.data.OAuthRemoteModels
@@ -615,33 +616,25 @@ class ChatViewModel(
                 llmBackend?.initialize()
             }
             null -> {
-                val taskFile = File(context.filesDir, "models/${model.id}.task")
-                val ggufFile = File(context.filesDir, "models/${model.id}.gguf")
-
-                // Use backend set by ModelManager, or fallback to file existence check
-                val isLlama = model.backend == "llama" || (ggufFile.exists() && !taskFile.exists())
+                val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
+                if (artifact == null) {
+                    DebugLogger.log("Model file not found for ${model.id} (.task/.litertlm/.gguf)")
+                    llmBackend = null
+                    return
+                }
+                val isLlama = artifact.backend == "llama"
 
                 if (isLlama) {
-                    if (!ggufFile.exists()) {
-                        DebugLogger.log("GGUF Model file not found: ${ggufFile.absolutePath}")
-                        llmBackend = null
-                        return
-                    }
                     val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
-                    val backend = LlamaCppBackend(context, ggufFile.absolutePath, runtimeConfig)
+                    val backend = LlamaCppBackend(context, artifact.file.absolutePath, runtimeConfig)
                     llmBackend = backend
                     viewModelScope.launch(Dispatchers.IO) {
                         backend.initialize()
                     }
                 } else {
-                    if (!taskFile.exists()) {
-                        DebugLogger.log("Task Model file not found: ${taskFile.absolutePath}")
-                        llmBackend = null
-                        return
-                    }
                     val backend = MediaPipeBackend(
                         context = context,
-                        modelPath = taskFile.absolutePath,
+                        modelPath = artifact.file.absolutePath,
                         initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
                     )
                     backend.initialize()

@@ -66,20 +66,21 @@ Source manifests used by the app:
 | Supertonic v2 | `supertonic-2-onnx` | [Hugging Face](https://huggingface.co/Supertone/supertonic-2) |
 | Soprano 1.1 (ONNX pkg) | `soprano-80m-onnx` | [Original model](https://huggingface.co/ekwek/Soprano-1.1-80M), [ONNX packaging](https://huggingface.co/KevinAHM/soprano-onnx) |
 
-### LLM Models (`.task`)
+### LLM Models (`.task`, `.litertlm`)
 
 | Model | ID |  Source | Access |
 |---|---|---|---|
 | Gemma 3n IT 4B int4 | `gemma-3n-E4B-it-int4` | [Hugging Face](https://huggingface.co/google/gemma-3n-E4B-it-litert-preview) | gated |
 | Gemma3 1B IT q4 | `gemma3-1b-it-q4` | [Hugging Face](https://huggingface.co/litert-community/Gemma3-1B-IT) | public |
 | Gemma3 270M IT q8 | `gemma3-270m-it-q8` | [Hugging Face](https://huggingface.co/litert-community/gemma-3-270m-it) | gated in allowlist |
+| Gemma 4 E2B IT | `gemma-4-E2B-it` | [Hugging Face](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) | public |
 | Qwen2.5 1.5B Instruct q8 | `qwen2.5-1.5b-instruct-q8` | [Hugging Face](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) | public |
 
 
 ## Experimental GGUF Support
 
 - Status: experimental local-import path for LLMs.
-- Import flow: Models screen accepts LiteRT `.task` and `.gguf` files via file picker.
+- Import flow: Models screen accepts LiteRT `.task`, LiteRT-LM `.litertlm`, and `.gguf` files via file picker.
 - Storage path: imported GGUF files are copied to `files/models/<model-id>.gguf`.
 - Backend routing: imported `.gguf` models are tagged as backend `llama` and loaded through `LlamaCppBackend`.
 - Current limits:

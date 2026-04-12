@@ -23,6 +23,14 @@
     "gated": true,
     "type": "LLM"
   },
+  "gemma-4-E2B-it": {
+    "name": "Gemma 4 E2B IT",
+    "description": "The smaller Gemma 4 instruction-tuned LiteRT-LM model for Android",
+    "repo": "litert-community/gemma-4-E2B-it-litert-lm",
+    "downloadUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+    "gated": false,
+    "type": "LLM"
+  },
   "qwen2.5-1.5b-instruct-q8": {
     "name": "Qwen2.5 1.5B Instruct q8",
     "description": "A quantized 8-bit Qwen2.5 1.5B Instruct model",

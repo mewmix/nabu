@@ -74,25 +74,16 @@ class ModelManager(private val context: Context) {
                     TtsModelValidator.hasAllRequiredFiles(model.id, partialDir)
                 model.hasPartial = !model.isDownloaded && (partialDir.exists() || ttsDir.exists())
             } else {
-                val taskFile = File(modelDir, "${model.id}.task")
-                val ggufFile = File(modelDir, "${model.id}.gguf")
-                val taskValid = taskFile.exists() && taskFile.isFile && taskFile.length() > 0L
-                val ggufValid = ggufFile.exists() && ggufFile.isFile && ggufFile.length() > 0L
+                val jsonBackend = modelJson.optString("backend", "mediapipe")
+                val artifact = findDownloadedLlmArtifact(modelDir, model.id, jsonBackend)
 
-                if (taskValid) {
+                if (artifact != null) {
                     model.isDownloaded = true
-                    model.backend = "mediapipe"
-                } else if (ggufValid) {
-                    model.isDownloaded = true
-                    model.backend = "llama"
+                    model.backend = artifact.backend
                 } else {
                     model.isDownloaded = false
-                    val taskPart = File(modelDir, "${model.id}.task.part")
-                    val ggufPart = File(modelDir, "${model.id}.gguf.part")
-                    model.hasPartial = taskPart.exists() || ggufPart.exists() || taskFile.exists() || ggufFile.exists()
-
-                    val jsonBackend = modelJson.optString("backend", "mediapipe")
-                    model.backend = jsonBackend
+                    model.hasPartial = hasPartialLlmArtifacts(modelDir, model.id)
+                    model.backend = if (jsonBackend == "llama") "llama" else "mediapipe"
                 }
             }
             modelList.add(model)
@@ -100,11 +91,13 @@ class ModelManager(private val context: Context) {
 
         // Include any additional models already placed in the models directory
         val modelDir = File(context.filesDir, "models")
-        modelDir.listFiles { _, name -> name.endsWith(".task") || name.endsWith(".gguf") }?.forEach { file ->
+        modelDir.listFiles { _, name ->
+            name.endsWith(".task") || name.endsWith(".litertlm") || name.endsWith(".gguf")
+        }?.forEach { file ->
             if (!file.isFile || file.length() <= 0L) return@forEach
-            val id = file.nameWithoutExtension
+            val importable = importableLlmMetadata(file.name) ?: return@forEach
+            val (id, backend) = importable
             if (modelList.none { it.id == id }) {
-                val backend = if (file.name.endsWith(".gguf")) "llama" else "mediapipe"
                 modelList.add(
                     Model(
                         id = id,
@@ -138,10 +131,7 @@ class ModelManager(private val context: Context) {
             File(modelDir, model.id).deleteRecursively()
             File(modelDir, "${model.id}_partial").deleteRecursively()
         } else {
-            File(modelDir, "${model.id}.task").delete()
-            File(modelDir, "${model.id}.task.part").delete()
-            File(modelDir, "${model.id}.gguf").delete()
-            File(modelDir, "${model.id}.gguf.part").delete()
+            deleteLlmArtifacts(modelDir, model.id)
         }
 
         if (model.repo.isEmpty() && model.downloadUrl.isEmpty()) {

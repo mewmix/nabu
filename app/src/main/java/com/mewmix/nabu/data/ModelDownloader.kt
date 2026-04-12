@@ -387,8 +387,7 @@ class ModelDownloader(
         }
     }
 
-    private fun llmExtension(model: Model): String =
-        if (model.downloadUrl.lowercase().contains(".gguf")) "gguf" else "task"
+    private fun llmExtension(model: Model): String = llmExtensionFromDownloadUrl(model.downloadUrl)
 
     private fun isLlmArtifactValid(file: File): Boolean = file.exists() && file.isFile && file.length() > 0L
 
@@ -411,8 +410,7 @@ class ModelDownloader(
                 false
             }
         } else {
-            val extension = llmExtension(model)
-            isLlmArtifactValid(File(modelDir, "${model.id}.$extension"))
+            findDownloadedLlmArtifact(modelDir, model.id, model.backend) != null
         }
     }
 
