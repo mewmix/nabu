@@ -923,7 +923,16 @@ class ChatViewModel(
 
     fun updateSpeed(newSpeed: Float) {
         _speed.value = newSpeed
-        SettingsManager.setSpeed(context, newSpeed)
+        persistSpeed(newSpeed)
+    }
+
+    private var speedPersistenceJob: kotlinx.coroutines.Job? = null
+    private fun persistSpeed(value: Float) {
+        speedPersistenceJob?.cancel()
+        speedPersistenceJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(300)
+            SettingsManager.setSpeed(context, value)
+        }
     }
 
     fun saveCurrentFavorite(name: String) {
@@ -970,11 +979,16 @@ class ChatViewModel(
         _weights.value = normalized.weights
         _interpolationMode.value = normalized.interpolationMode
         if (persist) {
-            SettingsManager.setVoiceMixConfig(context, normalized)
+            persistVoiceMixConfig()
         }
     }
 
+    private var configPersistenceJob: kotlinx.coroutines.Job? = null
     private fun persistVoiceMixConfig() {
-        SettingsManager.setVoiceMixConfig(context, currentVoiceMixConfig())
+        configPersistenceJob?.cancel()
+        configPersistenceJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(500)
+            SettingsManager.setVoiceMixConfig(context, currentVoiceMixConfig())
+        }
     }
 }

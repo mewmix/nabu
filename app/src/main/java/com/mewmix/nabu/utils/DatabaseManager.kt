@@ -7,9 +7,16 @@ import com.google.gson.reflect.TypeToken
 import java.io.File
 
 object DatabaseManager {
+    private var dbHelper: DatabaseHelper? = null
+
+    private fun getHelper(context: Context): DatabaseHelper {
+        return dbHelper ?: synchronized(this) {
+            dbHelper ?: DatabaseHelper(context.applicationContext).also { dbHelper = it }
+        }
+    }
+
     fun setProject(context: Context, project: Project) {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.writableDatabase
+        val db = getHelper(context).writableDatabase
         val gson = Gson()
         val stylesJson = gson.toJson(project.styles)
         val weightsJson = gson.toJson(project.weights)
@@ -29,12 +36,10 @@ object DatabaseManager {
         }
 
         db.replace(DatabaseHelper.TABLE_PROJECTS, null, values)
-        db.close()
     }
 
     fun getProject(context: Context, uri: String): Project? {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.readableDatabase
+        val db = getHelper(context).readableDatabase
         val gson = Gson()
         val cursor = db.query(
             DatabaseHelper.TABLE_PROJECTS,
@@ -59,7 +64,7 @@ object DatabaseManager {
             ).type
             val styles = gson.fromJson<List<String>>(stylesJson, stylesType)
             val weights = gson.fromJson<Map<String, Float>>(weightsJson, weightsType)
-            val mode = InterpolationMode.valueOf(cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_MODE)))
+            val mode = runCatching { InterpolationMode.valueOf(cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_MODE))) }.getOrDefault(InterpolationMode.LINEAR)
             val speed = cursor.getFloat(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_SPEED))
             val bookmarkLine = cursor.getInt(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BOOKMARK_LINE))
             val bookmark = if (bookmarkLine != -1) Bookmark(bookmarkLine) else null
@@ -72,13 +77,11 @@ object DatabaseManager {
         }
 
         cursor.close()
-        db.close()
         return project
     }
 
     fun getProjects(context: Context): List<Project> {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.readableDatabase
+        val db = getHelper(context).readableDatabase
         val gson = Gson()
         val cursor = db.query(DatabaseHelper.TABLE_PROJECTS, null, null, null, null, null, null)
         val projects = mutableListOf<Project>()
@@ -95,7 +98,7 @@ object DatabaseManager {
             val weightsJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_WEIGHTS))
             val styles = gson.fromJson<List<String>>(stylesJson, stylesType)
             val weights = gson.fromJson<Map<String, Float>>(weightsJson, weightsType)
-            val mode = InterpolationMode.valueOf(cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_MODE)))
+            val mode = runCatching { InterpolationMode.valueOf(cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_MODE))) }.getOrDefault(InterpolationMode.LINEAR)
             val speed = cursor.getFloat(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_SPEED))
             val bookmarkLine = cursor.getInt(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BOOKMARK_LINE))
             val bookmark = if (bookmarkLine != -1) Bookmark(bookmarkLine) else null
@@ -106,35 +109,29 @@ object DatabaseManager {
             projects.add(Project(uri, name, styles, weights, mode, speed, bookmark, audioPath, usePregenerated))
         }
         cursor.close()
-        db.close()
         return projects
     }
 
     fun deleteProject(context: Context, uri: String) {
         val project = getProject(context, uri)
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.writableDatabase
+        val db = getHelper(context).writableDatabase
         db.delete(DatabaseHelper.TABLE_PROJECTS, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
         db.delete(DatabaseHelper.TABLE_AUDIO_LINES, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
-        db.close()
         project?.audioPath?.let { path ->
             try { File(path).deleteRecursively() } catch (_: Exception) {}
         }
     }
 
     fun setBookmark(context: Context, uri: String, line: Int) {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.writableDatabase
+        val db = getHelper(context).writableDatabase
         val values = ContentValues().apply {
             put(DatabaseHelper.COLUMN_BOOKMARK_LINE, line)
         }
         db.update(DatabaseHelper.TABLE_PROJECTS, values, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
-        db.close()
     }
 
     fun getBookmark(context: Context, uri: String): Bookmark? {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.readableDatabase
+        val db = getHelper(context).readableDatabase
         val cursor = db.query(
             DatabaseHelper.TABLE_PROJECTS,
             arrayOf(DatabaseHelper.COLUMN_BOOKMARK_LINE),
@@ -154,35 +151,29 @@ object DatabaseManager {
         }
 
         cursor.close()
-        db.close()
         return bookmark
     }
 
     fun clearBookmark(context: Context, uri: String) {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.writableDatabase
+        val db = getHelper(context).writableDatabase
         val values = ContentValues().apply {
             put(DatabaseHelper.COLUMN_BOOKMARK_LINE, -1)
         }
         db.update(DatabaseHelper.TABLE_PROJECTS, values, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
-        db.close()
     }
 
     fun setAudioLine(context: Context, uri: String, index: Int, path: String) {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.writableDatabase
+        val db = getHelper(context).writableDatabase
         val values = ContentValues().apply {
             put(DatabaseHelper.COLUMN_URI, uri)
             put(DatabaseHelper.COLUMN_LINE_INDEX, index)
             put(DatabaseHelper.COLUMN_FILE_PATH, path)
         }
         db.replace(DatabaseHelper.TABLE_AUDIO_LINES, null, values)
-        db.close()
     }
 
     fun getAudioLine(context: Context, uri: String, index: Int): String? {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.readableDatabase
+        val db = getHelper(context).readableDatabase
         val cursor = db.query(
             DatabaseHelper.TABLE_AUDIO_LINES,
             arrayOf(DatabaseHelper.COLUMN_FILE_PATH),
@@ -197,31 +188,25 @@ object DatabaseManager {
             path = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_FILE_PATH))
         }
         cursor.close()
-        db.close()
         return path
     }
 
     fun clearAudioLines(context: Context, uri: String) {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.writableDatabase
+        val db = getHelper(context).writableDatabase
         db.delete(DatabaseHelper.TABLE_AUDIO_LINES, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
-        db.close()
     }
 
     fun setSetting(context: Context, key: String, value: String) {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.writableDatabase
+        val db = getHelper(context).writableDatabase
         val values = ContentValues().apply {
             put(DatabaseHelper.COLUMN_KEY, key)
             put(DatabaseHelper.COLUMN_VALUE, value)
         }
         db.replace(DatabaseHelper.TABLE_SETTINGS, null, values)
-        db.close()
     }
 
     fun getSetting(context: Context, key: String): String? {
-        val dbHelper = DatabaseHelper(context)
-        val db = dbHelper.readableDatabase
+        val db = getHelper(context).readableDatabase
         val cursor = db.query(
             DatabaseHelper.TABLE_SETTINGS,
             arrayOf(DatabaseHelper.COLUMN_VALUE),
@@ -238,7 +223,6 @@ object DatabaseManager {
         }
 
         cursor.close()
-        db.close()
         return value
     }
 }

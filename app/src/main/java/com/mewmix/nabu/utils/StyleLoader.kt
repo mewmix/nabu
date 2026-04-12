@@ -8,45 +8,62 @@ import java.io.FileOutputStream
 import com.mewmix.nabu.data.ModelManager
 
 class StyleLoader(private val context: Context) {
+    private var cachedNames: List<String>? = null
+    private var lastEngine: String? = null
+    private var lastModelId: String? = null
+
     val names: List<String>
-        get() {
-            val engine = SettingsManager.getTtsEngine(context)
-            if (engine == "supertonic") {
-                // Find active Supertonic model
-                // This is a bit duplicative of TTSManager logic, but acceptable for now.
-                // Ideally we'd inject this path.
-                val modelManager = ModelManager(context)
-                val ttsModels = modelManager.models.filter { it.type == com.mewmix.nabu.data.ModelType.TTS && it.isDownloaded }
-                if (ttsModels.isNotEmpty()) {
-                    val preferredModelId = SettingsManager.getSupertonicModelId(context)
-                    val model = if (preferredModelId != null) {
-                        ttsModels.firstOrNull { it.id == preferredModelId }
-                    } else {
-                        ttsModels.first()
-                    }
-                    if (model == null) {
-                        return emptyList()
-                    }
+        get() = getNames(null)
+
+    fun getNames(providedEngine: String? = null): List<String> {
+        val engine = providedEngine ?: SettingsManager.getTtsEngine(context)
+        val modelId = if (engine == "supertonic") SettingsManager.getSupertonicModelId(context) else null
+        
+        if (cachedNames != null && lastEngine == engine && lastModelId == modelId) {
+            return cachedNames!!
+        }
+
+        val result = if (engine == "supertonic") {
+            val modelManager = ModelManager(context)
+            val ttsModels = modelManager.models.filter { it.type == com.mewmix.nabu.data.ModelType.TTS && it.isDownloaded }
+            if (ttsModels.isNotEmpty()) {
+                val preferredModelId = SettingsManager.getSupertonicModelId(context)
+                val model = if (preferredModelId != null) {
+                    ttsModels.firstOrNull { it.id == preferredModelId }
+                } else {
+                    ttsModels.first()
+                }
+                if (model == null) {
+                    emptyList()
+                } else {
                     val voicesDir = File(context.filesDir, "models/${model.id}/voice_styles")
                     if (voicesDir.exists()) {
-                        return voicesDir.listFiles { _, name -> name.endsWith(".json") }
+                        voicesDir.listFiles { _, name -> name.endsWith(".json") }
                             ?.map { it.name.removeSuffix(".json") }
                             ?.sorted()
                             ?: emptyList()
+                    } else {
+                        emptyList()
                     }
                 }
-                return emptyList()
-            } else if (engine == "kokoro") {
-                return context.assets
-                    .list("kokoro/voices")
-                    ?.map { it.removeSuffix(".npy") }
-                    ?.sorted()
-                    ?: emptyList()
             } else {
-                // Soprano or other engines: no style list
-                return emptyList()
+                emptyList()
             }
+        } else if (engine == "kokoro") {
+            context.assets
+                .list("kokoro/voices")
+                ?.map { it.removeSuffix(".npy") }
+                ?.sorted()
+                ?: emptyList()
+        } else {
+            emptyList()
         }
+        
+        cachedNames = result
+        lastEngine = engine
+        lastModelId = modelId
+        return result
+    }
 
     fun getStyleArray(name: String, index: Int = 0): Array<FloatArray> {
         val inputStream = context.assets.open("kokoro/voices/$name.npy")

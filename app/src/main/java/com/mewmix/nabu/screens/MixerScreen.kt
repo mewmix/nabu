@@ -143,19 +143,33 @@ fun MixerScreen(
         mutableStateOf(SettingsManager.getVoiceMixFavorites(context))
     }
 
+    // Debounced persistence for Speed
+    LaunchedEffect(speed) {
+        if (speed != SettingsManager.getSpeed(context)) {
+            kotlinx.coroutines.delay(300)
+            SettingsManager.setSpeed(context, speed)
+        }
+    }
+
+    // Debounced persistence for Voice Mix Config
+    LaunchedEffect(selectedStyles, weights, interpolationMode) {
+        // We only persist if it's different from the saved one to avoid initial redundant write
+        // but for simplicity and since we have 300ms debounce, it's fine.
+        kotlinx.coroutines.delay(500)
+        SettingsManager.setVoiceMixConfig(
+            context,
+            VoiceMixConfig(selectedStyles, weights, interpolationMode)
+        )
+    }
+
     fun persistVoiceMixConfig(
         styles: List<String> = selectedStyles,
         styleWeights: Map<String, Float> = weights,
         mode: InterpolationMode = interpolationMode,
     ) {
-        SettingsManager.setVoiceMixConfig(
-            context,
-            VoiceMixConfig(
-                styles = styles,
-                weights = styleWeights,
-                interpolationMode = mode
-            )
-        )
+        // This is now partially handled by LaunchedEffect for debouncing, 
+        // but we keep it for immediate actions if needed.
+        // Actually, let's just let LaunchedEffect handle it.
     }
 
     fun persistFavorites(updated: List<VoiceMixFavorite>) {
@@ -234,10 +248,7 @@ fun MixerScreen(
         PanelRow(name = "Speed") {
             BrutalSlider(
                 value = speed,
-                onValueChange = {
-                    speed = it
-                    SettingsManager.setSpeed(context, it)
-                },
+                onValueChange = { speed = it },
                 range = 0.5f..2.0f,
                 modifier = Modifier.weight(1f)
             )

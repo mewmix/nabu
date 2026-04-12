@@ -127,8 +127,18 @@ object SettingsManager {
 
     fun getVoiceMixConfig(context: Context, defaultStyle: String = "af_sky"): VoiceMixConfig {
         val saved = DatabaseManager.getSetting(context, KEY_VOICE_MIX_CONFIG)
-            ?.let { json -> runCatching { gson.fromJson(json, VoiceMixConfig::class.java) }.getOrNull() }
-            ?.normalized(defaultStyle)
+            ?.let { json -> 
+                runCatching { 
+                    gson.fromJson(json, VoiceMixConfig::class.java).let { config ->
+                        // Ensure all non-nullable fields are present after Gson deserialization
+                        if (config.styles == null || config.weights == null || config.interpolationMode == null) {
+                            throw IllegalStateException("Corrupted VoiceMixConfig")
+                        }
+                        config.normalized(defaultStyle)
+                    }
+                }.getOrNull() 
+            }
+        
         if (saved != null) {
             return saved
         }
@@ -153,16 +163,18 @@ object SettingsManager {
                 if (name.isEmpty()) {
                     null
                 } else {
-                    favorite.copy(name = name).toConfig().normalized(
-                        favorite.styles.firstOrNull().orEmpty().ifBlank { "af_sky" }
-                    ).let { config ->
-                        favorite.copy(
-                            name = name,
-                            styles = config.styles,
-                            weights = config.weights,
-                            interpolationMode = config.interpolationMode
-                        )
-                    }
+                    runCatching {
+                        favorite.copy(name = name).toConfig().normalized(
+                            favorite.styles?.firstOrNull().orEmpty().ifBlank { "af_sky" }
+                        ).let { config ->
+                            favorite.copy(
+                                name = name,
+                                styles = config.styles,
+                                weights = config.weights,
+                                interpolationMode = config.interpolationMode
+                            )
+                        }
+                    }.getOrNull()
                 }
             }
             .distinctBy { it.name.lowercase() }
@@ -178,7 +190,7 @@ object SettingsManager {
             gson.fromJson<List<VoiceMixFavorite>>(saved, voiceMixFavoritesType)
                 ?.mapNotNull { favorite ->
                     val name = favorite.name.trim()
-                    if (name.isEmpty()) {
+                    if (name.isEmpty() || favorite.styles == null || favorite.weights == null || favorite.interpolationMode == null) {
                         null
                     } else {
                         val config = favorite.toConfig().normalized(
