@@ -115,8 +115,16 @@ class MediaPipeBackend(
     }
 
     override fun close() {
-        activeSession.getAndSet(null)?.close()
-        llmInference?.close()
+        try {
+            activeSession.getAndSet(null)?.close()
+        } catch (e: Exception) {
+            DebugLogger.log("MediaPipeBackend session close error: ${e.message}")
+        }
+        try {
+            llmInference?.close()
+        } catch (e: Exception) {
+            DebugLogger.log("MediaPipeBackend inference close error: ${e.message}")
+        }
         llmInference = null
     }
 
@@ -129,46 +137,72 @@ class MediaPipeBackend(
             resultListener("MediaPipe backend unavailable.", true)
             return
         }
-        try {
-            val localConfig = config
-            val boundedTopK = localConfig.topK.coerceIn(1, localConfig.maxTopK)
-            val optionsBuilder = LlmInferenceSession.LlmInferenceSessionOptions.builder()
-                .setTopK(boundedTopK)
-                .setTopP(localConfig.topP)
-                .setTemperature(localConfig.temperature)
-                .apply {
-                    if (localConfig.randomSeed >= 0) {
-                        setRandomSeed(localConfig.randomSeed)
+        
+        var attempt = 0
+        val maxAttempts = 10
+        
+        while (attempt < maxAttempts) {
+            try {
+                val localConfig = config
+                val boundedTopK = localConfig.topK.coerceIn(1, localConfig.maxTopK)
+                val optionsBuilder = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                    .setTopK(boundedTopK)
+                    .setTopP(localConfig.topP)
+                    .setTemperature(localConfig.temperature)
+                    .apply {
+                        if (localConfig.randomSeed >= 0) {
+                            setRandomSeed(localConfig.randomSeed)
+                        }
                     }
+                if (image != null) {
+                    optionsBuilder.setGraphOptions(
+                        GraphOptions.builder()
+                            .setEnableVisionModality(true)
+                            .build()
+                    )
                 }
-            if (image != null) {
-                optionsBuilder.setGraphOptions(
-                    GraphOptions.builder()
-                        .setEnableVisionModality(true)
-                        .build()
-                )
-            }
-            val sessionOptions = optionsBuilder.build()
+                val sessionOptions = optionsBuilder.build()
 
-            val session = LlmInferenceSession.createFromOptions(inference, sessionOptions)
-            val previousSession = activeSession.getAndSet(session)
-            previousSession?.cancelGenerateResponseAsync()
-            previousSession?.close()
-            if (image != null) {
-                session.addImage(BitmapImageBuilder(image.bitmap).build())
-            }
-            session.addQueryChunk(prompt)
-            session.generateResponseAsync { partialResult, done ->
-                resultListener(partialResult.orEmpty(), done)
-                if (done) {
-                    if (activeSession.compareAndSet(session, null)) {
-                        session.close()
+                val session = LlmInferenceSession.createFromOptions(inference, sessionOptions)
+                val previousSession = activeSession.getAndSet(session)
+                try {
+                    previousSession?.cancelGenerateResponseAsync()
+                    previousSession?.close()
+                } catch (e: Exception) {
+                    DebugLogger.log("Ignored error closing previous session: ${e.message}")
+                }
+                
+                if (image != null) {
+                    session.addImage(BitmapImageBuilder(image.bitmap).build())
+                }
+                session.addQueryChunk(prompt)
+                session.generateResponseAsync { partialResult, done ->
+                    resultListener(partialResult.orEmpty(), done)
+                    if (done) {
+                        if (activeSession.compareAndSet(session, null)) {
+                            try {
+                                session.close()
+                            } catch (e: Exception) {
+                                DebugLogger.log("Ignored error closing session inside callback: ${e.message}")
+                            }
+                        }
                     }
                 }
+                return // Success, exit retry loop
+            } catch (t: Throwable) {
+                if (t is IllegalStateException && t.message?.contains("Previous invocation still processing") == true) {
+                    attempt++
+                    DebugLogger.log("MediaPipeBackend: Previous invocation still processing. Retrying ($attempt/$maxAttempts)...")
+                    Thread.sleep(100)
+                } else {
+                    DebugLogger.log("MediaPipeBackend generation error: ${t.message}")
+                    resultListener("MediaPipe generation failed.", true)
+                    return
+                }
             }
-        } catch (t: Throwable) {
-            DebugLogger.log("MediaPipeBackend generation error: ${t.message}")
-            resultListener("MediaPipe generation failed.", true)
         }
+        
+        DebugLogger.log("MediaPipeBackend generation error: Exhausted retries waiting for previous invocation.")
+        resultListener("MediaPipe generation failed after retries.", true)
     }
 }

@@ -38,6 +38,47 @@ object ActionTools {
             parameters = mapOf(
                 "query" to "What to search for."
             )
+        ),
+        Tool(
+            name = "get_current_time",
+            description = "Get the current local date and time.",
+            parameters = emptyMap()
+        ),
+        Tool(
+            name = "get_weather",
+            description = "Get the current weather for a specific location.",
+            parameters = mapOf(
+                "location" to "The location to get weather for."
+            )
+        ),
+        Tool(
+            name = "save_memory",
+            description = "Save a user preference or fact to memory.",
+            parameters = mapOf(
+                "fact" to "The preference or fact to save."
+            )
+        ),
+        Tool(
+            name = "retrieve_memory",
+            description = "Retrieve all saved user preferences and facts.",
+            parameters = emptyMap()
+        ),
+        Tool(
+            name = "set_alarm",
+            description = "Set an audible alarm for a specific time.",
+            parameters = mapOf(
+                "hour" to "The hour (0-23) to set the alarm for.",
+                "minute" to "The minute (0-59) to set the alarm for.",
+                "message" to "A message or title for the alarm."
+            )
+        ),
+        Tool(
+            name = "set_timer",
+            description = "Set an audible timer for a specific duration.",
+            parameters = mapOf(
+                "seconds" to "The duration of the timer in seconds.",
+                "message" to "A message or title for the timer."
+            )
         )
     )
 
@@ -47,8 +88,83 @@ object ActionTools {
             "schedule_fuzzy_action" -> runFuzzyAction(context, call)
             "list_scheduled_actions" -> runListActions(context)
             "search_web_context" -> runWebSearch(call)
+            "get_current_time" -> runGetCurrentTime(call)
+            "get_weather" -> runGetWeather(call)
+            "save_memory" -> runSaveMemory(context, call)
+            "retrieve_memory" -> runRetrieveMemory(context, call)
+            "set_alarm" -> runSetAlarm(context, call)
+            "set_timer" -> runSetTimer(context, call)
             else -> null
         }
+    }
+
+    private fun runGetCurrentTime(call: ToolCall): ToolResult {
+        val current = LocalDateTime.now(ZoneId.systemDefault())
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        return ToolResult(call.toolName, "Current local time is: ${current.format(formatter)}")
+    }
+
+    private fun runGetWeather(call: ToolCall): ToolResult {
+        val location = call.arguments["location"]?.toString()?.trim().orEmpty()
+        if (location.isBlank()) {
+            return ToolResult(call.toolName, "Missing required parameter: location", true)
+        }
+        val weather = WeatherAction.getWeather(location)
+        return ToolResult(call.toolName, weather)
+    }
+
+    private fun runSaveMemory(context: Context, call: ToolCall): ToolResult {
+        val fact = call.arguments["fact"]?.toString()?.trim().orEmpty()
+        if (fact.isBlank()) {
+            return ToolResult(call.toolName, "Missing required parameter: fact", true)
+        }
+        MemoryStore.saveMemory(context, fact)
+        return ToolResult(call.toolName, "Saved memory: \$fact")
+    }
+
+    private fun runRetrieveMemory(context: Context, call: ToolCall): ToolResult {
+        val memories = MemoryStore.retrieveMemories(context)
+        if (memories.isEmpty()) {
+            return ToolResult(call.toolName, "No memories saved.")
+        }
+        return ToolResult(call.toolName, memories.joinToString("\n") { "- \$it" })
+    }
+
+    private fun runSetAlarm(context: Context, call: ToolCall): ToolResult {
+        val hourRaw = call.arguments["hour"]?.toString()?.trim()
+        val minuteRaw = call.arguments["minute"]?.toString()?.trim()
+        val message = call.arguments["message"]?.toString()?.trim().orEmpty()
+
+        if (hourRaw == null || minuteRaw == null) {
+            return ToolResult(call.toolName, "Missing required parameters: hour, minute", true)
+        }
+
+        val hour = hourRaw.toDoubleOrNull()?.toInt()
+        val minute = minuteRaw.toDoubleOrNull()?.toInt()
+
+        if (hour == null || minute == null) {
+            return ToolResult(call.toolName, "Invalid hour or minute format.", true)
+        }
+
+        val result = AlarmTimerAction.setAlarm(context, hour, minute, message)
+        return ToolResult(call.toolName, result)
+    }
+
+    private fun runSetTimer(context: Context, call: ToolCall): ToolResult {
+        val secondsRaw = call.arguments["seconds"]?.toString()?.trim()
+        val message = call.arguments["message"]?.toString()?.trim().orEmpty()
+
+        if (secondsRaw == null) {
+            return ToolResult(call.toolName, "Missing required parameter: seconds", true)
+        }
+
+        val seconds = secondsRaw.toDoubleOrNull()?.toInt()
+        if (seconds == null) {
+            return ToolResult(call.toolName, "Invalid seconds format.", true)
+        }
+
+        val result = AlarmTimerAction.setTimer(context, seconds, message)
+        return ToolResult(call.toolName, result)
     }
 
     private fun runScheduleAction(context: Context, call: ToolCall): ToolResult {
@@ -77,7 +193,7 @@ object ActionTools {
 
         return ToolResult(
             call.toolName,
-            "Scheduled '${action.title}' for ${formatEpoch(action.triggerAtEpochMs)} (recurrence=${action.recurrence}, id=${action.id})."
+            "Scheduled '\${action.title}' for \${formatEpoch(action.triggerAtEpochMs)} (recurrence=\${action.recurrence}, id=\${action.id})."
         )
     }
 
@@ -104,7 +220,7 @@ object ActionTools {
 
         return ToolResult(
             call.toolName,
-            "Scheduled fuzzy action '${action.title}' for ${formatEpoch(action.triggerAtEpochMs)} (recurrence=${action.recurrence}, id=${action.id})."
+            "Scheduled fuzzy action '\${action.title}' for \${formatEpoch(action.triggerAtEpochMs)} (recurrence=\${action.recurrence}, id=\${action.id})."
         )
     }
 
@@ -112,7 +228,7 @@ object ActionTools {
         val actions = ScheduledActionStore.list(context)
         if (actions.isEmpty()) return ToolResult("list_scheduled_actions", "No scheduled actions.")
         val lines = actions.joinToString("\n") {
-            "- ${it.title} at ${formatEpoch(it.triggerAtEpochMs)} (recurrence=${it.recurrence}, id=${it.id})"
+            "- \${it.title} at \${formatEpoch(it.triggerAtEpochMs)} (recurrence=\${it.recurrence}, id=\${it.id})"
         }
         return ToolResult("list_scheduled_actions", lines)
     }
