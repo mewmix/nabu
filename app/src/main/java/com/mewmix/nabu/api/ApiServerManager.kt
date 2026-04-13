@@ -3,6 +3,8 @@ package com.mewmix.nabu.api
 import android.content.Context
 import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.SettingsManager
+import java.util.Collections
+import java.net.NetworkInterface
 
 object ApiServerManager {
     const val LOCAL_HOST: String = "127.0.0.1"
@@ -56,6 +58,22 @@ object ApiServerManager {
 
     fun currentPort(): Int = synchronized(lock) {
         resolvedPort()
+    }
+
+    fun localLanIpAddress(): String? {
+        return runCatching {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+            Collections.list(interfaces)
+                .asSequence()
+                .filter { it.isUp && !it.isLoopback }
+                .flatMap { Collections.list(it.inetAddresses).asSequence() }
+                .firstOrNull { address ->
+                    !address.isLoopbackAddress &&
+                        !address.isLinkLocalAddress &&
+                        address.hostAddress?.contains(':') == false
+                }
+                ?.hostAddress
+        }.getOrNull()
     }
 
     fun stop() {
