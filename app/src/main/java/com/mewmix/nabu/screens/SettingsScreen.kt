@@ -216,14 +216,19 @@ fun SettingsScreen(
             if (apiEnabled) {
                 val host = ApiServerManager.currentHost() ?: ApiServerManager.configuredHost(context.applicationContext)
                 val port = ApiServerManager.currentPort()
+                val lanIp = if (apiLanEnabled) ApiServerManager.localLanIpAddress() else null
                 Text(
-                    text = "Listening on http://$host:$port",
+                    text = if (lanIp != null) "Listening on http://$lanIp:$port (bound: $host)" else "Listening on http://$host:$port",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 if (apiLanEnabled) {
                     Text(
-                        text = "LAN mode: use your device IP on the same network.",
+                        text = if (lanIp != null) {
+                            "LAN mode: share http://$lanIp:$port on the same network."
+                        } else {
+                            "LAN mode is enabled; connect to your device IP on the same network."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )

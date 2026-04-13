@@ -46,6 +46,7 @@ import com.mewmix.nabu.tools.ToolCall
 import com.mewmix.nabu.tools.ToolCallProtocol
 import com.mewmix.nabu.tools.ToolRegistry
 import com.mewmix.nabu.tools.ToolResult
+import com.mewmix.nabu.actions.ActionTools
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -152,6 +153,7 @@ class ChatViewModel(
     init {
         viewModelScope.launch(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
+            ActionTools.tools.forEach { ToolRegistry.register(it) }
 
             // Initialize Glaive tools if available
             if (GlaiveBridge.isInstalled(context.applicationContext)) {
@@ -348,6 +350,7 @@ class ChatViewModel(
                         isError = true
                     )
                 }
+                ActionTools.execute(appContext, toolCall)?.let { return it }
                 if (!GlaiveBridge.isInstalled(appContext)) {
                     return ToolResult(
                         toolName = toolCall.toolName,
