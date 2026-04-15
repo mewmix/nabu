@@ -29,6 +29,8 @@ object ToolCallProtocol {
         lines += "When invoking a tool, respond with only this exact wrapper format:"
         lines += "<tool_call>{\"name\":\"tool_name\",\"arguments\":{}}</tool_call>"
         lines += "Do not include any extra text in a tool call response."
+        lines += "The name field must exactly match one of the available tool names below."
+        lines += "Never invent tool names, never use the user's label/title as the tool name, and never output comments or pseudo-code."
         lines += "Available tools:"
 
         tools
@@ -42,6 +44,20 @@ object ToolCallProtocol {
                 }
                 lines += "- ${tool.name}: ${tool.description} (params: $parameterSpec)"
             }
+
+        lines += "Examples:"
+        if (tools.any { it.isAvailable && it.name == "set_timer" }) {
+            lines += """- If the user says "set a timer for 13 seconds called tea", respond with exactly: <tool_call>{"name":"set_timer","arguments":{"seconds":13,"message":"tea"}}</tool_call>"""
+        }
+        if (tools.any { it.isAvailable && it.name == "set_alarm" }) {
+            lines += """- If the user says "set an alarm for 7:30 called wake up", respond with exactly: <tool_call>{"name":"set_alarm","arguments":{"hour":7,"minute":30,"message":"wake up"}}</tool_call>"""
+        }
+        if (tools.any { it.isAvailable && it.name == "get_weather" }) {
+            lines += """- If the user asks for weather in Seattle, respond with exactly: <tool_call>{"name":"get_weather","arguments":{"location":"Seattle"}}</tool_call>"""
+        }
+        if (tools.any { it.isAvailable && it.name == "search_web_context" }) {
+            lines += """- If the user asks you to search the web for eclipse news, respond with exactly: <tool_call>{"name":"search_web_context","arguments":{"query":"eclipse news"}}</tool_call>"""
+        }
 
         lines += "Tool results arrive in a user message starting with TOOL_RESULT as JSON."
         lines += "After receiving TOOL_RESULT, produce a normal user-facing answer."
@@ -174,6 +190,28 @@ object ToolCallProtocol {
             val path = rawPath.trim()
             if (path.startsWith("/")) {
                 return ToolCall("read_file", mapOf("path" to path))
+            }
+        }
+
+        val alarmRegex =
+            Regex(
+                "(?is)^\\s*(?:set_alarm|set\\s+alarm|set\\s+an\\s+alarm|alarm)\\b.*?hour\\s*[=:]\\s*(\\d{1,2})\\b.*?minute\\s*[=:]\\s*(\\d{1,2})\\b(?:.*?message\\s*[=:]\\s*[\"']?([^\"']+?)[\"']?)?\\s*$"
+            )
+        alarmRegex.find(compact)?.let { match ->
+            val hour = match.groupValues[1].toIntOrNull()
+            val minute = match.groupValues[2].toIntOrNull()
+            val message = match.groupValues.getOrNull(3)?.trim().orEmpty()
+            if (hour != null && minute != null) {
+                return ToolCall(
+                    "set_alarm",
+                    buildMap {
+                        put("hour", hour)
+                        put("minute", minute)
+                        if (message.isNotBlank()) {
+                            put("message", message)
+                        }
+                    }
+                )
             }
         }
 

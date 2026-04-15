@@ -8,9 +8,15 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.util.concurrent.TimeUnit
 
 object FuzzyActionInterpreter {
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .writeTimeout(5, TimeUnit.SECONDS)
+        .callTimeout(8, TimeUnit.SECONDS)
+        .build()
     private val sunsetRegex = Regex("""remind me when the sun (goes down|sets) in (.+)""", RegexOption.IGNORE_CASE)
 
     fun resolveInstruction(raw: String): ResolvedAction? {

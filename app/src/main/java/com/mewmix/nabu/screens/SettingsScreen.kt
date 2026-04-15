@@ -534,6 +534,20 @@ fun SettingsScreen(
             )
 
             Text(
+                text = "Glaive adds external tools that Nabu can call when both apps are installed from matching builds.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mewmix/glaive"))
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Download Glaive")
+            }
+
+            Text(
                 text = if (codexConnected) "Codex: Connected" else "Codex: Not connected",
                 style = MaterialTheme.typography.bodySmall
             )

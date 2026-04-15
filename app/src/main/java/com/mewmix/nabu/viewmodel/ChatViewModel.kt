@@ -367,6 +367,68 @@ class ChatViewModel(
                 )
             }
 
+            fun formatSyntheticToolCall(toolCall: ToolCall): String {
+                val args = toolCall.arguments.entries.joinToString(",") { (key, value) ->
+                    val encodedValue = when (value) {
+                        is Number, is Boolean -> value.toString()
+                        else -> "\"" + value.toString()
+                            .replace("\\", "\\\\")
+                            .replace("\"", "\\\"") + "\""
+                    }
+                    "\"$key\":$encodedValue"
+                }
+                return """<tool_call>{"name":"${toolCall.toolName}","arguments":{$args}}</tool_call>"""
+            }
+
+            fun inferToolCallFromBlankModelResponse(userMessage: String): ToolCall? {
+                val normalized = userMessage.trim()
+                if (normalized.isBlank()) return null
+
+                val availableToolNames = ToolRegistry.tools.value
+                    .filter { it.isAvailable }
+                    .map { it.name }
+                    .toSet()
+
+                if ("set_alarm" in availableToolNames) {
+                    val alarmMatch = Regex(
+                        pattern = """(?is)^\s*(?:set\s+)?(?:an\s+)?alarm(?:\s+for)?\s+(\d{1,2}):(\d{2})\b(?:.*?\b(?:called|named|message)\b\s+(.+))?\s*$"""
+                    ).find(normalized)
+                    if (alarmMatch != null) {
+                        val hour = alarmMatch.groupValues[1].toIntOrNull()
+                        val minute = alarmMatch.groupValues[2].toIntOrNull()
+                        val message = alarmMatch.groupValues.getOrNull(3)?.trim().orEmpty()
+                        if (hour != null && minute != null) {
+                            return ToolCall(
+                                toolName = "set_alarm",
+                                arguments = buildMap {
+                                    put("hour", hour)
+                                    put("minute", minute)
+                                    if (message.isNotBlank()) {
+                                        put("message", message)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if ("search_web_context" in availableToolNames) {
+                    val query = sequenceOf(
+                        Regex("""(?is)^\s*search\s+(?:the\s+)?web\s+for\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1),
+                        Regex("""(?is)^\s*look\s+up\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1)
+                    ).firstOrNull { !it.isNullOrBlank() }?.trim().orEmpty()
+
+                    if (query.isNotBlank()) {
+                        return ToolCall(
+                            toolName = "search_web_context",
+                            arguments = mapOf("query" to query)
+                        )
+                    }
+                }
+
+                return null
+            }
+
             fun updateAssistantPlaceholder(content: String) {
                 viewModelScope.launch {
                     val last = _chatMessages.value.lastOrNull()
@@ -438,24 +500,44 @@ class ChatViewModel(
 
                     val finalResponse = responseBuilder.toString()
                     val toolCall = ToolCallProtocol.extractToolCall(finalResponse)
+                    val inferredToolCall =
+                        if (toolCall == null && finalResponse.isBlank() && lastToolResult == null) {
+                            inferToolCallFromBlankModelResponse(trimmed)
+                        } else {
+                            null
+                        }
+                    val effectiveToolCall = toolCall ?: inferredToolCall
                     DebugLogger.log(
                         "ChatViewModel: final response len=${finalResponse.length}, " +
-                            "toolDetected=${toolCall != null}, remainingToolCalls=$remainingToolCalls"
+                            "toolDetected=${effectiveToolCall != null}, remainingToolCalls=$remainingToolCalls"
                     )
-                    if (toolCall == null && finalResponse.isNotBlank()) {
+                    if (toolCall == null && inferredToolCall != null) {
+                        DebugLogger.log(
+                            "ChatViewModel: inferred tool ${inferredToolCall.toolName} from blank model response " +
+                                "using user message: ${trimmed.take(160)}"
+                        )
+                    }
+                    if (effectiveToolCall == null && finalResponse.isNotBlank()) {
                         DebugLogger.log("ChatViewModel: final response preview: ${finalResponse.take(220)}")
                     }
-                    if (toolCall != null && remainingToolCalls > 0) {
-                        DebugLogger.log("ChatViewModel: model requested tool ${toolCall.toolName} with ${toolCall.arguments}")
-                        updateAssistantPlaceholder("Running tool ${toolCall.toolName}...")
+                    if (effectiveToolCall != null && remainingToolCalls > 0) {
+                        DebugLogger.log(
+                            "ChatViewModel: executing tool ${effectiveToolCall.toolName} with ${effectiveToolCall.arguments}"
+                        )
+                        updateAssistantPlaceholder("Running tool ${effectiveToolCall.toolName}...")
                         viewModelScope.launch(Dispatchers.IO) {
-                            val result = executeToolCall(toolCall)
+                            val result = executeToolCall(effectiveToolCall)
                             DebugLogger.log(
-                                "ChatViewModel: tool ${toolCall.toolName} finished " +
+                                "ChatViewModel: tool ${effectiveToolCall.toolName} finished " +
                                     "(error=${result.isError}, outputLength=${result.output.length})"
                             )
+                            val modelToolCallMessage = if (toolCall != null) {
+                                finalResponse
+                            } else {
+                                formatSyntheticToolCall(effectiveToolCall)
+                            }
                             val followUpConversation = conversation + listOf(
-                                LlmMessage(role = "model", content = finalResponse),
+                                LlmMessage(role = "model", content = modelToolCallMessage),
                                 LlmMessage(
                                     role = "user",
                                     content = ToolCallProtocol.formatToolResultForModel(result)
@@ -470,10 +552,10 @@ class ChatViewModel(
                         return@sendMessage
                     }
 
-                    val exhaustedToolBudget = toolCall != null && remainingToolCalls <= 0
+                    val exhaustedToolBudget = effectiveToolCall != null && remainingToolCalls <= 0
                     val shouldFallbackToToolResult = lastToolResult != null && (
                         finalResponse.isBlank() ||
-                            toolCall != null ||
+                            effectiveToolCall != null ||
                             finalResponse.contains("<tool_call>", ignoreCase = true)
                         )
                     val resolvedResponse = when {

@@ -110,7 +110,7 @@ object ActionTools {
             return ToolResult(call.toolName, "Missing required parameter: location", true)
         }
         val weather = WeatherAction.getWeather(location)
-        return ToolResult(call.toolName, weather)
+        return ToolResult(call.toolName, weather.message, weather.isError)
     }
 
     private fun runSaveMemory(context: Context, call: ToolCall): ToolResult {
@@ -131,40 +131,40 @@ object ActionTools {
     }
 
     private fun runSetAlarm(context: Context, call: ToolCall): ToolResult {
-        val hourRaw = call.arguments["hour"]?.toString()?.trim()
-        val minuteRaw = call.arguments["minute"]?.toString()?.trim()
+        val hourRaw = call.arguments["hour"]
+        val minuteRaw = call.arguments["minute"]
         val message = call.arguments["message"]?.toString()?.trim().orEmpty()
 
-        if (hourRaw == null || minuteRaw == null) {
+        if (isMissingArgument(hourRaw) || isMissingArgument(minuteRaw)) {
             return ToolResult(call.toolName, "Missing required parameters: hour, minute", true)
         }
 
-        val hour = hourRaw.toDoubleOrNull()?.toInt()
-        val minute = minuteRaw.toDoubleOrNull()?.toInt()
+        val hour = parseWholeNumberArgument(hourRaw)
+        val minute = parseWholeNumberArgument(minuteRaw)
 
         if (hour == null || minute == null) {
             return ToolResult(call.toolName, "Invalid hour or minute format.", true)
         }
 
         val result = AlarmTimerAction.setAlarm(context, hour, minute, message)
-        return ToolResult(call.toolName, result)
+        return ToolResult(call.toolName, result.message, result.isError)
     }
 
     private fun runSetTimer(context: Context, call: ToolCall): ToolResult {
-        val secondsRaw = call.arguments["seconds"]?.toString()?.trim()
+        val secondsRaw = call.arguments["seconds"]
         val message = call.arguments["message"]?.toString()?.trim().orEmpty()
 
-        if (secondsRaw == null) {
+        if (isMissingArgument(secondsRaw)) {
             return ToolResult(call.toolName, "Missing required parameter: seconds", true)
         }
 
-        val seconds = secondsRaw.toDoubleOrNull()?.toInt()
+        val seconds = parseWholeNumberArgument(secondsRaw)
         if (seconds == null) {
             return ToolResult(call.toolName, "Invalid seconds format.", true)
         }
 
         val result = AlarmTimerAction.setTimer(context, seconds, message)
-        return ToolResult(call.toolName, result)
+        return ToolResult(call.toolName, result.message, result.isError)
     }
 
     private fun runScheduleAction(context: Context, call: ToolCall): ToolResult {
@@ -193,7 +193,7 @@ object ActionTools {
 
         return ToolResult(
             call.toolName,
-            "Scheduled '\${action.title}' for \${formatEpoch(action.triggerAtEpochMs)} (recurrence=\${action.recurrence}, id=\${action.id})."
+            "Scheduled '${action.title}' for ${formatEpoch(action.triggerAtEpochMs)} (recurrence=${action.recurrence}, id=${action.id})."
         )
     }
 
@@ -220,7 +220,7 @@ object ActionTools {
 
         return ToolResult(
             call.toolName,
-            "Scheduled fuzzy action '\${action.title}' for \${formatEpoch(action.triggerAtEpochMs)} (recurrence=\${action.recurrence}, id=\${action.id})."
+            "Scheduled fuzzy action '${action.title}' for ${formatEpoch(action.triggerAtEpochMs)} (recurrence=${action.recurrence}, id=${action.id})."
         )
     }
 
@@ -228,7 +228,7 @@ object ActionTools {
         val actions = ScheduledActionStore.list(context)
         if (actions.isEmpty()) return ToolResult("list_scheduled_actions", "No scheduled actions.")
         val lines = actions.joinToString("\n") {
-            "- \${it.title} at \${formatEpoch(it.triggerAtEpochMs)} (recurrence=\${it.recurrence}, id=\${it.id})"
+            "- ${it.title} at ${formatEpoch(it.triggerAtEpochMs)} (recurrence=${it.recurrence}, id=${it.id})"
         }
         return ToolResult("list_scheduled_actions", lines)
     }
@@ -238,8 +238,8 @@ object ActionTools {
         if (query.isBlank()) {
             return ToolResult(call.toolName, "Missing required parameter: query", true)
         }
-        val hits = WebActionReasoner.search(query)
-        return ToolResult(call.toolName, WebActionReasoner.summarize(hits))
+        val result = WebActionReasoner.search(query)
+        return ToolResult(call.toolName, WebActionReasoner.summarize(result), result.isError)
     }
 
     private fun inferFromWeb(request: String): FuzzyActionInterpreter.ResolvedAction? {
@@ -275,4 +275,38 @@ object ActionTools {
         ScheduledAction.RECURRENCE_WEEKLY -> ScheduledAction.RECURRENCE_WEEKLY
         else -> ScheduledAction.RECURRENCE_NONE
     }
+
+    private fun isMissingArgument(value: Any?): Boolean =
+        value == null || (value is String && value.isBlank())
+
+    private fun parseWholeNumberArgument(value: Any?): Int? {
+        return when (value) {
+            null -> null
+            is Int -> value
+            is Long -> value.toIntOrNullExact()
+            is Short -> value.toInt()
+            is Byte -> value.toInt()
+            is Double -> value.takeIf { it.isFinite() && it % 1.0 == 0.0 }?.toInt()
+            is Float -> value.takeIf { it.isFinite() && it % 1f == 0f }?.toInt()
+            is Number -> {
+                val longValue = value.toLong()
+                if (value.toDouble().isFinite() && value.toDouble() == longValue.toDouble()) {
+                    longValue.toIntOrNullExact()
+                } else {
+                    null
+                }
+            }
+            is String -> {
+                val trimmed = value.trim()
+                if (!trimmed.matches(Regex("^-?\\d+(?:\\.0+)?$"))) {
+                    null
+                } else {
+                    trimmed.substringBefore('.').toIntOrNull()
+                }
+            }
+            else -> null
+        }
+    }
+
+    private fun Long.toIntOrNullExact(): Int? = if (this in Int.MIN_VALUE..Int.MAX_VALUE) toInt() else null
 }
