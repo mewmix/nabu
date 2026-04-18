@@ -182,6 +182,7 @@ class MediaPipeBackend(
                     session.addImage(BitmapImageBuilder(image.bitmap).build())
                 }
                 session.addQueryChunk(prompt)
+                DebugLogger.log("MediaPipeBackend: addQueryChunk called, prompt length=${prompt.length}, blankRetryCount=$blankRetryCount")
                 val completed = AtomicBoolean(false)
                 val firstVisibleTokenSeen = AtomicBoolean(false)
                 val visibleResponseSeen = AtomicBoolean(false)
@@ -213,8 +214,9 @@ class MediaPipeBackend(
                         return true
                     }
                     timeoutThreads.forEach { it.interrupt() }
+                    val nudgePrompt = addNoBlankResponseNudge(prompt)
                     DebugLogger.log(
-                        "MediaPipeBackend blank completion; retrying once with no-blank response nudge"
+                        "MediaPipeBackend blank completion; retrying once with no-blank response nudge. Original prompt length=${prompt.length}, nudge prompt length=${nudgePrompt.length}"
                     )
                     if (activeSession.compareAndSet(session, null)) {
                         try {
@@ -229,8 +231,9 @@ class MediaPipeBackend(
                         }
                     }
                     Thread {
+                        DebugLogger.log("MediaPipeBackend blank retry: starting retry with nudge prompt")
                         generateWithSession(
-                            prompt = addNoBlankResponseNudge(prompt),
+                            prompt = nudgePrompt,
                             resultListener = resultListener,
                             image = image,
                             blankRetryCount = blankRetryCount + 1
@@ -272,10 +275,15 @@ class MediaPipeBackend(
                         visibleResponseSeen.set(true)
                     }
                     if (completed.get()) {
+                        DebugLogger.log("MediaPipeBackend: callback ignored, already completed")
                         return@generateResponseAsync
                     }
                     if (done && !visibleResponseSeen.get() && retryAfterBlankCompletion()) {
+                        DebugLogger.log("MediaPipeBackend: done=true but no visible response, retrying")
                         return@generateResponseAsync
+                    }
+                    if (done) {
+                        DebugLogger.log("MediaPipeBackend: done=true, visibleResponseSeen=$visibleResponseSeen, chunk length=${chunk.length}")
                     }
                     resultListener(chunk, done)
                     if (done && completed.compareAndSet(false, true)) {
