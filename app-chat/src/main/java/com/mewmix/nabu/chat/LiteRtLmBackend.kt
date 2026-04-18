@@ -4,10 +4,12 @@ import android.content.Context
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
+import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.google.ai.edge.litertlm.ToolProvider
 import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
@@ -18,12 +20,9 @@ class LiteRtLmBackend(
     private val context: Context,
     private val modelPath: String
 ) : LlmBackend {
-    companion object {
-        private const val DEFAULT_MAX_NUM_TOKENS = 1024
-    }
-
     private val initialized = AtomicBoolean(false)
     private val activeConversation = AtomicReference<Conversation?>(null)
+    private val initializationError = AtomicReference<String?>(null)
 
     @Volatile
     private var engine: Engine? = null
@@ -33,17 +32,30 @@ class LiteRtLmBackend(
         synchronized(this) {
             if (initialized.get()) return
             DebugLogger.log("LiteRtLmBackend initialize with model $modelPath")
+            initializationError.set(null)
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.CPU,
-                visionBackend = Backend.CPU,
-                audioBackend = Backend.CPU,
-                maxNumTokens = DEFAULT_MAX_NUM_TOKENS,
+                backend = selectBackendForModel(modelPath),
+                // Keep optional modalities unset for text-only models.
+                visionBackend = null,
+                audioBackend = null,
+                // Let the runtime use the model's supported context budget.
+                maxNumTokens = null,
+                maxNumImages = null,
                 cacheDir = context.cacheDir.absolutePath
             )
-            engine = Engine(engineConfig)
-            engine?.initialize()
-            initialized.set(true)
+            try {
+                engine = Engine(engineConfig)
+                engine?.initialize()
+                initialized.set(true)
+                DebugLogger.log("LiteRtLmBackend initialized backend=${engineConfig.backend}")
+            } catch (t: Throwable) {
+                engine = null
+                initialized.set(false)
+                val message = t.message ?: t::class.java.simpleName
+                initializationError.set(message)
+                DebugLogger.log("LiteRtLmBackend initialize failed: $message")
+            }
         }
     }
 
@@ -63,7 +75,7 @@ class LiteRtLmBackend(
                 activeConversation.set(liteConversation)
                 streamMessage(
                     conversation = liteConversation,
-                    message = Message.Companion.of(prepared.prompt),
+                    prompt = prepared.prompt,
                     resultListener = resultListener
                 )
             }
@@ -85,7 +97,7 @@ class LiteRtLmBackend(
                 activeConversation.set(liteConversation)
                 streamMessage(
                     conversation = liteConversation,
-                    message = Message.Companion.of(prompt),
+                    prompt = prompt,
                     resultListener = resultListener
                 )
             }
@@ -119,6 +131,10 @@ class LiteRtLmBackend(
         if (!initialized.get()) {
             initialize()
         }
+        initializationError.get()?.let { error ->
+            resultListener("LiteRT-LM initialization failed: $error", true)
+            return null
+        }
         return engine ?: run {
             resultListener("LiteRT-LM backend unavailable.", true)
             null
@@ -127,12 +143,12 @@ class LiteRtLmBackend(
 
     private fun streamMessage(
         conversation: Conversation,
-        message: Message,
+        prompt: String,
         resultListener: (partialResult: String, done: Boolean) -> Unit
     ) {
         var emittedText = ""
         runBlocking {
-            conversation.sendMessageAsync(message).collect { chunk ->
+            conversation.sendMessageAsync(prompt).collect { chunk ->
                 val fullText = chunk.toString()
                 val delta = if (fullText.startsWith(emittedText)) {
                     fullText.removePrefix(emittedText)
@@ -151,33 +167,18 @@ class LiteRtLmBackend(
     private fun prepareConversationInput(conversation: List<LlmMessage>): PreparedConversationInput? {
         val systemPrompt = conversation.firstOrNull { it.role == "system" }?.content?.trim().orEmpty()
         val nonSystemMessages = conversation.filterNot { it.role == "system" }
-        if (nonSystemMessages.none { it.role == "user" }) return null
+        val latestUserMessage = nonSystemMessages.lastOrNull { it.role == "user" }?.content?.trim().orEmpty()
+        if (latestUserMessage.isBlank()) return null
 
-        val transcript = buildString {
-            nonSystemMessages.forEach { message ->
-                val content = message.content.trim()
-                if (content.isBlank()) return@forEach
-                val roleLabel = when (message.role) {
-                    "model" -> "Assistant"
-                    else -> "User"
-                }
-                if (isNotEmpty()) {
-                    append("\n\n")
-                }
-                append(roleLabel)
-                append(": ")
-                append(content)
-            }
-            if (isNotEmpty()) {
-                append("\n\nAssistant:")
-            }
-        }.trim()
-
-        if (transcript.isBlank()) return null
+        val latestUserIndex = nonSystemMessages.indexOfLast { it.role == "user" }
+        val initialMessages = nonSystemMessages
+            .subList(0, latestUserIndex)
+            .mapNotNull(::toLiteRtLmMessage)
 
         val config = ConversationConfig(
-            systemMessage = systemPrompt.takeIf { it.isNotBlank() }?.let(Message.Companion::of),
-            tools = emptyList<Any>(),
+            systemInstruction = systemPrompt.takeIf { it.isNotBlank() }?.let(Contents.Companion::of),
+            initialMessages = initialMessages,
+            tools = emptyList<ToolProvider>(),
             samplerConfig = SamplerConfig(
                 topK = 40,
                 topP = 0.95,
@@ -187,8 +188,34 @@ class LiteRtLmBackend(
 
         return PreparedConversationInput(
             config = config,
-            prompt = transcript
+            prompt = latestUserMessage
         )
+    }
+
+    private fun toLiteRtLmMessage(message: LlmMessage): Message? {
+        val content = message.content.trim()
+        if (content.isBlank()) return null
+        return when (message.role) {
+            "model" -> Message.Companion.model(content)
+            "user" -> Message.Companion.user(content)
+            else -> null
+        }
+    }
+
+    private fun selectBackendForModel(path: String): Backend {
+        val normalized = path.lowercase()
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        DebugLogger.log("LiteRtLmBackend selectBackend: path=$path nativeLibDir=$nativeLibDir")
+        return if (
+            (normalized.contains("qualcomm") || normalized.contains("qcs") || normalized.contains("npu")) &&
+            !nativeLibDir.isNullOrBlank()
+        ) {
+            DebugLogger.log("LiteRtLmBackend selecting NPU backend with nativeLibDir=$nativeLibDir")
+            Backend.NPU(nativeLibDir)
+        } else {
+            DebugLogger.log("LiteRtLmBackend selecting CPU backend")
+            Backend.CPU()
+        }
     }
 
     private data class PreparedConversationInput(
