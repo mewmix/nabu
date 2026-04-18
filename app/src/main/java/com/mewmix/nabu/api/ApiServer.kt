@@ -7,6 +7,7 @@ import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.LlmMessage
 import com.mewmix.nabu.chat.MediaPipeBackend
+import com.mewmix.nabu.chat.LiteRtLmBackend
 import com.mewmix.nabu.chat.VisionModelSupport
 import com.mewmix.nabu.data.findDownloadedLlmArtifact
 import com.mewmix.nabu.data.ModelManager
@@ -966,6 +967,7 @@ class ApiServer(
                     )
                 )
             }
+            is LiteRtLmBackend -> Unit
         }
     }
 
@@ -1012,16 +1014,17 @@ class ApiServer(
                 ?: throw IllegalStateException(
                     "Model file not found for ${targetModel.id} (.task/.litertlm/.gguf)"
                 )
-            val isLlama = artifact.backend == "llama"
-
-            val createdBackend: LlmBackend = if (isLlama) {
-                LlamaCppBackend(
+            val createdBackend: LlmBackend = when (artifact.backend) {
+                "llama" -> LlamaCppBackend(
                     context = context,
                     modelPath = artifact.file.absolutePath,
                     initialConfig = SettingsManager.getLlmRuntimeConfig(context)
                 )
-            } else {
-                MediaPipeBackend(
+                "litertlm" -> LiteRtLmBackend(
+                    context = context,
+                    modelPath = artifact.file.absolutePath
+                )
+                else -> MediaPipeBackend(
                     context = context,
                     modelPath = artifact.file.absolutePath,
                     initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
@@ -1042,7 +1045,7 @@ class ApiServer(
 
         val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
             ?: return false
-        return artifact.backend != "llama"
+        return artifact.backend == "mediapipe"
     }
 
     private suspend fun runGeneration(

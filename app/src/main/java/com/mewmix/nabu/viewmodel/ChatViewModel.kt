@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.mewmix.nabu.chat.ChatMessage
 import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.CodexOAuthBackend
+import com.mewmix.nabu.chat.LiteRtLmBackend
 import com.mewmix.nabu.chat.LlamaCppBackend
 import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import com.mewmix.nabu.chat.MediaPipeBackend
@@ -918,23 +919,32 @@ class ChatViewModel(
                     llmBackend = null
                     return
                 }
-                val isLlama = artifact.backend == "llama"
-
-                if (isLlama) {
-                    val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
-                    val backend = LlamaCppBackend(context, artifact.file.absolutePath, runtimeConfig)
-                    llmBackend = backend
-                    viewModelScope.launch(Dispatchers.IO) {
-                        backend.initialize()
+                llmBackend = when (artifact.backend) {
+                    "llama" -> {
+                        val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
+                        LlamaCppBackend(context, artifact.file.absolutePath, runtimeConfig).also { llama ->
+                            viewModelScope.launch(Dispatchers.IO) {
+                                llama.initialize()
+                            }
+                        }
                     }
-                } else {
-                    val backend = MediaPipeBackend(
-                        context = context,
-                        modelPath = artifact.file.absolutePath,
-                        initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
-                    )
-                    backend.initialize()
-                    llmBackend = backend
+                    "litertlm" -> {
+                        LiteRtLmBackend(
+                            context = context,
+                            modelPath = artifact.file.absolutePath
+                        ).also { liteRtLm ->
+                            liteRtLm.initialize()
+                        }
+                    }
+                    else -> {
+                        MediaPipeBackend(
+                            context = context,
+                            modelPath = artifact.file.absolutePath,
+                            initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
+                        ).also { mediaPipe ->
+                            mediaPipe.initialize()
+                        }
+                    }
                 }
             }
         }
