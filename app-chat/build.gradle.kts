@@ -49,7 +49,7 @@ android {
 
 dependencies {
     implementation(project(":core-utils"))
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.8.0")
+    implementation(libs.litertlm.android)
     implementation("com.google.mediapipe:tasks-core:latest.release")
     implementation("com.google.mediapipe:tasks-genai:0.10.24")
     implementation(platform("androidx.compose:compose-bom:2023.08.00"))

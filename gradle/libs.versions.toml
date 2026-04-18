@@ -1,6 +1,7 @@
 [versions]
 agp = "8.10.1"
 kotlin = "2.2.21"
+litertlm = "0.10.2"
 coreKtx = "1.10.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
@@ -33,6 +34,7 @@ material3 = { module = "androidx.compose.material3:material3" }
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
 mockito-inline = { group = "org.mockito", name = "mockito-inline", version.ref = "mockitoInline" }
 androidx-media = { group = "androidx.media", name = "media", version.ref = "media" }
+litertlm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litertlm" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
