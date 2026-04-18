@@ -3,6 +3,7 @@ package com.mewmix.nabu.actions
 import android.content.Context
 import com.mewmix.nabu.tools.Tool
 import com.mewmix.nabu.tools.ToolCall
+import com.mewmix.nabu.tools.ToolRegistry
 import com.mewmix.nabu.tools.ToolResult
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -24,6 +25,13 @@ object ActionTools {
     )
 
     val tools: List<Tool> = listOf(
+        Tool(
+            name = "list_tools",
+            description = "List all available tools with their descriptions and parameters. Call this to discover what tools you can use.",
+            parameters = mapOf(
+                "filter" to "Optional keyword to filter tools by name or description."
+            )
+        ),
         Tool(
             name = "schedule_action",
             description = "Schedule a background-safe tool execution at a specific local date-time.",
@@ -234,6 +242,7 @@ object ActionTools {
 
     fun execute(context: Context, call: ToolCall): ToolResult? {
         return when (call.toolName) {
+            "list_tools" -> runListTools(call)
             "schedule_action" -> runScheduleAction(context, call)
             "schedule_fuzzy_action" -> runFuzzyAction(context, call)
             "list_scheduled_actions" -> runListActions(context)
@@ -272,6 +281,31 @@ object ActionTools {
         val current = LocalDateTime.now(ZoneId.systemDefault())
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         return ToolResult(call.toolName, "Current local time is: ${current.format(formatter)}")
+    }
+
+    private fun runListTools(call: ToolCall): ToolResult {
+        val filter = call.arguments["filter"]?.toString()?.trim()?.lowercase().orEmpty()
+        val allTools = ToolRegistry.tools.value.filter { it.isAvailable && it.name != "list_tools" }
+        val filtered = if (filter.isBlank()) {
+            allTools
+        } else {
+            allTools.filter { tool ->
+                tool.name.lowercase().contains(filter) ||
+                tool.description.lowercase().contains(filter)
+            }
+        }
+        if (filtered.isEmpty()) {
+            return ToolResult(call.toolName, if (filter.isBlank()) "No tools available." else "No tools match filter: $filter")
+        }
+        val lines = filtered.map { tool ->
+            val params = if (tool.parameters.isEmpty()) {
+                ""
+            } else {
+                "(${tool.parameters.keys.sorted().joinToString(", ")})"
+            }
+            "- ${tool.name}$params: ${tool.description}"
+        }
+        return ToolResult(call.toolName, "Available tools:\n${lines.joinToString("\n")}")
     }
 
     private fun runGetWeather(call: ToolCall): ToolResult {

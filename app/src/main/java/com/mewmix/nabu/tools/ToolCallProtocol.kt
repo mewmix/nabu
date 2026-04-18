@@ -21,8 +21,11 @@ object ToolCallProtocol {
                 lines += basePrompt.trim()
                 lines += ""
             }
+            lines += "You may call tools to help the user."
+            lines += "Tool-call format: ⦗{\"name\":\"tool_name\",\"arguments\":{}}⦘"
+            lines += "Do not add extra text around a tool call."
             lines += "Never return an empty response."
-            lines += "Answer with at least one short visible sentence."
+            lines += "To discover available tools, call: ⦗{\"name\":\"list_tools\",\"arguments\":{}}⦘"
             return lines.joinToString("\n").trim()
         }
 
