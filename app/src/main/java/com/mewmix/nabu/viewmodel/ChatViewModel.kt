@@ -920,15 +920,6 @@ class ChatViewModel(
                     llmBackend = null
                     return
                 }
-                if (artifact.backend == "litertlm") {
-                    DebugLogger.log("LiteRT-LM model selection blocked for ${model.id}: native engine crashes on this Android build")
-                    Toast.makeText(
-                        context,
-                        "LiteRT-LM models are temporarily disabled in this build due to native engine crashes.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    return
-                }
                 _activeModel.value = model
                 llmBackend?.close()
                 llmBackend = when (artifact.backend) {
@@ -938,6 +929,14 @@ class ChatViewModel(
                             viewModelScope.launch(Dispatchers.IO) {
                                 llama.initialize()
                             }
+                        }
+                    }
+                    "litertlm" -> {
+                        LiteRtLmBackend(
+                            context = context,
+                            modelPath = artifact.file.absolutePath
+                        ).also { liteRtLm ->
+                            liteRtLm.initialize()
                         }
                     }
                     else -> {

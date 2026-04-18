@@ -1014,16 +1014,15 @@ class ApiServer(
                 ?: throw IllegalStateException(
                     "Model file not found for ${targetModel.id} (.task/.litertlm/.gguf)"
                 )
-            if (artifact.backend == "litertlm") {
-                throw IllegalStateException(
-                    "LiteRT-LM models are temporarily disabled in this build due to native engine crashes on Android."
-                )
-            }
             val createdBackend: LlmBackend = when (artifact.backend) {
                 "llama" -> LlamaCppBackend(
                     context = context,
                     modelPath = artifact.file.absolutePath,
                     initialConfig = SettingsManager.getLlmRuntimeConfig(context)
+                )
+                "litertlm" -> LiteRtLmBackend(
+                    context = context,
+                    modelPath = artifact.file.absolutePath
                 )
                 else -> MediaPipeBackend(
                     context = context,
