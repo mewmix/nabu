@@ -18,6 +18,10 @@ class LiteRtLmBackend(
     private val context: Context,
     private val modelPath: String
 ) : LlmBackend {
+    companion object {
+        private const val DEFAULT_MAX_NUM_TOKENS = 1024
+    }
+
     private val initialized = AtomicBoolean(false)
     private val activeConversation = AtomicReference<Conversation?>(null)
 
@@ -31,7 +35,10 @@ class LiteRtLmBackend(
             DebugLogger.log("LiteRtLmBackend initialize with model $modelPath")
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = selectBackend(),
+                backend = Backend.CPU,
+                visionBackend = Backend.CPU,
+                audioBackend = Backend.CPU,
+                maxNumTokens = DEFAULT_MAX_NUM_TOKENS,
                 cacheDir = context.cacheDir.absolutePath
             )
             engine = Engine(engineConfig)
@@ -141,13 +148,6 @@ class LiteRtLmBackend(
         resultListener("", true)
     }
 
-    private fun selectBackend(): Backend {
-        return when (SettingsBridge.getPreferredBackend(context)) {
-            "gpu" -> Backend.GPU
-            else -> Backend.CPU
-        }
-    }
-
     private fun prepareConversationInput(conversation: List<LlmMessage>): PreparedConversationInput? {
         val systemPrompt = conversation.firstOrNull { it.role == "system" }?.content?.trim().orEmpty()
         val nonSystemMessages = conversation.filterNot { it.role == "system" }
@@ -195,14 +195,4 @@ class LiteRtLmBackend(
         val config: ConversationConfig,
         val prompt: String
     )
-
-    /**
-     * Keep the app-chat module independent from SettingsManager in the app module.
-     */
-    private object SettingsBridge {
-        fun getPreferredBackend(context: Context): String {
-            val prefs = context.getSharedPreferences("nabu_settings", Context.MODE_PRIVATE)
-            return prefs.getString("mediapipe_backend", "cpu").orEmpty()
-        }
-    }
 }

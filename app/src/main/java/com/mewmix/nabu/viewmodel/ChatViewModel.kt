@@ -2,6 +2,7 @@ package com.mewmix.nabu.viewmodel
 
 import android.content.Context
 import android.os.SystemClock
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mewmix.nabu.chat.ChatMessage
@@ -896,12 +897,12 @@ class ChatViewModel(
             _activeModel.value = model
             return
         }
-        _activeModel.value = model
-        llmBackend?.close()
 
         val remoteSelection = OAuthRemoteModels.detectSelection(model.id, model.backend)
         when (remoteSelection?.provider) {
             OAuthRemoteModels.Provider.CODEX -> {
+                _activeModel.value = model
+                llmBackend?.close()
                 llmBackend = CodexOAuthBackend(
                     context = context,
                     model = remoteSelection.modelSlug
@@ -919,6 +920,17 @@ class ChatViewModel(
                     llmBackend = null
                     return
                 }
+                if (artifact.backend == "litertlm") {
+                    DebugLogger.log("LiteRT-LM model selection blocked for ${model.id}: native engine crashes on this Android build")
+                    Toast.makeText(
+                        context,
+                        "LiteRT-LM models are temporarily disabled in this build due to native engine crashes.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+                _activeModel.value = model
+                llmBackend?.close()
                 llmBackend = when (artifact.backend) {
                     "llama" -> {
                         val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
@@ -926,14 +938,6 @@ class ChatViewModel(
                             viewModelScope.launch(Dispatchers.IO) {
                                 llama.initialize()
                             }
-                        }
-                    }
-                    "litertlm" -> {
-                        LiteRtLmBackend(
-                            context = context,
-                            modelPath = artifact.file.absolutePath
-                        ).also { liteRtLm ->
-                            liteRtLm.initialize()
                         }
                     }
                     else -> {
