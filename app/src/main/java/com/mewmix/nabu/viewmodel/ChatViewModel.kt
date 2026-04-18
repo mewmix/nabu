@@ -1113,7 +1113,7 @@ class ChatViewModel(
         if (containsAny(normalized, "send sms", "text ", "text me", "message ")) addTool("send_sms")
         if (containsAny(normalized, "call ", "dial ", "place call")) addTool("place_call")
         if (containsAny(normalized, "brightness", "dim", "brighter")) addTool("set_brightness")
-        if (containsAny(normalized, "flashlight", "torch")) addTool("toggle_flashlight")
+        if (containsAny(normalized, "flashlight", "torch", "light")) addTool("toggle_flashlight")
         if (containsAny(normalized, "volume", "louder", "quieter")) addTool("set_volume")
         if (containsAny(normalized, "mute", "unmute")) addTool("mute")
         if (containsAny(normalized, "play media", "resume media", "resume playback")) addTool("play_media")
@@ -1126,10 +1126,49 @@ class ChatViewModel(
         if (containsAny(normalized, "wifi", "wi-fi")) addTool("toggle_wifi")
         if (containsAny(normalized, "bluetooth")) addTool("toggle_bluetooth")
         if (containsAny(normalized, "share this", "share text", "share ")) addTool("share_text")
+        if (containsAny(normalized, "what can you do", "what tools", "available tools", "help me")) addTool("list_tools")
+        if (containsAny(normalized, "time", "clock", "hour")) addTool("get_current_time")
 
-        return selectedNames
-            .take(6)
-            .mapNotNull { toolsByName[it] }
+        val exactMatches = selectedNames.mapNotNull { toolsByName[it] }
+        
+        val fuzzyMatches = fuzzyMatchTools(normalized, availableTools, exactMatches.map { it.name }.toSet())
+        
+        val allMatches = (exactMatches + fuzzyMatches).distinctBy { it.name }
+        
+        return allMatches.take(6)
+    }
+
+    private fun fuzzyMatchTools(
+        message: String,
+        tools: List<com.mewmix.nabu.tools.Tool>,
+        excludeNames: Set<String>
+    ): List<com.mewmix.nabu.tools.Tool> {
+        val messageWords = message.split(Regex("\\s+")).filter { it.length > 2 }.toSet()
+        if (messageWords.isEmpty()) return emptyList()
+        
+        val scored = tools
+            .filter { it.isAvailable && it.name !in excludeNames }
+            .map { tool ->
+                val nameWords = tool.name.split("_").filter { it.length > 2 }.toSet()
+                val descWords = tool.description.lowercase().split(Regex("[\\s,.-]+")).filter { it.length > 2 }.toSet()
+                val toolWords = nameWords + descWords
+                
+                val nameScore = messageWords.intersect(nameWords).size * 3
+                val descScore = messageWords.intersect(descWords).size
+                val score = nameScore + descScore
+                
+                tool to score
+            }
+            .filter { it.second > 0 }
+            .sortedByDescending { it.second }
+        
+        val topScore = scored.firstOrNull()?.second ?: 0
+        val threshold = maxOf(1, topScore / 2)
+        
+        return scored
+            .filter { it.second >= threshold && it.second >= 2 }
+            .take(3)
+            .map { it.first }
     }
 
     private fun containsAny(text: String, vararg needles: String): Boolean =
