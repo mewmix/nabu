@@ -44,9 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mewmix.nabu.chat.MessageBubble
+import com.mewmix.nabu.tools.Tool
+import com.mewmix.nabu.tools.ToolRegistry
 import com.mewmix.nabu.ui.components.WaveformVisualizer
 import com.mewmix.nabu.utils.PcmTap
 import com.mewmix.nabu.utils.PlayerState
+import com.mewmix.nabu.viewmodel.ChatContextMode
 import com.mewmix.nabu.viewmodel.ChatViewModel
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
@@ -69,6 +72,8 @@ fun ChatScreen(
     val activeConversationId by viewModel.activeConversationId.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
     val activeModel by viewModel.activeModel.collectAsState()
+    val chatContextMode by viewModel.chatContextMode.collectAsState()
+    val availableTools by ToolRegistry.tools.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.refreshStyles()
@@ -93,7 +98,13 @@ fun ChatScreen(
     var renameTarget by remember { mutableStateOf<Long?>(null) }
     var renameText by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<Long?>(null) }
+    var showToolPicker by remember { mutableStateOf(false) }
+    var toolPrefillMode by remember { mutableStateOf(chatContextMode) }
     val activeConversation = conversationSummaries.firstOrNull { it.id == activeConversationId }
+
+    LaunchedEffect(chatContextMode) {
+        toolPrefillMode = chatContextMode
+    }
 
     LaunchedEffect(chatMessages.size) {
         if (chatMessages.isNotEmpty()) {
@@ -203,6 +214,9 @@ fun ChatScreen(
                             enabled = activeConversationId != null
                         ) {
                             Text("Delete", color = Brutal.red)
+                        }
+                        BrutalButton(onClick = { showToolPicker = true }) {
+                            Text("Tools", color = Brutal.textBright)
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -328,6 +342,55 @@ fun ChatScreen(
                         maxLines = 5
                     )
                     
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "Context Mode",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Brutal.textBright
+                    )
+                    Text(
+                        text = if (chatContextMode == ChatContextMode.LONG_CONTEXT) {
+                            "Long Context keeps history and uses compaction when the window gets tight."
+                        } else {
+                            "Single Turn only sends the latest user message."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Brutal.textDim
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        BrutalButton(
+                            onClick = { viewModel.updateChatContextMode(ChatContextMode.LONG_CONTEXT) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = if (chatContextMode == ChatContextMode.LONG_CONTEXT) {
+                                    "Long Context On"
+                                } else {
+                                    "Long Context"
+                                },
+                                color = Brutal.textBright
+                            )
+                        }
+                        BrutalButton(
+                            onClick = { viewModel.updateChatContextMode(ChatContextMode.SINGLE_TURN) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = if (chatContextMode == ChatContextMode.SINGLE_TURN) {
+                                    "Single Turn On"
+                                } else {
+                                    "Single Turn"
+                                },
+                                color = Brutal.textBright
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Text(
@@ -549,4 +612,98 @@ fun ChatScreen(
             }
         )
     }
+
+    if (showToolPicker) {
+        AlertDialog(
+            onDismissRequest = { showToolPicker = false },
+            title = { Text("Tool Prefill") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = "Pick a context mode, then choose a tool to prefill a direct call.",
+                        color = Brutal.textDim
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        BrutalButton(
+                            onClick = { toolPrefillMode = ChatContextMode.SINGLE_TURN },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                if (toolPrefillMode == ChatContextMode.SINGLE_TURN) {
+                                    "Single Turn On"
+                                } else {
+                                    "Single Turn"
+                                },
+                                color = Brutal.textBright
+                            )
+                        }
+                        BrutalButton(
+                            onClick = { toolPrefillMode = ChatContextMode.LONG_CONTEXT },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                if (toolPrefillMode == ChatContextMode.LONG_CONTEXT) {
+                                    "Long Context On"
+                                } else {
+                                    "Long Context"
+                                },
+                                color = Brutal.textBright
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    availableTools
+                        .filter { it.isAvailable }
+                        .sortedBy { it.name }
+                        .forEach { tool ->
+                            BrutalButton(
+                                onClick = {
+                                    viewModel.updateChatContextMode(toolPrefillMode)
+                                    message = buildToolPrefill(tool)
+                                    showToolPicker = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(tool.name, color = Brutal.textBright)
+                                    if (tool.description.isNotBlank()) {
+                                        Text(tool.description, color = Brutal.textDim)
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                }
+            },
+            confirmButton = {
+                BrutalButton(onClick = { showToolPicker = false }) {
+                    Text("Close", color = Brutal.textBright)
+                }
+            },
+            dismissButton = {}
+        )
+    }
+}
+
+private fun buildToolPrefill(tool: Tool): String {
+    if (tool.parameters.isEmpty()) {
+        return "/tool ${tool.name}"
+    }
+    val args = tool.parameters.keys.joinToString(", ") { key ->
+        "\"$key\":${defaultPrefillJsonValue(key)}"
+    }
+    return "/tool ${tool.name} {$args}"
+}
+
+private fun defaultPrefillJsonValue(key: String): String = when (key) {
+    "enabled" -> "true"
+    "hour" -> "7"
+    "minute" -> "30"
+    "seconds" -> "60"
+    "level" -> "50"
+    else -> "\"\""
 }

@@ -46,6 +46,8 @@ object SettingsManager {
     private const val KEY_VOICE_MIX_CONFIG = "voice_mix_config"
     private const val KEY_VOICE_MIX_FAVORITES = "voice_mix_favorites"
     private const val KEY_CHAT_SYSTEM_PROMPT = "chat_system_prompt"
+    private const val KEY_CHAT_CONTEXT_MODE = "chat_context_mode"
+    private const val KEY_OPTIONAL_PERMISSIONS_REVIEWED = "optional_permissions_reviewed"
     private const val LEGACY_MIXER_PREFS = "mixer_config"
     private const val LEGACY_MIXER_STYLES = "styles"
     private const val LEGACY_MIXER_MODE = "mode"
@@ -219,6 +221,17 @@ object SettingsManager {
         return DatabaseManager.getSetting(context, KEY_CHAT_SYSTEM_PROMPT) ?: default
     }
 
+    fun setChatContextMode(context: Context, mode: String) {
+        DatabaseManager.setSetting(context, KEY_CHAT_CONTEXT_MODE, mode.trim())
+    }
+
+    fun getChatContextMode(context: Context, default: String = "long_context"): String {
+        return DatabaseManager.getSetting(context, KEY_CHAT_CONTEXT_MODE)
+            ?.trim()
+            ?.ifBlank { default }
+            ?: default
+    }
+
     fun setTtsEnabled(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "tts_enabled", if (enabled) "1" else "0")
     }
@@ -310,6 +323,13 @@ object SettingsManager {
 
     fun isInitComplete(context: Context): Boolean =
         (DatabaseManager.getSetting(context, KEY_INIT_COMPLETE) ?: "0") == "1"
+
+    fun setOptionalPermissionsReviewed(context: Context, reviewed: Boolean) {
+        DatabaseManager.setSetting(context, KEY_OPTIONAL_PERMISSIONS_REVIEWED, if (reviewed) "1" else "0")
+    }
+
+    fun isOptionalPermissionsReviewed(context: Context): Boolean =
+        (DatabaseManager.getSetting(context, KEY_OPTIONAL_PERMISSIONS_REVIEWED) ?: "0") == "1"
 
     fun setKokoroAutoDownload(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, KEY_KOKORO_AUTO_DOWNLOAD, if (enabled) "1" else "0")
@@ -507,7 +527,9 @@ object SettingsManager {
             topP = getMediaPipeTopP(context),
             temperature = getMediaPipeTemperature(context),
             randomSeed = getMediaPipeRandomSeed(context),
-            preferredBackend = preferredBackend
+            preferredBackend = preferredBackend,
+            ttftTimeoutMs = getLlmTtftTimeoutMs(context),
+            totalTimeoutMs = getLlmTotalTimeoutMs(context)
         )
     }
 

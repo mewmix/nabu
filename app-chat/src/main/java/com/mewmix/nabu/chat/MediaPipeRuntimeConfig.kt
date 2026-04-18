@@ -9,5 +9,7 @@ data class MediaPipeRuntimeConfig(
     val topP: Float,
     val temperature: Float,
     val randomSeed: Int,
-    val preferredBackend: LlmInference.Backend?
+    val preferredBackend: LlmInference.Backend?,
+    val ttftTimeoutMs: Long,
+    val totalTimeoutMs: Long
 )

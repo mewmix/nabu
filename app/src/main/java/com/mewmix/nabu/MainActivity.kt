@@ -97,6 +97,7 @@ import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.TtsModelValidator
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.screens.InitScreen
+import com.mewmix.nabu.screens.OptionalPermissionsScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mewmix.nabu.viewmodel.GlobalRuntimeViewModel
 import com.mewmix.nabu.ui.components.GlobalStatusBar
@@ -165,11 +166,27 @@ class MainActivity : ComponentActivity() {
                 }
                 val context = LocalContext.current
                 var needsInit by remember { mutableStateOf(!SettingsManager.isInitComplete(context)) }
+                var needsPermissionReview by remember {
+                    mutableStateOf(
+                        SettingsManager.isInitComplete(context) &&
+                            !SettingsManager.isOptionalPermissionsReviewed(context)
+                    )
+                }
 
                 if (needsInit) {
                     InitScreen(
                         userPreferencesRepository = userPreferencesRepository,
-                        onComplete = { needsInit = false }
+                        onComplete = {
+                            needsInit = false
+                            needsPermissionReview = !SettingsManager.isOptionalPermissionsReviewed(context)
+                        }
+                    )
+                } else if (needsPermissionReview) {
+                    OptionalPermissionsScreen(
+                        onContinue = {
+                            SettingsManager.setOptionalPermissionsReviewed(context, true)
+                            needsPermissionReview = false
+                        }
                     )
                 } else {
                     val viewModel: GlobalRuntimeViewModel = viewModel()

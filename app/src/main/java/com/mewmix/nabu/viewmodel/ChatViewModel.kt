@@ -59,7 +59,18 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.LinkedHashSet
 import java.util.Locale
+
+enum class ChatContextMode(val storageValue: String) {
+    LONG_CONTEXT("long_context"),
+    SINGLE_TURN("single_turn");
+
+    companion object {
+        fun fromStorage(value: String): ChatContextMode =
+            entries.firstOrNull { it.storageValue == value } ?: LONG_CONTEXT
+    }
+}
 
 class ChatViewModel(
     private val context: Context,
@@ -73,6 +84,232 @@ class ChatViewModel(
         private const val TOOL_EXECUTION_TIMEOUT_MS = 30_000L
         private const val DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
         private val TOKEN_REGEX = Regex("\\S+")
+
+        internal fun inferToolCallFromModelFailure(
+            userMessage: String,
+            availableToolNames: Set<String>
+        ): ToolCall? {
+            val normalized = userMessage.trim()
+            if (normalized.isBlank()) return null
+
+            if ("set_alarm" in availableToolNames) {
+                parseAlarmFallback(normalized)?.let { return it }
+            }
+
+            if ("set_timer" in availableToolNames) {
+                parseTimerFallback(normalized)?.let { return it }
+            }
+
+            if ("search_web_context" in availableToolNames) {
+                val query = sequenceOf(
+                    Regex("""(?is)^\s*search\s+(?:the\s+)?web\s+for\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1),
+                    Regex("""(?is)^\s*look\s+up\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1)
+                ).firstOrNull { !it.isNullOrBlank() }?.trim().orEmpty()
+
+                if (query.isNotBlank()) {
+                    return ToolCall(
+                        toolName = "search_web_context",
+                        arguments = mapOf("query" to query)
+                    )
+                }
+            }
+
+            if ("open_url" in availableToolNames) {
+                Regex("""(?is)^\s*open\s+url\s+(\S+)\s*$""").find(normalized)?.groupValues?.getOrNull(1)?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { url ->
+                        return ToolCall("open_url", mapOf("url" to url))
+                    }
+            }
+
+            if ("open_app" in availableToolNames || "launch_package" in availableToolNames) {
+                Regex("""(?is)^\s*(?:open\s+app|launch\s+package)\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1)?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { appName ->
+                        val toolName = if ("open_app" in availableToolNames) "open_app" else "launch_package"
+                        return ToolCall(toolName, mapOf("app_name" to appName))
+                    }
+            }
+
+            if ("send_sms" in availableToolNames) {
+                parseSmsFallback(normalized)?.let { return it }
+            }
+
+            if ("place_call" in availableToolNames) {
+                parseCallFallback(normalized)?.let { return it }
+            }
+
+            if ("schedule_action" in availableToolNames) {
+                val scheduleSearchMatch = Regex(
+                    pattern = """(?is)^\s*(?:use\s+)?schedule_action\s+to\s+run\s+search_web_context\s+query\s+(.+?)\s+at\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})(?:\s+title\s+(.+?))?\s*$"""
+                ).find(normalized)
+                if (scheduleSearchMatch != null) {
+                    val query = scheduleSearchMatch.groupValues[1].trim()
+                    val runAtLocal = scheduleSearchMatch.groupValues[2].trim()
+                    val title = scheduleSearchMatch.groupValues.getOrNull(3)?.trim().orEmpty()
+                    if (query.isNotBlank() && runAtLocal.isNotBlank()) {
+                        return ToolCall(
+                            toolName = "schedule_action",
+                            arguments = buildMap {
+                                put("run_at_local", runAtLocal)
+                                put("tool_name", "search_web_context")
+                                put("tool_arguments", mapOf("query" to query))
+                                if (title.isNotBlank()) {
+                                    put("title", title)
+                                }
+                                put(
+                                    "instruction",
+                                    "Run scheduled tool search_web_context with arguments query."
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
+            return null
+        }
+
+        private fun parseAlarmFallback(normalized: String): ToolCall? {
+            val match = Regex(
+                pattern = """(?is)^\s*(?:set\s+)?(?:an\s+)?alarm(?:\s+for)?\s+(\d{1,2})(?:(?::|\s+)(\d{2}))\s*(am|pm)?\b(?:.*?\b(?:called|named|message)\b\s+(.+))?\s*$"""
+            ).find(normalized) ?: return null
+
+            val rawHour = match.groupValues[1].toIntOrNull() ?: return null
+            val minute = match.groupValues[2].toIntOrNull() ?: return null
+            val meridiem = match.groupValues[3].trim().lowercase()
+            val message = match.groupValues.getOrNull(4)?.trim().orEmpty()
+
+            val hour = when (meridiem) {
+                "am" -> if (rawHour == 12) 0 else rawHour
+                "pm" -> if (rawHour in 1..11) rawHour + 12 else rawHour
+                else -> rawHour
+            }
+
+            if (hour !in 0..23 || minute !in 0..59) return null
+
+            return ToolCall(
+                toolName = "set_alarm",
+                arguments = buildMap {
+                    put("hour", hour)
+                    put("minute", minute)
+                    if (message.isNotBlank()) {
+                        put("message", message)
+                    }
+                }
+            )
+        }
+
+        private fun parseTimerFallback(normalized: String): ToolCall? {
+            val match = Regex(
+                pattern = """(?is)^\s*(?:set\s+)?(?:a\s+)?timer(?:\s+for)?\s+(.+?)(?:\s+\b(?:called|named|message)\b\s+(.+))?\s*$"""
+            ).find(normalized) ?: return null
+
+            val durationSpec = match.groupValues[1].trim()
+            val message = match.groupValues.getOrNull(2)?.trim().orEmpty()
+            val seconds = parseDurationSeconds(durationSpec) ?: return null
+
+            return ToolCall(
+                toolName = "set_timer",
+                arguments = buildMap {
+                    put("seconds", seconds)
+                    if (message.isNotBlank()) {
+                        put("message", message)
+                    }
+                }
+            )
+        }
+
+        private fun parseSmsFallback(normalized: String): ToolCall? {
+            Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+([+()\-\d\s]+?)(?:\s+(?:saying|message)\s+(.+?))?\s*$""")
+                .find(normalized)
+                ?.let { match ->
+                    val phoneNumber = match.groupValues[1].trim()
+                    val message = match.groupValues.getOrNull(2)?.trim().orEmpty()
+                    if (phoneNumber.isNotBlank()) {
+                        return ToolCall(
+                            "send_sms",
+                            buildMap {
+                                put("phone_number", phoneNumber)
+                                if (message.isNotBlank()) {
+                                    put("message", message)
+                                }
+                            }
+                        )
+                    }
+                }
+
+            val contactMatch = sequenceOf(
+                Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+(.+?)\s+(?:saying|message(?:\s+that)?)\s+(.+?)\s*$""").find(normalized),
+                Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+(.+?)\s*,\s*(.+?)\s*$""").find(normalized),
+                Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+(.+?)\s*:\s*(.+?)\s*$""").find(normalized)
+            ).firstOrNull()
+
+            if (contactMatch != null) {
+                val recipient = contactMatch.groupValues[1].trim()
+                val message = contactMatch.groupValues[2].trim()
+                if (recipient.isNotBlank() && recipient.any { it.isLetter() }) {
+                    return ToolCall(
+                        "send_sms",
+                        buildMap {
+                            put("recipient", recipient)
+                            if (message.isNotBlank()) {
+                                put("message", message)
+                            }
+                        }
+                    )
+                }
+            }
+
+            Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+(.+?)\s*$""").find(normalized)
+                ?.groupValues?.getOrNull(1)?.trim()
+                ?.takeIf { it.isNotBlank() && it.any(Char::isLetter) }
+                ?.let { recipient ->
+                    return ToolCall("send_sms", mapOf("recipient" to recipient))
+                }
+
+            return null
+        }
+
+        private fun parseCallFallback(normalized: String): ToolCall? {
+            Regex("""(?is)^\s*(?:call|place\s+call)\s+([+()\-\d\s]+)\s*$""")
+                .find(normalized)
+                ?.groupValues?.getOrNull(1)?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { phoneNumber ->
+                    return ToolCall("place_call", mapOf("phone_number" to phoneNumber))
+                }
+
+            Regex("""(?is)^\s*(?:call|place\s+call)\s+(.+?)\s*$""")
+                .find(normalized)
+                ?.groupValues?.getOrNull(1)?.trim()
+                ?.takeIf { it.isNotBlank() && it.any(Char::isLetter) }
+                ?.let { recipient ->
+                    return ToolCall("place_call", mapOf("recipient" to recipient))
+                }
+
+            return null
+        }
+
+        private fun parseDurationSeconds(durationSpec: String): Int? {
+            val unitRegex = Regex("""(?is)(\d+)\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs)\b""")
+            val matches = unitRegex.findAll(durationSpec).toList()
+            if (matches.isEmpty()) return null
+
+            var totalSeconds = 0
+            for (match in matches) {
+                val amount = match.groupValues[1].toIntOrNull() ?: return null
+                val unit = match.groupValues[2].lowercase()
+                totalSeconds += when (unit) {
+                    "hour", "hours", "hr", "hrs" -> amount * 3600
+                    "minute", "minutes", "min", "mins" -> amount * 60
+                    "second", "seconds", "sec", "secs" -> amount
+                    else -> return null
+                }
+            }
+
+            return totalSeconds.takeIf { it > 0 }
+        }
     }
 
     // Dependencies
@@ -288,14 +525,11 @@ class ChatViewModel(
     fun sendMessage(message: String) {
         val trimmed = message.trim()
         if (trimmed.isEmpty()) return
-        val backend = llmBackend ?: run {
-            DebugLogger.log("No LLM backend available; ignoring message")
-            return
-        }
         val conversationId = _activeConversationId.value ?: run {
             DebugLogger.log("No active conversation; ignoring message")
             return
         }
+        val directToolCall = ToolCallProtocol.parseDirectUserToolCommand(trimmed)
 
         dropQueuedAudio = false
         DebugLogger.log("ChatViewModel sendMessage: $trimmed")
@@ -312,6 +546,23 @@ class ChatViewModel(
         val responseBuilder = StringBuilder()
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false) // placeholder
+
+        if (directToolCall != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                DebugLogger.log(
+                    "ChatViewModel: executing direct tool command ${directToolCall.toolName} with ${directToolCall.arguments}"
+                )
+                val result = executeToolCallInternal(context.applicationContext, directToolCall)
+                finalizeDirectToolResponse(summarizeToolResultMessage(result))
+            }
+            return
+        }
+
+        val backend = llmBackend ?: run {
+            DebugLogger.log("No LLM backend available; ignoring message")
+            finalizeDirectToolResponse("No LLM backend available.")
+            return
+        }
 
         val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
         val backendMaxTokens = when (backend) {
@@ -331,42 +582,6 @@ class ChatViewModel(
         val appContext = context.applicationContext
 
         viewModelScope.launch(Dispatchers.IO) {
-            fun summarizeToolResult(result: ToolResult): String {
-                val cleaned = result.output.trim()
-                val clipped = if (cleaned.length > 700) "${cleaned.take(700)}..." else cleaned
-                return if (result.isError) {
-                    "Tool ${result.toolName} failed: ${if (clipped.isNotEmpty()) clipped else "no error details"}"
-                } else {
-                    "Tool ${result.toolName} result:\n$clipped"
-                }
-            }
-
-            suspend fun executeToolCall(toolCall: ToolCall): ToolResult {
-                val tool = ToolRegistry.getTool(toolCall.toolName)
-                if (tool == null || !tool.isAvailable) {
-                    return ToolResult(
-                        toolName = toolCall.toolName,
-                        output = "Tool '${toolCall.toolName}' is unavailable.",
-                        isError = true
-                    )
-                }
-                ActionTools.execute(appContext, toolCall)?.let { return it }
-                if (!GlaiveBridge.isInstalled(appContext)) {
-                    return ToolResult(
-                        toolName = toolCall.toolName,
-                        output = "Glaive is not installed.",
-                        isError = true
-                    )
-                }
-                return withTimeoutOrNull(TOOL_EXECUTION_TIMEOUT_MS) {
-                    GlaiveBridge.executeTool(appContext, toolCall)
-                } ?: ToolResult(
-                    toolName = toolCall.toolName,
-                    output = "Tool '${toolCall.toolName}' timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s.",
-                    isError = true
-                )
-            }
-
             fun formatSyntheticToolCall(toolCall: ToolCall): String {
                 val args = toolCall.arguments.entries.joinToString(",") { (key, value) ->
                     val encodedValue = when (value) {
@@ -378,55 +593,6 @@ class ChatViewModel(
                     "\"$key\":$encodedValue"
                 }
                 return """<tool_call>{"name":"${toolCall.toolName}","arguments":{$args}}</tool_call>"""
-            }
-
-            fun inferToolCallFromBlankModelResponse(userMessage: String): ToolCall? {
-                val normalized = userMessage.trim()
-                if (normalized.isBlank()) return null
-
-                val availableToolNames = ToolRegistry.tools.value
-                    .filter { it.isAvailable }
-                    .map { it.name }
-                    .toSet()
-
-                if ("set_alarm" in availableToolNames) {
-                    val alarmMatch = Regex(
-                        pattern = """(?is)^\s*(?:set\s+)?(?:an\s+)?alarm(?:\s+for)?\s+(\d{1,2}):(\d{2})\b(?:.*?\b(?:called|named|message)\b\s+(.+))?\s*$"""
-                    ).find(normalized)
-                    if (alarmMatch != null) {
-                        val hour = alarmMatch.groupValues[1].toIntOrNull()
-                        val minute = alarmMatch.groupValues[2].toIntOrNull()
-                        val message = alarmMatch.groupValues.getOrNull(3)?.trim().orEmpty()
-                        if (hour != null && minute != null) {
-                            return ToolCall(
-                                toolName = "set_alarm",
-                                arguments = buildMap {
-                                    put("hour", hour)
-                                    put("minute", minute)
-                                    if (message.isNotBlank()) {
-                                        put("message", message)
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-
-                if ("search_web_context" in availableToolNames) {
-                    val query = sequenceOf(
-                        Regex("""(?is)^\s*search\s+(?:the\s+)?web\s+for\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1),
-                        Regex("""(?is)^\s*look\s+up\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1)
-                    ).firstOrNull { !it.isNullOrBlank() }?.trim().orEmpty()
-
-                    if (query.isNotBlank()) {
-                        return ToolCall(
-                            toolName = "search_web_context",
-                            arguments = mapOf("query" to query)
-                        )
-                    }
-                }
-
-                return null
             }
 
             fun updateAssistantPlaceholder(content: String) {
@@ -462,7 +628,8 @@ class ChatViewModel(
             fun runInference(
                 conversation: List<LlmMessage>,
                 remainingToolCalls: Int,
-                lastToolResult: ToolResult? = null
+                lastToolResult: ToolResult? = null,
+                usedBlankRecovery: Boolean = false
             ) {
                 responseBuilder.clear()
                 sentenceBuilder.clear()
@@ -500,9 +667,18 @@ class ChatViewModel(
 
                     val finalResponse = responseBuilder.toString()
                     val toolCall = ToolCallProtocol.extractToolCall(finalResponse)
+                    val looksLikeMalformedToolAttempt =
+                        finalResponse.trim().startsWith("```") ||
+                            finalResponse.contains("<tool_call", ignoreCase = true)
+                    val availableToolNames = ToolRegistry.tools.value
+                        .filter { it.isAvailable }
+                        .map { it.name }
+                        .toSet()
                     val inferredToolCall =
-                        if (toolCall == null && finalResponse.isBlank() && lastToolResult == null) {
-                            inferToolCallFromBlankModelResponse(trimmed)
+                        if (toolCall == null && lastToolResult == null &&
+                            (finalResponse.isBlank() || looksLikeMalformedToolAttempt)
+                        ) {
+                            inferToolCallFromModelFailure(trimmed, availableToolNames)
                         } else {
                             null
                         }
@@ -513,7 +689,7 @@ class ChatViewModel(
                     )
                     if (toolCall == null && inferredToolCall != null) {
                         DebugLogger.log(
-                            "ChatViewModel: inferred tool ${inferredToolCall.toolName} from blank model response " +
+                            "ChatViewModel: inferred tool ${inferredToolCall.toolName} from failed model response " +
                                 "using user message: ${trimmed.take(160)}"
                         )
                     }
@@ -526,7 +702,7 @@ class ChatViewModel(
                         )
                         updateAssistantPlaceholder("Running tool ${effectiveToolCall.toolName}...")
                         viewModelScope.launch(Dispatchers.IO) {
-                            val result = executeToolCall(effectiveToolCall)
+                            val result = executeToolCallInternal(appContext, effectiveToolCall)
                             DebugLogger.log(
                                 "ChatViewModel: tool ${effectiveToolCall.toolName} finished " +
                                     "(error=${result.isError}, outputLength=${result.output.length})"
@@ -546,10 +722,40 @@ class ChatViewModel(
                             runInference(
                                 followUpConversation,
                                 remainingToolCalls - 1,
-                                lastToolResult = result
+                                lastToolResult = result,
+                                usedBlankRecovery = false
                             )
                         }
                         return@sendMessage
+                    }
+
+                    val shouldRetryAfterBlankResponse =
+                        finalResponse.isBlank() &&
+                            lastToolResult == null &&
+                            !usedBlankRecovery
+                    if (shouldRetryAfterBlankResponse) {
+                        val recoveryConversation = prepareConversationForModel(
+                            maxTokens = backendMaxTokens,
+                            forceSingleTurn = true,
+                            recoveryMode = true
+                        )
+                        val recoveryWouldChangePrompt = recoveryConversation != conversation
+                        if (recoveryWouldChangePrompt) {
+                            DebugLogger.log(
+                                "ChatViewModel: blank model response, retrying once with compacted single-turn recovery context"
+                            )
+                            updateAssistantPlaceholder("Retrying with compacted context...")
+                            runInference(
+                                recoveryConversation,
+                                remainingToolCalls = remainingToolCalls,
+                                lastToolResult = null,
+                                usedBlankRecovery = true
+                            )
+                            return@sendMessage
+                        }
+                        DebugLogger.log(
+                            "ChatViewModel: blank model response; skipping compacted-context retry because recovery prompt is unchanged"
+                        )
                     }
 
                     val exhaustedToolBudget = effectiveToolCall != null && remainingToolCalls <= 0
@@ -559,10 +765,15 @@ class ChatViewModel(
                             finalResponse.contains("<tool_call>", ignoreCase = true)
                         )
                     val resolvedResponse = when {
-                        exhaustedToolBudget && lastToolResult != null -> summarizeToolResult(lastToolResult)
+                        exhaustedToolBudget && lastToolResult != null -> summarizeToolResultMessage(lastToolResult)
                         exhaustedToolBudget -> "Tool-call limit reached for this turn."
-                        shouldFallbackToToolResult -> summarizeToolResult(lastToolResult!!)
-                        finalResponse.isBlank() -> "No model response generated."
+                        shouldFallbackToToolResult -> summarizeToolResultMessage(lastToolResult!!)
+                        finalResponse.isBlank() ->
+                            if (usedBlankRecovery) {
+                                "Model returned no usable output after retry."
+                            } else {
+                                "Model returned no usable output."
+                            }
                         else -> finalResponse
                     }
 
@@ -775,6 +986,10 @@ class ChatViewModel(
         MutableStateFlow(SettingsManager.getChatSystemPrompt(context, DEFAULT_SYSTEM_PROMPT))
     val systemPrompt = _systemPrompt.asStateFlow()
 
+    private val _chatContextMode =
+        MutableStateFlow(ChatContextMode.fromStorage(SettingsManager.getChatContextMode(context)))
+    val chatContextMode = _chatContextMode.asStateFlow()
+
     private val _tokenUsage = MutableStateFlow(0 to DEFAULT_MAX_CONTEXT_TOKENS)
     val tokenUsage = _tokenUsage.asStateFlow()
 
@@ -783,23 +998,51 @@ class ChatViewModel(
         SettingsManager.setChatSystemPrompt(context, newPrompt)
     }
 
-    private fun prepareConversationForModel(maxTokens: Int): List<LlmMessage> {
+    fun updateChatContextMode(mode: ChatContextMode) {
+        _chatContextMode.value = mode
+        SettingsManager.setChatContextMode(context, mode.storageValue)
+    }
+
+    private fun prepareConversationForModel(
+        maxTokens: Int,
+        forceSingleTurn: Boolean = false,
+        recoveryMode: Boolean = false
+    ): List<LlmMessage> {
         val availableTools = ToolRegistry.tools.value.filter { it.isAvailable }
+        val promptTools = selectPromptToolsForConversation(conversationHistory, availableTools)
         val systemPrompt = ToolCallProtocol.buildSystemPrompt(
             basePrompt = _systemPrompt.value,
-            tools = availableTools
+            tools = promptTools
         )
         val systemMsg = LlmMessage(role = "system", content = systemPrompt)
         val systemTokens = estimateTokenCount(systemMsg.content)
         val availableTokens = maxTokens - systemTokens
 
-        val trimmedConversation = trimConversationToTokenLimit(conversationHistory, availableTokens)
+        val effectiveContextMode = if (forceSingleTurn) {
+            ChatContextMode.SINGLE_TURN
+        } else {
+            _chatContextMode.value
+        }
+        val selectedConversation = when (effectiveContextMode) {
+            ChatContextMode.SINGLE_TURN -> takeSingleTurnConversation(conversationHistory)
+            ChatContextMode.LONG_CONTEXT -> compactConversationToTokenLimit(
+                conversation = conversationHistory,
+                maxTokens = availableTokens,
+                aggressive = recoveryMode
+            )
+        }
+        val trimmedConversation =
+            if (selectedConversation.sumOf { estimateTokenCount(it.content) } > availableTokens) {
+                trimConversationToTokenLimit(selectedConversation, availableTokens)
+            } else {
+                selectedConversation
+            }
         val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) } + systemTokens
         
         _tokenUsage.value = totalTokens to maxTokens
         DebugLogger.log(
             "Prepared ${trimmedConversation.size} conversation turns + system prompt " +
-                "(~${totalTokens} tokens, tools=${availableTools.size}) for inference"
+                "(~${totalTokens} tokens, toolsInPrompt=${promptTools.size}, registeredTools=${availableTools.size}, selectedTools=${promptTools.joinToString(",") { it.name }}, contextMode=${effectiveContextMode.storageValue}, recovery=$recoveryMode)"
         )
         
         val messages = mutableListOf<LlmMessage>()
@@ -815,6 +1058,183 @@ class ChatViewModel(
             LlmMessage(role = role, content = turn.content)
         })
         return messages
+    }
+
+    private fun selectPromptToolsForConversation(
+        conversation: List<ConversationTurn>,
+        availableTools: List<com.mewmix.nabu.tools.Tool>
+    ): List<com.mewmix.nabu.tools.Tool> {
+        val latestUserMessage = conversation
+            .asReversed()
+            .firstOrNull { it.role == ConversationRole.USER }
+            ?.content
+            ?.trim()
+            .orEmpty()
+        if (latestUserMessage.isBlank()) return emptyList()
+
+        val toolsByName = availableTools.associateBy { it.name }
+        val selectedNames = LinkedHashSet<String>()
+        val normalized = latestUserMessage.lowercase(Locale.US)
+
+        fun addTool(name: String) {
+            if (name in toolsByName) {
+                selectedNames += name
+            }
+        }
+
+        ToolCallProtocol.parseDirectUserToolCommand(latestUserMessage)?.toolName?.let(::addTool)
+
+        if (containsAny(normalized, "alarm", "wake me")) addTool("set_alarm")
+        if (containsAny(normalized, "timer", "countdown")) addTool("set_timer")
+        if (containsAny(normalized, "weather", "forecast", "temperature")) addTool("get_weather")
+        if (containsAny(normalized, "search", "look up", "web", "news")) addTool("search_web_context")
+        if (containsAny(normalized, "remember", "save memory", "memorize")) addTool("save_memory")
+        if (containsAny(normalized, "what do you remember", "retrieve memory", "recall memory")) addTool("retrieve_memory")
+        if (containsAny(normalized, "scheduled actions", "list scheduled")) addTool("list_scheduled_actions")
+        if (containsAny(normalized, "schedule", "remind later", "run later", "background")) addTool("schedule_action")
+        if (containsAny(normalized, "open url", "open link", "http://", "https://", "www.")) addTool("open_url")
+        if (containsAny(normalized, "open app", "launch app", "launch package")) {
+            addTool("open_app")
+            addTool("launch_package")
+        }
+        if (containsAny(normalized, "send sms", "text ", "text me", "message ")) addTool("send_sms")
+        if (containsAny(normalized, "call ", "dial ", "place call")) addTool("place_call")
+        if (containsAny(normalized, "brightness", "dim", "brighter")) addTool("set_brightness")
+        if (containsAny(normalized, "flashlight", "torch")) addTool("toggle_flashlight")
+        if (containsAny(normalized, "volume", "louder", "quieter")) addTool("set_volume")
+        if (containsAny(normalized, "mute", "unmute")) addTool("mute")
+        if (containsAny(normalized, "play media", "resume media", "resume playback")) addTool("play_media")
+        if (containsAny(normalized, "pause media", "pause playback")) addTool("pause_media")
+        if (containsAny(normalized, "next track", "skip track", "skip song")) addTool("next_track")
+        if (containsAny(normalized, "calendar", "event", "meeting")) addTool("create_calendar_event")
+        if (containsAny(normalized, "navigate to", "directions to", "route to")) addTool("navigate_to")
+        if (containsAny(normalized, "take a photo", "take photo", "camera")) addTool("take_photo")
+        if (containsAny(normalized, "record a video", "record video")) addTool("record_video")
+        if (containsAny(normalized, "wifi", "wi-fi")) addTool("toggle_wifi")
+        if (containsAny(normalized, "bluetooth")) addTool("toggle_bluetooth")
+        if (containsAny(normalized, "share this", "share text", "share ")) addTool("share_text")
+
+        return selectedNames
+            .take(6)
+            .mapNotNull { toolsByName[it] }
+    }
+
+    private fun containsAny(text: String, vararg needles: String): Boolean =
+        needles.any { text.contains(it) }
+
+    private fun summarizeToolResultMessage(result: ToolResult): String {
+        val cleaned = result.output.trim()
+        val clipped = if (cleaned.length > 700) "${cleaned.take(700)}..." else cleaned
+        return if (result.isError) {
+            "Tool ${result.toolName} failed: ${if (clipped.isNotEmpty()) clipped else "no error details"}"
+        } else {
+            "Tool ${result.toolName} result:\n$clipped"
+        }
+    }
+
+    private suspend fun executeToolCallInternal(appContext: Context, toolCall: ToolCall): ToolResult {
+        val tool = ToolRegistry.getTool(toolCall.toolName)
+        if (tool == null || !tool.isAvailable) {
+            return ToolResult(
+                toolName = toolCall.toolName,
+                output = "Tool '${toolCall.toolName}' is unavailable.",
+                isError = true
+            )
+        }
+        ActionTools.execute(appContext, toolCall)?.let { return it }
+        if (!GlaiveBridge.isInstalled(appContext)) {
+            return ToolResult(
+                toolName = toolCall.toolName,
+                output = "Glaive is not installed.",
+                isError = true
+            )
+        }
+        return withTimeoutOrNull(TOOL_EXECUTION_TIMEOUT_MS) {
+            GlaiveBridge.executeTool(appContext, toolCall)
+        } ?: ToolResult(
+            toolName = toolCall.toolName,
+            output = "Tool '${toolCall.toolName}' timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s.",
+            isError = true
+        )
+    }
+
+    private fun finalizeDirectToolResponse(finalResponse: String) {
+        viewModelScope.launch(Dispatchers.Main) {
+            _isLoading.value = false
+            DebugLogger.log("ChatViewModel response complete")
+            val last = _chatMessages.value.lastOrNull()
+            if (last != null) {
+                _chatMessages.value =
+                    _chatMessages.value.dropLast(1) + last.copy(message = finalResponse)
+            }
+            conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
+            persistConversationMessages()
+        }
+    }
+
+    private fun takeSingleTurnConversation(conversation: List<ConversationTurn>): List<ConversationTurn> {
+        if (conversation.isEmpty()) return emptyList()
+        return listOfNotNull(conversation.lastOrNull { it.role == ConversationRole.USER } ?: conversation.lastOrNull())
+    }
+
+    private fun compactConversationToTokenLimit(
+        conversation: List<ConversationTurn>,
+        maxTokens: Int,
+        aggressive: Boolean = false
+    ): List<ConversationTurn> {
+        if (conversation.isEmpty() || maxTokens <= 0) {
+            return emptyList()
+        }
+        val totalTokens = conversation.sumOf { estimateTokenCount(it.content) }
+        if (totalTokens <= maxTokens) {
+            return conversation
+        }
+
+        val reserveForSummary = when {
+            aggressive -> minOf(96, maxTokens / 2)
+            else -> minOf(160, maxTokens / 3)
+        }.coerceAtLeast(32)
+        val recentBudget = (maxTokens - reserveForSummary).coerceAtLeast(16)
+
+        var recentTokens = 0
+        val recentTurns = ArrayDeque<ConversationTurn>()
+        for (turn in conversation.asReversed()) {
+            val tokenCount = estimateTokenCount(turn.content)
+            if (recentTurns.isEmpty() || recentTokens + tokenCount <= recentBudget) {
+                recentTurns.addFirst(turn)
+                recentTokens += tokenCount
+            } else {
+                break
+            }
+        }
+
+        val olderTurns = conversation.dropLast(recentTurns.size)
+        val remainingBudget = (maxTokens - recentTokens).coerceAtLeast(0)
+        if (olderTurns.isEmpty() || remainingBudget < 8) {
+            return trimConversationToTokenLimit(conversation, maxTokens)
+        }
+
+        val compactedSummary = buildCompactedHistorySummary(olderTurns, remainingBudget)
+        return if (compactedSummary == null) {
+            trimConversationToTokenLimit(conversation, maxTokens)
+        } else {
+            listOf(compactedSummary) + recentTurns.toList()
+        }
+    }
+
+    private fun buildCompactedHistorySummary(
+        turns: List<ConversationTurn>,
+        tokenBudget: Int
+    ): ConversationTurn? {
+        if (turns.isEmpty() || tokenBudget <= 0) return null
+        val lines = mutableListOf("[Earlier conversation, compacted]")
+        for (turn in turns) {
+            val prefix = if (turn.role == ConversationRole.USER) "User" else "Assistant"
+            lines += "$prefix: ${turn.content.trim()}"
+        }
+        val compacted = takeLastTokens(lines.joinToString("\n"), tokenBudget)
+        if (compacted.isBlank()) return null
+        return ConversationTurn(ConversationRole.AGENT, compacted)
     }
 
     private fun trimConversationToTokenLimit(

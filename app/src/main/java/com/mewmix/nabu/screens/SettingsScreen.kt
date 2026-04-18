@@ -529,6 +529,22 @@ fun SettingsScreen(
             HorizontalDivider()
 
             Text(
+                text = "Optional Permissions",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            OptionalPermissionsSection(showContinue = false)
+
+            Button(
+                onClick = { SettingsManager.setOptionalPermissionsReviewed(context, false) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Show Permission Review On Next Startup")
+            }
+
+            HorizontalDivider()
+
+            Text(
                 text = "Integrations (Experimental)",
                 style = MaterialTheme.typography.titleMedium
             )

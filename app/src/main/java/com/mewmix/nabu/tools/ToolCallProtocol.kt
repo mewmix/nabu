@@ -16,7 +16,14 @@ object ToolCallProtocol {
 
     fun buildSystemPrompt(basePrompt: String, tools: List<Tool>): String {
         if (tools.isEmpty()) {
-            return basePrompt.trim()
+            val lines = mutableListOf<String>()
+            if (basePrompt.isNotBlank()) {
+                lines += basePrompt.trim()
+                lines += ""
+            }
+            lines += "Never return an empty response."
+            lines += "Answer with at least one short visible sentence."
+            return lines.joinToString("\n").trim()
         }
 
         val lines = mutableListOf<String>()
@@ -25,51 +32,54 @@ object ToolCallProtocol {
             lines += ""
         }
 
-        lines += "You can call external tools when needed."
-        lines += "When invoking a tool, respond with only this exact wrapper format:"
-        lines += "<tool_call>{\"name\":\"tool_name\",\"arguments\":{}}</tool_call>"
-        lines += "Do not include any extra text in a tool call response."
-        lines += "The name field must exactly match one of the available tool names below."
-        lines += "Never invent tool names, never use the user's label/title as the tool name, and never output comments or pseudo-code."
-        lines += "Available tools:"
+        lines += "You may call a tool when needed."
+        lines += "Tool-call format only: <tool_call>{\"name\":\"tool_name\",\"arguments\":{}}</tool_call>"
+        lines += "Do not add extra text around a tool call."
+        lines += "Never return an empty response."
+        lines += "If no tool is needed, answer with at least one short plain-text sentence."
+        lines += "After TOOL_RESULT, reply to the user with a normal sentence."
+        lines += "The name must exactly match one of these tools:"
 
         tools
             .filter { it.isAvailable }
             .sortedBy { it.name }
             .forEach { tool ->
-                val parameterSpec = if (tool.parameters.isEmpty()) {
-                    "none"
-                } else {
-                    tool.parameters.entries.joinToString(", ") { (name, description) -> "$name=$description" }
-                }
-                lines += "- ${tool.name}: ${tool.description} (params: $parameterSpec)"
+                val parameterSpec = tool.parameters.keys.sorted().joinToString(", ").ifBlank { "none" }
+                lines += "- ${tool.name}($parameterSpec): ${tool.description}"
             }
 
-        lines += "Examples:"
         if (tools.any { it.isAvailable && it.name == "set_timer" }) {
-            lines += """- If the user says "set a timer for 13 seconds called tea", respond with exactly: <tool_call>{"name":"set_timer","arguments":{"seconds":13,"message":"tea"}}</tool_call>"""
+            lines += """Example timer: <tool_call>{"name":"set_timer","arguments":{"seconds":13,"message":"tea"}}</tool_call>"""
         }
         if (tools.any { it.isAvailable && it.name == "set_alarm" }) {
-            lines += """- If the user says "set an alarm for 7:30 called wake up", respond with exactly: <tool_call>{"name":"set_alarm","arguments":{"hour":7,"minute":30,"message":"wake up"}}</tool_call>"""
+            lines += """Example alarm: <tool_call>{"name":"set_alarm","arguments":{"hour":7,"minute":30,"message":"wake up"}}</tool_call>"""
         }
         if (tools.any { it.isAvailable && it.name == "get_weather" }) {
-            lines += """- If the user asks for weather in Seattle, respond with exactly: <tool_call>{"name":"get_weather","arguments":{"location":"Seattle"}}</tool_call>"""
+            lines += """Example weather: <tool_call>{"name":"get_weather","arguments":{"location":"Seattle"}}</tool_call>"""
         }
         if (tools.any { it.isAvailable && it.name == "search_web_context" }) {
-            lines += """- If the user asks you to search the web for eclipse news, respond with exactly: <tool_call>{"name":"search_web_context","arguments":{"query":"eclipse news"}}</tool_call>"""
+            lines += """Example search: <tool_call>{"name":"search_web_context","arguments":{"query":"eclipse news"}}</tool_call>"""
         }
 
-        lines += "Tool results arrive in a user message starting with TOOL_RESULT as JSON."
-        lines += "After receiving TOOL_RESULT, produce a normal user-facing answer."
-        lines += "Path rules for tool arguments:"
-        lines += "- Always use absolute Android paths."
-        lines += "- If the user says Downloads/downloads, use /sdcard/Download."
-        lines += "- If the user provided an explicit path, use that exact path."
-        lines += "- Prefer shared-storage roots: /sdcard/Download, /sdcard/Documents, /sdcard/Pictures, /sdcard/Music."
-        lines += "- Do not guess private/system paths like /data, /system, or /proc for tool calls."
-        lines += "- If path is unclear, ask for clarification instead of guessing."
+        if (tools.any { tool -> tool.parameters.keys.any { key -> key.contains("path", ignoreCase = true) } }) {
+            lines += "Use absolute Android paths for any path arguments. Prefer /sdcard/Download for downloads."
+        }
 
         return lines.joinToString("\n")
+    }
+
+    fun parseDirectUserToolCommand(text: String): ToolCall? {
+        val match = Regex("""(?is)^\s*/tool\s+([a-zA-Z0-9_]+)(?:\s+(\{[\s\S]*\}))?\s*$""")
+            .find(text.trim()) ?: return null
+        val toolName = match.groupValues[1].trim()
+        if (toolName.isBlank()) return null
+        val argsJson = match.groupValues.getOrNull(2)?.trim().orEmpty()
+        if (argsJson.isBlank()) {
+            return ToolCall(toolName, emptyMap())
+        }
+        val argsObject = runCatching { JsonParser.parseString(argsJson).asJsonObject }.getOrNull()
+            ?: return null
+        return ToolCall(toolName, jsonToMap(argsObject))
     }
 
     fun extractToolCall(text: String): ToolCall? {

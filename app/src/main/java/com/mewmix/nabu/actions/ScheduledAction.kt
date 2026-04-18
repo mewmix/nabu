@@ -6,7 +6,9 @@ data class ScheduledAction(
     val instruction: String,
     val triggerAtEpochMs: Long,
     val recurrence: String = RECURRENCE_NONE,
-    val createdAtEpochMs: Long = System.currentTimeMillis()
+    val createdAtEpochMs: Long = System.currentTimeMillis(),
+    val toolName: String? = null,
+    val toolArguments: Map<String, Any> = emptyMap()
 ) {
     companion object {
         const val RECURRENCE_NONE = "none"
