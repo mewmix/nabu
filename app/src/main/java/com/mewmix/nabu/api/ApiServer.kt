@@ -7,6 +7,7 @@ import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.LlmMessage
 import com.mewmix.nabu.chat.MediaPipeBackend
+import com.mewmix.nabu.chat.LiteRtLmBackend
 import com.mewmix.nabu.chat.VisionModelSupport
 import com.mewmix.nabu.data.findDownloadedLlmArtifact
 import com.mewmix.nabu.data.ModelManager
@@ -38,6 +39,9 @@ import io.ktor.server.cio.CIO
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.Writer
@@ -48,7 +52,6 @@ import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
 class ApiServer(
     private val context: Context,
@@ -68,10 +71,18 @@ class ApiServer(
     companion object {
         private const val DEFAULT_IMAGE_PROMPT = "Describe this image."
         private const val DEFAULT_TTS_VOICE = "af_sky"
+        private const val DEFAULT_API_GENERATION_TIMEOUT_MS = 120_000L
         private val SUPPORTED_TTS_ENGINES = setOf("kokoro", "supertonic", "soprano")
         private val SUPPORTED_TTS_FORMATS = setOf("wav", "json")
         private val SUPPORTED_LLM_REPLY_TTS_FORMATS = setOf("json")
     }
+
+    private data class ApiGenerationOptions(
+        val maxTokens: Int? = null,
+        val temperature: Float? = null,
+        val topP: Float? = null,
+        val randomSeed: Int? = null
+    )
 
     fun start() {
         synchronized(lifecycleLock) {
@@ -166,6 +177,7 @@ class ApiServer(
             val stream = body.optBoolean("stream", false)
             val replyTts = parseReplyTtsRequest(body)
             val topLevelImage = parseTopLevelImageInput(body)
+            val generationOptions = parseGenerationOptions(body)
 
             if (messageArray == null && topLevelImage != null && prompt.isEmpty()) {
                 prompt = DEFAULT_IMAGE_PROMPT
@@ -199,6 +211,7 @@ class ApiServer(
                         call = call,
                         requestedModel = requestedModel,
                         requireImageInput = parsedMessages.image != null,
+                        generationOptions = generationOptions,
                         sendGeneration = { modelId, backend, listener ->
                             ensureImageInputSupported(modelId, backend, parsedMessages.image)
                             if (parsedMessages.image != null) {
@@ -213,6 +226,7 @@ class ApiServer(
                         call = call,
                         requestedModel = requestedModel,
                         requireImageInput = topLevelImage != null,
+                        generationOptions = generationOptions,
                         sendGeneration = { modelId, backend, listener ->
                             ensureImageInputSupported(modelId, backend, topLevelImage)
                             if (topLevelImage != null) {
@@ -235,9 +249,19 @@ class ApiServer(
                 if (topLevelImage != null) {
                     throw IllegalArgumentException("Do not provide top-level image fields when 'messages' already include image content.")
                 }
-                generateFromMessages(requestedModel, parsedMessages.messages, parsedMessages.image)
+                generateFromMessages(
+                    requestedModel = requestedModel,
+                    messages = parsedMessages.messages,
+                    image = parsedMessages.image,
+                    generationOptions = generationOptions
+                )
             } else {
-                generateFromPrompt(requestedModel, prompt, topLevelImage)
+                generateFromPrompt(
+                    requestedModel = requestedModel,
+                    prompt = prompt,
+                    image = topLevelImage,
+                    generationOptions = generationOptions
+                )
             }
 
             val response = JSONObject()
@@ -355,6 +379,7 @@ class ApiServer(
             val body = JSONObject(call.receiveText())
             val stream = body.optBoolean("stream", false)
             val replyTts = parseReplyTtsRequest(body)
+            val generationOptions = parseGenerationOptions(body)
 
             val parsedTools = parseTools(body)
             val requestedModel = body.optString("model").ifBlank { null }
@@ -381,12 +406,18 @@ class ApiServer(
                 streamChatCompletionsSse(
                     call = call,
                     requestedModel = requestedModel,
-                    payload = parsedMessages
+                    payload = parsedMessages,
+                    generationOptions = generationOptions
                 )
                 return
             }
 
-            val generation = generateFromMessages(requestedModel, parsedMessages.messages, parsedMessages.image)
+            val generation = generateFromMessages(
+                requestedModel = requestedModel,
+                messages = parsedMessages.messages,
+                image = parsedMessages.image,
+                generationOptions = generationOptions
+            )
             val nowSeconds = System.currentTimeMillis() / 1000L
 
             val choice = JSONObject()
@@ -468,6 +499,7 @@ class ApiServer(
         call: io.ktor.server.application.ApplicationCall,
         requestedModel: String?,
         requireImageInput: Boolean = false,
+        generationOptions: ApiGenerationOptions = ApiGenerationOptions(),
         sendGeneration: (String, LlmBackend, (String, Boolean) -> Unit) -> Unit
     ) {
         call.respondTextWriter(
@@ -479,10 +511,7 @@ class ApiServer(
             try {
                 requestLock.withLock {
                     val (modelId, activeBackend) = getOrCreateBackend(requestedModel, requireImageInput)
-                    when (activeBackend) {
-                        is LlamaCppBackend -> activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
-                        is MediaPipeBackend -> activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
-                    }
+                    applyGenerationOptions(activeBackend, generationOptions)
 
                     val stream = Channel<StreamEvent>(Channel.UNLIMITED)
                     sendGeneration(modelId, activeBackend) { partial, done ->
@@ -543,7 +572,8 @@ class ApiServer(
     private suspend fun streamChatCompletionsSse(
         call: io.ktor.server.application.ApplicationCall,
         requestedModel: String?,
-        payload: ParsedMessages
+        payload: ParsedMessages,
+        generationOptions: ApiGenerationOptions
     ) {
         call.respondTextWriter(
             contentType = ContentType.Text.EventStream,
@@ -554,10 +584,7 @@ class ApiServer(
             try {
                 requestLock.withLock {
                     val (modelId, activeBackend) = getOrCreateBackend(requestedModel, payload.image != null)
-                    when (activeBackend) {
-                        is LlamaCppBackend -> activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
-                        is MediaPipeBackend -> activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
-                    }
+                    applyGenerationOptions(activeBackend, generationOptions)
 
                     val stream = Channel<StreamEvent>(Channel.UNLIMITED)
                     ensureImageInputSupported(modelId, activeBackend, payload.image)
@@ -870,17 +897,14 @@ class ApiServer(
     private suspend fun generateFromPrompt(
         requestedModel: String?,
         prompt: String,
-        image: LlmImageInput? = null
+        image: LlmImageInput? = null,
+        generationOptions: ApiGenerationOptions = ApiGenerationOptions()
     ): GenerationResult {
         if (image == null) {
             return requestLock.withLock {
                 val (modelId, activeBackend) = getOrCreateBackend(requestedModel, false)
-                if (activeBackend is LlamaCppBackend) {
-                    activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
-                } else if (activeBackend is MediaPipeBackend) {
-                    activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
-                }
-                val text = runGeneration { listener ->
+                applyGenerationOptions(activeBackend, generationOptions)
+                val text = runGeneration(activeBackend) { listener ->
                     activeBackend.sendMessage(prompt, listener)
                 }
                 GenerationResult(modelId = modelId, text = text)
@@ -889,14 +913,16 @@ class ApiServer(
         return generateFromMessages(
             requestedModel = requestedModel,
             messages = listOf(LlmMessage(role = "user", content = prompt)),
-            image = image
+            image = image,
+            generationOptions = generationOptions
         )
     }
 
     private suspend fun generateFromMessages(
         requestedModel: String?,
         messages: List<LlmMessage>,
-        image: LlmImageInput? = null
+        image: LlmImageInput? = null,
+        generationOptions: ApiGenerationOptions = ApiGenerationOptions()
     ): GenerationResult {
         if (messages.isEmpty()) {
             throw IllegalArgumentException("'messages' cannot be empty")
@@ -904,13 +930,9 @@ class ApiServer(
 
         return requestLock.withLock {
             val (modelId, activeBackend) = getOrCreateBackend(requestedModel, image != null)
-            if (activeBackend is LlamaCppBackend) {
-                activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
-            } else if (activeBackend is MediaPipeBackend) {
-                activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
-            }
+            applyGenerationOptions(activeBackend, generationOptions)
             ensureImageInputSupported(modelId, activeBackend, image)
-            val text = runGeneration { listener ->
+            val text = runGeneration(activeBackend) { listener ->
                 if (image != null) {
                     activeBackend.sendMessage(messages, image, listener)
                 } else {
@@ -918,6 +940,34 @@ class ApiServer(
                 }
             }
             GenerationResult(modelId = modelId, text = text)
+        }
+    }
+
+    private fun applyGenerationOptions(
+        activeBackend: LlmBackend,
+        generationOptions: ApiGenerationOptions
+    ) {
+        when (activeBackend) {
+            is LlamaCppBackend -> {
+                val runtimeOverrides = com.mewmix.nabu.chat.LlmRuntimeOverrides(
+                    maxNewTokens = generationOptions.maxTokens?.coerceIn(1, 4096)
+                )
+                activeBackend.updateConfig(
+                    SettingsManager.getLlmRuntimeConfig(context, overrides = runtimeOverrides)
+                )
+            }
+            is MediaPipeBackend -> {
+                val baseConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
+                activeBackend.updateConfig(
+                    baseConfig.copy(
+                        maxTokens = generationOptions.maxTokens?.coerceIn(1, 16_384) ?: baseConfig.maxTokens,
+                        topP = generationOptions.topP?.coerceIn(0f, 1f) ?: baseConfig.topP,
+                        temperature = generationOptions.temperature?.coerceIn(0f, 2f) ?: baseConfig.temperature,
+                        randomSeed = generationOptions.randomSeed?.coerceAtLeast(-1) ?: baseConfig.randomSeed
+                    )
+                )
+            }
+            is LiteRtLmBackend -> Unit
         }
     }
 
@@ -964,16 +1014,17 @@ class ApiServer(
                 ?: throw IllegalStateException(
                     "Model file not found for ${targetModel.id} (.task/.litertlm/.gguf)"
                 )
-            val isLlama = artifact.backend == "llama"
-
-            val createdBackend: LlmBackend = if (isLlama) {
-                LlamaCppBackend(
+            val createdBackend: LlmBackend = when (artifact.backend) {
+                "llama" -> LlamaCppBackend(
                     context = context,
                     modelPath = artifact.file.absolutePath,
                     initialConfig = SettingsManager.getLlmRuntimeConfig(context)
                 )
-            } else {
-                MediaPipeBackend(
+                "litertlm" -> LiteRtLmBackend(
+                    context = context,
+                    modelPath = artifact.file.absolutePath
+                )
+                else -> MediaPipeBackend(
                     context = context,
                     modelPath = artifact.file.absolutePath,
                     initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
@@ -994,35 +1045,87 @@ class ApiServer(
 
         val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
             ?: return false
-        return artifact.backend != "llama"
+        return artifact.backend == "mediapipe"
     }
 
     private suspend fun runGeneration(
+        activeBackend: LlmBackend,
         send: (resultListener: (partialResult: String, done: Boolean) -> Unit) -> Unit
     ): String {
-        return suspendCoroutine { continuation ->
-            val responseBuilder = StringBuilder()
-            val finished = AtomicBoolean(false)
+        val timeoutMs = when (activeBackend) {
+            is LlamaCppBackend -> SettingsManager.getLlmRuntimeConfig(context).totalTimeoutMs
+            else -> DEFAULT_API_GENERATION_TIMEOUT_MS
+        }
 
-            try {
-                send { partialResult, done ->
-                    if (partialResult.isNotEmpty()) {
-                        responseBuilder.append(partialResult)
-                    }
-                    if (!done) {
-                        return@send
+        return try {
+            withTimeout(timeoutMs) {
+                suspendCancellableCoroutine { continuation ->
+                    val responseBuilder = StringBuilder()
+                    val finished = AtomicBoolean(false)
+
+                    continuation.invokeOnCancellation {
+                        activeBackend.cancel()
                     }
 
-                    if (finished.compareAndSet(false, true)) {
-                        continuation.resume(responseBuilder.toString())
+                    try {
+                        send { partialResult, done ->
+                            if (partialResult.isNotEmpty()) {
+                                responseBuilder.append(partialResult)
+                            }
+                            if (!done) {
+                                return@send
+                            }
+
+                            if (finished.compareAndSet(false, true)) {
+                                continuation.resume(responseBuilder.toString())
+                            }
+                        }
+                    } catch (t: Throwable) {
+                        if (finished.compareAndSet(false, true)) {
+                            continuation.resumeWithException(t)
+                        }
                     }
-                }
-            } catch (t: Throwable) {
-                if (finished.compareAndSet(false, true)) {
-                    continuation.resumeWithException(t)
                 }
             }
+        } catch (_: TimeoutCancellationException) {
+            activeBackend.cancel()
+            throw IllegalStateException("Generation timed out after ${timeoutMs}ms.")
         }
+    }
+
+    private fun parseGenerationOptions(body: JSONObject): ApiGenerationOptions {
+        val maxTokens = listOf("max_tokens", "max_output_tokens")
+            .firstNotNullOfOrNull { key -> optInt(body, key) }
+        val temperature = optFloat(body, "temperature")
+        val topP = optFloat(body, "top_p")
+        val randomSeed = optInt(body, "seed")
+        return ApiGenerationOptions(
+            maxTokens = maxTokens,
+            temperature = temperature,
+            topP = topP,
+            randomSeed = randomSeed
+        )
+    }
+
+    private fun optInt(body: JSONObject, key: String): Int? {
+        if (!body.has(key)) return null
+        val raw = body.opt(key) ?: return null
+        return when (raw) {
+            is Number -> raw.toInt()
+            is String -> raw.trim().toIntOrNull()
+            else -> null
+        }
+    }
+
+    private fun optFloat(body: JSONObject, key: String): Float? {
+        if (!body.has(key)) return null
+        val raw = body.opt(key) ?: return null
+        val value = when (raw) {
+            is Number -> raw.toFloat()
+            is String -> raw.trim().toFloatOrNull()
+            else -> null
+        } ?: return null
+        return if (value.isFinite()) value else null
     }
 
     private fun parseMessages(input: JSONArray, tools: List<com.mewmix.nabu.tools.Tool> = emptyList()): ParsedMessages {
@@ -1394,7 +1497,7 @@ class ApiServer(
                 }
                 modelInferredEngine = "soprano"
             }
-            "supertonic-onnx", "supertonic-2-onnx" -> {
+            "supertonic-2-onnx" -> {
                 if (requestedModel !in downloadedTts) {
                     throw IllegalArgumentException("Requested TTS model is not downloaded: $requestedModel")
                 }

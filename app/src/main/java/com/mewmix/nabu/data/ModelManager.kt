@@ -74,7 +74,10 @@ class ModelManager(private val context: Context) {
                     TtsModelValidator.hasAllRequiredFiles(model.id, partialDir)
                 model.hasPartial = !model.isDownloaded && (partialDir.exists() || ttsDir.exists())
             } else {
-                val jsonBackend = modelJson.optString("backend", "mediapipe")
+                val jsonBackend = modelJson.optString(
+                    "backend",
+                    backendForLlmDownloadUrl(model.downloadUrl)
+                )
                 val artifact = findDownloadedLlmArtifact(modelDir, model.id, jsonBackend)
 
                 if (artifact != null) {
@@ -83,7 +86,7 @@ class ModelManager(private val context: Context) {
                 } else {
                     model.isDownloaded = false
                     model.hasPartial = hasPartialLlmArtifacts(modelDir, model.id)
-                    model.backend = if (jsonBackend == "llama") "llama" else "mediapipe"
+                    model.backend = jsonBackend
                 }
             }
             modelList.add(model)

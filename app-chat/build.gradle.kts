@@ -42,9 +42,6 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
         }
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
-    }
     lint {
         disable.addAll(listOf("MutableCollectionMutableState", "AutoboxingStateCreation"))
     }
@@ -52,6 +49,7 @@ android {
 
 dependencies {
     implementation(project(":core-utils"))
+    implementation(libs.litertlm.android)
     implementation("com.google.mediapipe:tasks-core:latest.release")
     implementation("com.google.mediapipe:tasks-genai:0.10.24")
     implementation(platform("androidx.compose:compose-bom:2023.08.00"))

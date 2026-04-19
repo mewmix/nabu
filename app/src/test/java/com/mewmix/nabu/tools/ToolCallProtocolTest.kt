@@ -71,6 +71,19 @@ class ToolCallProtocolTest {
     }
 
     @Test
+    fun extractToolCall_parsesMalformedAlarmCommandStyleFromLocalModel() {
+        val toolCall = ToolCallProtocol.extractToolCall(
+            "set alarm hour=7 minute=30 message=Wake up"
+        )
+
+        assertNotNull(toolCall)
+        assertEquals("set_alarm", toolCall?.toolName)
+        assertEquals(7, (toolCall?.arguments?.get("hour") as Number).toInt())
+        assertEquals(30, (toolCall?.arguments?.get("minute") as Number).toInt())
+        assertEquals("Wake up", toolCall?.arguments?.get("message"))
+    }
+
+    @Test
     fun formatToolResultForModel_returnsMachineReadablePayload() {
         val message = ToolCallProtocol.formatToolResultForModel(
             ToolResult(toolName = "list_files", output = "[\"a.txt\"]", isError = false)
@@ -93,6 +106,12 @@ class ToolCallProtocolTest {
                     description = "Read file contents",
                     parameters = mapOf("path" to "Absolute path"),
                     isAvailable = true
+                ),
+                Tool(
+                    name = "set_timer",
+                    description = "Set a timer",
+                    parameters = mapOf("seconds" to "Timer duration", "message" to "Timer label"),
+                    isAvailable = true
                 )
             )
         )
@@ -100,10 +119,10 @@ class ToolCallProtocolTest {
         assertTrue(prompt.contains("You are helpful"))
         assertTrue(prompt.contains("<tool_call>"))
         assertTrue(prompt.contains("read_file"))
+        assertTrue(prompt.contains("The name must exactly match one of these tools"))
         assertTrue(prompt.contains("TOOL_RESULT"))
-        assertTrue(prompt.contains("/sdcard/Download"))
         assertTrue(prompt.contains("absolute Android paths"))
-        assertTrue(prompt.contains("/sdcard/Documents"))
-        assertTrue(prompt.contains("/data"))
+        assertTrue(prompt.contains("set_timer"))
+        assertTrue(prompt.contains(""""name":"set_timer""""))
     }
 }

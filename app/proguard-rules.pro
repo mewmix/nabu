@@ -40,6 +40,7 @@
 
 # LiteRT / MediaPipe LLM rules (prevent proto field stripping)
 -keep class com.google.ai.edge.litert.** { *; }
+-keep class com.google.ai.edge.litertlm.** { *; }
 -keep class com.google.mediapipe.** { *; }
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { *; }
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite$Builder { *; }

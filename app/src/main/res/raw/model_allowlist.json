@@ -24,9 +24,9 @@
     "type": "LLM"
   },
   "gemma-4-E2B-it": {
-    "name": "Gemma 4 E2B IT (LiteRT Community)",
-    "description": "The smaller Gemma 4 instruction-tuned LiteRT-LM model for Android",
-    "repo": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/tree/main",
+    "name": "Gemma 4 E2B IT",
+    "description": "Gemma 4 E2B instruction-tuned model (2.58GB). Supports up to 32K context. LiteRT-LM format for on-device inference. ~47 tok/s decode on mobile CPU, ~52 tok/s on GPU. Requires ~1.7GB RAM on CPU backend.",
+    "repo": "litert-community/gemma-4-E2B-it-litert-lm",
     "downloadUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
     "gated": false,
     "type": "LLM"
@@ -38,14 +38,6 @@
     "downloadUrl": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
     "gated": false,
     "type": "LLM"
-  },
-  "supertonic-onnx": {
-    "name": "Supertonic TTS",
-    "description": "Lightweight, controllable text-to-speech model",
-    "repo": "Supertone/supertonic",
-    "downloadUrl": "https://huggingface.co/Supertone/supertonic/resolve/main/onnx/",
-    "gated": false,
-    "type": "TTS"
   },
   "supertonic-2-onnx": {
     "name": "Supertonic 2 TTS",

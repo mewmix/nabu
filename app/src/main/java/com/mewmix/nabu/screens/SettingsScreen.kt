@@ -529,9 +529,39 @@ fun SettingsScreen(
             HorizontalDivider()
 
             Text(
+                text = "Optional Permissions",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            OptionalPermissionsSection(showContinue = false)
+
+            Button(
+                onClick = { SettingsManager.setOptionalPermissionsReviewed(context, false) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Show Permission Review On Next Startup")
+            }
+
+            HorizontalDivider()
+
+            Text(
                 text = "Integrations (Experimental)",
                 style = MaterialTheme.typography.titleMedium
             )
+
+            Text(
+                text = "Glaive adds external tools that Nabu can call when both apps are installed from matching builds.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mewmix/glaive"))
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Download Glaive")
+            }
 
             Text(
                 text = if (codexConnected) "Codex: Connected" else "Codex: Not connected",

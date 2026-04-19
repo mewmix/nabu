@@ -26,7 +26,7 @@ class LlmArtifactsTest {
             val artifact = findDownloadedLlmArtifact(modelDir, "gemma-4-E2B-it", "mediapipe")
 
             assertNotNull(artifact)
-            assertEquals("mediapipe", artifact?.backend)
+            assertEquals("litertlm", artifact?.backend)
             assertEquals("litertlm", artifact?.extension)
         } finally {
             modelDir.deleteRecursively()
@@ -38,7 +38,7 @@ class LlmArtifactsTest {
         val importable = importableLlmMetadata("gemma-4-E2B-it.litertlm")
 
         assertEquals("gemma-4-E2B-it", importable?.first)
-        assertEquals("mediapipe", importable?.second)
+        assertEquals("litertlm", importable?.second)
     }
 
     @Test

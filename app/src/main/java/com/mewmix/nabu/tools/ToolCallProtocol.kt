@@ -16,7 +16,17 @@ object ToolCallProtocol {
 
     fun buildSystemPrompt(basePrompt: String, tools: List<Tool>): String {
         if (tools.isEmpty()) {
-            return basePrompt.trim()
+            val lines = mutableListOf<String>()
+            if (basePrompt.isNotBlank()) {
+                lines += basePrompt.trim()
+                lines += ""
+            }
+            lines += "You may call tools to help the user."
+            lines += "Tool-call format: ⦗{\"name\":\"tool_name\",\"arguments\":{}}⦘"
+            lines += "Do not add extra text around a tool call."
+            lines += "Never return an empty response."
+            lines += "To discover available tools, call: ⦗{\"name\":\"list_tools\",\"arguments\":{}}⦘"
+            return lines.joinToString("\n").trim()
         }
 
         val lines = mutableListOf<String>()
@@ -25,35 +35,54 @@ object ToolCallProtocol {
             lines += ""
         }
 
-        lines += "You can call external tools when needed."
-        lines += "When invoking a tool, respond with only this exact wrapper format:"
-        lines += "<tool_call>{\"name\":\"tool_name\",\"arguments\":{}}</tool_call>"
-        lines += "Do not include any extra text in a tool call response."
-        lines += "Available tools:"
+        lines += "You may call a tool when needed."
+        lines += "Tool-call format only: <tool_call>{\"name\":\"tool_name\",\"arguments\":{}}</tool_call>"
+        lines += "Do not add extra text around a tool call."
+        lines += "Never return an empty response."
+        lines += "If no tool is needed, answer with at least one short plain-text sentence."
+        lines += "After TOOL_RESULT, reply to the user with a normal sentence."
+        lines += "The name must exactly match one of these tools:"
 
         tools
             .filter { it.isAvailable }
             .sortedBy { it.name }
             .forEach { tool ->
-                val parameterSpec = if (tool.parameters.isEmpty()) {
-                    "none"
-                } else {
-                    tool.parameters.entries.joinToString(", ") { (name, description) -> "$name=$description" }
-                }
-                lines += "- ${tool.name}: ${tool.description} (params: $parameterSpec)"
+                val parameterSpec = tool.parameters.keys.sorted().joinToString(", ").ifBlank { "none" }
+                lines += "- ${tool.name}($parameterSpec): ${tool.description}"
             }
 
-        lines += "Tool results arrive in a user message starting with TOOL_RESULT as JSON."
-        lines += "After receiving TOOL_RESULT, produce a normal user-facing answer."
-        lines += "Path rules for tool arguments:"
-        lines += "- Always use absolute Android paths."
-        lines += "- If the user says Downloads/downloads, use /sdcard/Download."
-        lines += "- If the user provided an explicit path, use that exact path."
-        lines += "- Prefer shared-storage roots: /sdcard/Download, /sdcard/Documents, /sdcard/Pictures, /sdcard/Music."
-        lines += "- Do not guess private/system paths like /data, /system, or /proc for tool calls."
-        lines += "- If path is unclear, ask for clarification instead of guessing."
+        if (tools.any { it.isAvailable && it.name == "set_timer" }) {
+            lines += """Example timer: <tool_call>{"name":"set_timer","arguments":{"seconds":13,"message":"tea"}}</tool_call>"""
+        }
+        if (tools.any { it.isAvailable && it.name == "set_alarm" }) {
+            lines += """Example alarm: <tool_call>{"name":"set_alarm","arguments":{"hour":7,"minute":30,"message":"wake up"}}</tool_call>"""
+        }
+        if (tools.any { it.isAvailable && it.name == "get_weather" }) {
+            lines += """Example weather: <tool_call>{"name":"get_weather","arguments":{"location":"Seattle"}}</tool_call>"""
+        }
+        if (tools.any { it.isAvailable && it.name == "search_web_context" }) {
+            lines += """Example search: <tool_call>{"name":"search_web_context","arguments":{"query":"eclipse news"}}</tool_call>"""
+        }
+
+        if (tools.any { tool -> tool.parameters.keys.any { key -> key.contains("path", ignoreCase = true) } }) {
+            lines += "Use absolute Android paths for any path arguments. Prefer /sdcard/Download for downloads."
+        }
 
         return lines.joinToString("\n")
+    }
+
+    fun parseDirectUserToolCommand(text: String): ToolCall? {
+        val match = Regex("""(?is)^\s*/tool\s+([a-zA-Z0-9_]+)(?:\s+(\{[\s\S]*\}))?\s*$""")
+            .find(text.trim()) ?: return null
+        val toolName = match.groupValues[1].trim()
+        if (toolName.isBlank()) return null
+        val argsJson = match.groupValues.getOrNull(2)?.trim().orEmpty()
+        if (argsJson.isBlank()) {
+            return ToolCall(toolName, emptyMap())
+        }
+        val argsObject = runCatching { JsonParser.parseString(argsJson).asJsonObject }.getOrNull()
+            ?: return null
+        return ToolCall(toolName, jsonToMap(argsObject))
     }
 
     fun extractToolCall(text: String): ToolCall? {
@@ -174,6 +203,28 @@ object ToolCallProtocol {
             val path = rawPath.trim()
             if (path.startsWith("/")) {
                 return ToolCall("read_file", mapOf("path" to path))
+            }
+        }
+
+        val alarmRegex =
+            Regex(
+                "(?is)^\\s*(?:set_alarm|set\\s+alarm|set\\s+an\\s+alarm|alarm)\\b.*?hour\\s*[=:]\\s*(\\d{1,2})\\b.*?minute\\s*[=:]\\s*(\\d{1,2})\\b(?:.*?message\\s*[=:]\\s*[\"']?([^\"']+?)[\"']?)?\\s*$"
+            )
+        alarmRegex.find(compact)?.let { match ->
+            val hour = match.groupValues[1].toIntOrNull()
+            val minute = match.groupValues[2].toIntOrNull()
+            val message = match.groupValues.getOrNull(3)?.trim().orEmpty()
+            if (hour != null && minute != null) {
+                return ToolCall(
+                    "set_alarm",
+                    buildMap {
+                        put("hour", hour)
+                        put("minute", minute)
+                        if (message.isNotBlank()) {
+                            put("message", message)
+                        }
+                    }
+                )
             }
         }
 

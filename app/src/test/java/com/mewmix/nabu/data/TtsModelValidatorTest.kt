@@ -29,16 +29,16 @@ class TtsModelValidatorTest {
     @Test
     fun supertonicRequiresExpectedBundle() {
         val root = createTempDirectory(prefix = "tts-validator-supertonic").toFile()
-        assertFalse(TtsModelValidator.hasAllRequiredFiles("supertonic-onnx", root))
+        assertFalse(TtsModelValidator.hasAllRequiredFiles("supertonic-2-onnx", root))
 
-        val required = TtsModelValidator.requiredFiles("supertonic-onnx")
+        val required = TtsModelValidator.requiredFiles("supertonic-2-onnx")
         required.forEach { relativePath ->
             val target = File(root, relativePath)
             target.parentFile?.mkdirs()
             val minBytes = if (relativePath.startsWith("voice_styles/")) 100 else 1_000
             createSizedFile(target, minBytes.toLong())
         }
-        assertTrue(TtsModelValidator.hasAllRequiredFiles("supertonic-onnx", root))
+        assertTrue(TtsModelValidator.hasAllRequiredFiles("supertonic-2-onnx", root))
     }
 
     private fun createSizedFile(file: File, sizeBytes: Long) {
