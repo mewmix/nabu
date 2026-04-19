@@ -24,9 +24,9 @@
     "type": "LLM"
   },
   "gemma-4-E2B-it": {
-    "name": "Gemma 4 E2B IT",
+    "name": "Gemma 4 E2B IT (LiteRT Community)",
     "description": "The smaller Gemma 4 instruction-tuned LiteRT-LM model for Android",
-    "repo": "litert-community/gemma-4-E2B-it-litert-lm",
+    "repo": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/tree/main",
     "downloadUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
     "gated": false,
     "type": "LLM"
