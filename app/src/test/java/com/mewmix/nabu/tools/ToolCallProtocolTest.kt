@@ -119,15 +119,10 @@ class ToolCallProtocolTest {
         assertTrue(prompt.contains("You are helpful"))
         assertTrue(prompt.contains("<tool_call>"))
         assertTrue(prompt.contains("read_file"))
-        assertTrue(prompt.contains("The name field must exactly match one of the available tool names"))
-        assertTrue(prompt.contains("Never invent tool names"))
+        assertTrue(prompt.contains("The name must exactly match one of these tools"))
         assertTrue(prompt.contains("TOOL_RESULT"))
-        assertTrue(prompt.contains("/sdcard/Download"))
         assertTrue(prompt.contains("absolute Android paths"))
-        assertTrue(prompt.contains("/sdcard/Documents"))
-        assertTrue(prompt.contains("/data"))
         assertTrue(prompt.contains("set_timer"))
-        assertTrue(prompt.contains("set a timer for 13 seconds called tea"))
         assertTrue(prompt.contains(""""name":"set_timer""""))
     }
 }

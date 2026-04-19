@@ -1497,7 +1497,7 @@ class ApiServer(
                 }
                 modelInferredEngine = "soprano"
             }
-            "supertonic-onnx", "supertonic-2-onnx" -> {
+            "supertonic-2-onnx" -> {
                 if (requestedModel !in downloadedTts) {
                     throw IllegalArgumentException("Requested TTS model is not downloaded: $requestedModel")
                 }
