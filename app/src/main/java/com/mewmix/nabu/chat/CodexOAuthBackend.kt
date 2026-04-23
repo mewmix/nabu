@@ -2,6 +2,7 @@ package com.mewmix.nabu.chat
 
 import android.content.Context
 import com.mewmix.nabu.auth.CodexApiClient
+import com.mewmix.nabu.data.OAuthRemoteModels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -10,7 +11,7 @@ import kotlinx.coroutines.launch
 
 class CodexOAuthBackend(
     private val context: Context,
-    private val model: String = "gpt-5.3-codex",
+    private val model: String = OAuthRemoteModels.DEFAULT_CODEX_MODEL,
     private val apiClient: CodexApiClient = CodexApiClient()
 ) : LlmBackend {
     private val scope = CoroutineScope(Dispatchers.IO)

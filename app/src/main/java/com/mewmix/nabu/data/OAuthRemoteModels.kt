@@ -10,7 +10,7 @@ object OAuthRemoteModels {
     // Legacy IDs kept for backward compatibility with older conversations.
     const val LEGACY_CODEX_MODEL_ID = "codex-byos-oauth"
 
-    const val DEFAULT_CODEX_MODEL = "gpt-5-codex"
+    const val DEFAULT_CODEX_MODEL = "gpt-5.3-codex"
 
     enum class Provider {
         CODEX
@@ -47,10 +47,16 @@ object OAuthRemoteModels {
     private val codexSpecs = listOf(
         RemoteModelSpec(
             provider = Provider.CODEX,
-            modelSlug = "gpt-5-codex",
-            title = "Codex · GPT-5 Codex",
+            modelSlug = "gpt-5.3-codex",
+            title = "Codex · GPT-5.3 Codex",
             endpointLabel = "chatgpt.com/backend-api/codex/responses"
-        )
+        ),
+        RemoteModelSpec(
+            provider = Provider.CODEX,
+            modelSlug = "gpt-5.2-codex",
+            title = "Codex · GPT-5.2 Codex",
+            endpointLabel = "chatgpt.com/backend-api/codex/responses"
+        ),
     )
 
     fun normalizeModelId(modelId: String): String {

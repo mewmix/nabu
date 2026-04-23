@@ -79,6 +79,7 @@ class ChatViewModel(
     initialModelId: String,
     private val llmOverrides: LlmRuntimeOverrides? = null
 ) : ViewModel() {
+    private val requestedInitialModelId = initialModelId
 
     companion object {
         private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
@@ -426,7 +427,7 @@ class ChatViewModel(
         val startingModel = _availableModels.value.find { it.id == initialModelId } ?: _availableModels.value.firstOrNull()
         startingModel?.let { setActiveModel(it, persistConversation = false) }
 
-        refreshConversations()
+        refreshConversations(preferredModelId = requestedInitialModelId)
         refreshStyles()
     }
 
@@ -798,7 +799,10 @@ class ChatViewModel(
         llmBackend?.cancel()
     }
 
-    private fun refreshConversations(desiredActiveId: Long? = null) {
+    private fun refreshConversations(
+        desiredActiveId: Long? = null,
+        preferredModelId: String? = null
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             var summaries = ConversationRepository.getConversationSummaries(context)
                 .sortedByDescending { it.updatedAt }
@@ -823,11 +827,18 @@ class ChatViewModel(
                 _activeConversationId.value = activeId
                 applyConversation(conversation)
             }
-            conversation?.modelId?.let { modelId ->
-                val model = resolveModelById(modelId)
-                if (model != null) {
-                    withContext(Dispatchers.Main) {
-                        setActiveModel(model, persistConversation = false)
+            val preferredResolvedModel = preferredModelId?.let(::resolveModelById)
+            if (preferredResolvedModel != null) {
+                withContext(Dispatchers.Main) {
+                    setActiveModel(preferredResolvedModel, persistConversation = false)
+                }
+            } else {
+                conversation?.modelId?.let { modelId ->
+                    val model = resolveModelById(modelId)
+                    if (model != null) {
+                        withContext(Dispatchers.Main) {
+                            setActiveModel(model, persistConversation = false)
+                        }
                     }
                 }
             }

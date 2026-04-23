@@ -3,6 +3,7 @@ package com.mewmix.nabu.auth
 import android.content.Context
 import com.mewmix.nabu.BuildConfig
 import com.mewmix.nabu.chat.LlmMessage
+import com.mewmix.nabu.data.OAuthRemoteModels
 import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +47,7 @@ class CodexApiClient(
     suspend fun sendPrompt(
         context: Context,
         prompt: String,
-        model: String = "gpt-5.3-codex"
+        model: String = OAuthRemoteModels.DEFAULT_CODEX_MODEL
     ): Result<String> {
         return sendConversation(
             context = context,
@@ -58,7 +59,7 @@ class CodexApiClient(
     suspend fun sendConversation(
         context: Context,
         conversation: List<LlmMessage>,
-        model: String = "gpt-5.3-codex"
+        model: String = OAuthRemoteModels.DEFAULT_CODEX_MODEL
     ): Result<String> {
         val accessToken = authenticator.getValidAccessToken(context)
             ?: return Result.failure(IllegalStateException("Codex account is not authenticated."))
@@ -366,8 +367,8 @@ class CodexApiClient(
             val item = output.optJSONObject(i) ?: continue
             if (item.optString("type") == "function_call") {
                 val tcName = item.optString("name").ifBlank { "unknown" }
-                val tcArgs = item.optString("arguments").ifBlank { "{}" }
-                chunks += "<tool_call>{\"name\":\"$tcName\",\"arguments\":$tcArgs}</tool_call>"
+                val tcArgs = jsonValueToString(item.opt("arguments")).ifBlank { "{}" }
+                chunks += formatToolCallChunk(tcName, tcArgs)
                 continue
             }
 
@@ -385,13 +386,102 @@ class CodexApiClient(
                         val tc = toolCalls.optJSONObject(k) ?: continue
                         val tcFunction = tc.optJSONObject("function")
                         val tcName = tcFunction?.optString("name")?.ifBlank { null } ?: tc.optString("name").ifBlank { "unknown" }
-                        val tcArgs = tcFunction?.optString("arguments")?.ifBlank { null } ?: tc.optString("arguments") ?: "{}"
-                        chunks += "<tool_call>{\"name\":\"$tcName\",\"arguments\":$tcArgs}</tool_call>"
+                        val tcArgs = jsonValueToString(tcFunction?.opt("arguments"))
+                            .ifBlank { jsonValueToString(tc.opt("arguments")) }
+                            .ifBlank { "{}" }
+                        chunks += formatToolCallChunk(tcName, tcArgs)
                     }
                 }
             }
         }
         return chunks.joinToString("").trim().ifBlank { null }
+    }
+
+    private data class PartialFunctionCall(
+        var name: String = "unknown",
+        val arguments: StringBuilder = StringBuilder()
+    )
+
+    private inner class StreamAccumulator {
+        val textDeltas = StringBuilder()
+        private val orderedChunks = mutableListOf<String>()
+        private val functionCalls = linkedMapOf<String, PartialFunctionCall>()
+
+        fun appendText(text: String) {
+            if (text.isBlank()) return
+            textDeltas.append(text)
+            orderedChunks += text
+        }
+
+        fun mergeEvent(event: JSONObject) {
+            when (event.optString("type")) {
+                "response.output_text.delta" -> appendText(event.optString("delta"))
+                "response.function_call_arguments.delta" -> {
+                    val key = event.optString("item_id")
+                        .ifBlank { event.optString("call_id") }
+                        .ifBlank { "call_${functionCalls.size}" }
+                    val partial = functionCalls.getOrPut(key) { PartialFunctionCall() }
+                    event.optString("delta").takeIf { it.isNotEmpty() }?.let { partial.arguments.append(it) }
+                    event.optString("name").takeIf { it.isNotBlank() }?.let { partial.name = it }
+                }
+                "response.function_call_arguments.done" -> {
+                    val key = event.optString("item_id")
+                        .ifBlank { event.optString("call_id") }
+                        .ifBlank { "call_${functionCalls.size}" }
+                    val partial = functionCalls.getOrPut(key) { PartialFunctionCall() }
+                    event.optString("name").takeIf { it.isNotBlank() }?.let { partial.name = it }
+                    val finalArgs = jsonValueToString(event.opt("arguments"))
+                    if (finalArgs.isNotBlank()) {
+                        partial.arguments.clear()
+                        partial.arguments.append(finalArgs)
+                    }
+                }
+                "response.output_item.added", "response.output_item.done" -> {
+                    val item = event.optJSONObject("item") ?: return
+                    val type = item.optString("type")
+                    if (type == "function_call") {
+                        val key = item.optString("id")
+                            .ifBlank { item.optString("call_id") }
+                            .ifBlank { "call_${functionCalls.size}" }
+                        val partial = functionCalls.getOrPut(key) { PartialFunctionCall() }
+                        item.optString("name").takeIf { it.isNotBlank() }?.let { partial.name = it }
+                        val args = jsonValueToString(item.opt("arguments"))
+                        if (args.isNotBlank()) {
+                            partial.arguments.clear()
+                            partial.arguments.append(args)
+                        }
+                    } else if (type == "message") {
+                        val content = item.optJSONArray("content") ?: return
+                        for (i in 0 until content.length()) {
+                            val part = content.optJSONObject(i) ?: continue
+                            part.optString("text").takeIf { it.isNotBlank() }?.let(::appendText)
+                        }
+                    }
+                }
+            }
+        }
+
+        fun resolvedText(completedText: String?): String? {
+            if (!completedText.isNullOrBlank()) return completedText
+            val chunks = mutableListOf<String>()
+            chunks += orderedChunks
+            functionCalls.values.forEach { partial ->
+                val args = partial.arguments.toString().trim().ifBlank { "{}" }
+                chunks += formatToolCallChunk(partial.name, args)
+            }
+            return chunks.joinToString("").trim().ifBlank { null }
+        }
+    }
+
+    private fun formatToolCallChunk(name: String, argumentsJson: String): String =
+        "<tool_call>{\"name\":\"$name\",\"arguments\":$argumentsJson}</tool_call>"
+
+    private fun jsonValueToString(value: Any?): String {
+        return when (value) {
+            null -> ""
+            is JSONObject, is JSONArray -> value.toString()
+            else -> value.toString()
+        }
     }
 
     private fun extractCodexResponseText(body: String, contentType: String?): String {
@@ -403,7 +493,7 @@ class CodexApiClient(
                 ?: throw IllegalStateException("Codex returned no text output: $json")
         }
 
-        val deltas = StringBuilder()
+        val accumulator = StreamAccumulator()
         var completedText: String? = null
         val chunks = body.split("\n\n")
         for (chunk in chunks) {
@@ -416,10 +506,8 @@ class CodexApiClient(
             if (data.isBlank() || data == "[DONE]") continue
 
             val event = runCatching { JSONObject(data) }.getOrNull() ?: continue
+            accumulator.mergeEvent(event)
             when (event.optString("type")) {
-                "response.output_text.delta" -> {
-                    deltas.append(event.optString("delta"))
-                }
                 "response.failed" -> {
                     val message = event
                         .optJSONObject("response")
@@ -443,10 +531,8 @@ class CodexApiClient(
             }
         }
 
-        if (!completedText.isNullOrBlank()) {
-            return completedText
-        }
-        val deltaText = deltas.toString().trim()
+        accumulator.resolvedText(completedText)?.let { return it }
+        val deltaText = accumulator.textDeltas.toString().trim()
         if (deltaText.isNotBlank()) {
             return deltaText
         }
@@ -497,7 +583,7 @@ class CodexApiClient(
         requestBuilder.header("OpenAI-Beta", WS_OPENAI_BETA)
         requestBuilder.header("Accept", "application/json")
 
-        val deltas = StringBuilder()
+        val accumulator = StreamAccumulator()
         var completedText: String? = null
 
         val socket = websocketClient.newWebSocket(
@@ -519,10 +605,8 @@ class CodexApiClient(
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     val event = runCatching { JSONObject(text) }.getOrNull() ?: return
+                    accumulator.mergeEvent(event)
                     when (event.optString("type")) {
-                        "response.output_text.delta" -> {
-                            deltas.append(event.optString("delta"))
-                        }
                         "response.failed" -> {
                             val errorMessage = event
                                 .optJSONObject("response")
@@ -556,8 +640,7 @@ class CodexApiClient(
                                 return
                             }
                             completedText = responseJson?.let { extractOutputText(it) } ?: completedText
-                            val deltaText = deltas.toString().trim()
-                            val resolvedText = if (!completedText.isNullOrBlank()) completedText.orEmpty() else deltaText
+                            val resolvedText = accumulator.resolvedText(completedText).orEmpty()
                             if (!completion.isCompleted) {
                                 if (resolvedText.isNotBlank()) {
                                     completion.complete(Result.success(resolvedText))
@@ -596,8 +679,7 @@ class CodexApiClient(
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     DebugLogger.log("CodexApiClient: websocket closed code=$code reason=$reason")
                     if (!completion.isCompleted) {
-                        val deltaText = deltas.toString().trim()
-                        val resolvedText = if (!completedText.isNullOrBlank()) completedText.orEmpty() else deltaText
+                        val resolvedText = accumulator.resolvedText(completedText).orEmpty()
                         if (resolvedText.isNotBlank()) {
                             completion.complete(Result.success(resolvedText))
                         } else {
