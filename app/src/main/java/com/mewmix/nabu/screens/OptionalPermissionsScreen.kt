@@ -2,11 +2,8 @@ package com.mewmix.nabu.screens
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -60,12 +57,25 @@ fun OptionalPermissionsSection(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val notificationPermission = optionalNotificationPermission()
+    val contactsPermission = optionalContactsPermission()
     val mediaPermission = optionalMediaPermission()
 
     var refreshToken by remember { mutableStateOf(0) }
-    val status = remember(refreshToken) { PermissionReviewStatus.from(context, notificationPermission, mediaPermission) }
+    val status = remember(refreshToken) {
+        PermissionReviewStatus.from(
+            context = context,
+            notificationPermission = notificationPermission,
+            contactsPermission = contactsPermission,
+            mediaPermission = mediaPermission
+        )
+    }
 
     val notificationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        refreshToken++
+    }
+    val contactsPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) {
         refreshToken++
@@ -110,18 +120,13 @@ fun OptionalPermissionsSection(
         )
 
         PermissionRow(
-            title = "Write System Settings",
-            description = "Allows direct brightness changes. Without this, Nabu can only open the settings screen.",
-            statusLabel = status.writeSettingsStatus,
-            actionLabel = if (status.writeSettingsGranted) "Granted" else "Open Settings",
-            enabled = !status.writeSettingsGranted,
+            title = "Contacts",
+            description = "Lets Nabu resolve contact names for SMS and call actions when you do not provide a phone number.",
+            statusLabel = status.contactsStatus,
+            actionLabel = if (status.contactsGranted || contactsPermission == null) "Granted" else "Grant",
+            enabled = contactsPermission != null && !status.contactsGranted,
             onClick = {
-                context.startActivity(
-                    Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                )
+                contactsPermission?.let(contactsPermissionLauncher::launch)
             }
         )
 
@@ -200,27 +205,29 @@ private fun PermissionRow(
 
 private data class PermissionReviewStatus(
     val notificationsGranted: Boolean,
-    val writeSettingsGranted: Boolean,
+    val contactsGranted: Boolean,
     val mediaGranted: Boolean,
     val notificationStatus: String,
-    val writeSettingsStatus: String,
+    val contactsStatus: String,
     val mediaStatus: String
 ) {
     companion object {
         fun from(
             context: Context,
             notificationPermission: String?,
+            contactsPermission: String?,
             mediaPermission: String?
         ): PermissionReviewStatus {
             val notificationsGranted = notificationPermission == null ||
                 ContextCompat.checkSelfPermission(context, notificationPermission) == PackageManager.PERMISSION_GRANTED
-            val writeSettingsGranted = Settings.System.canWrite(context)
+            val contactsGranted = contactsPermission == null ||
+                ContextCompat.checkSelfPermission(context, contactsPermission) == PackageManager.PERMISSION_GRANTED
             val mediaGranted = mediaPermission == null ||
                 ContextCompat.checkSelfPermission(context, mediaPermission) == PackageManager.PERMISSION_GRANTED
 
             return PermissionReviewStatus(
                 notificationsGranted = notificationsGranted,
-                writeSettingsGranted = writeSettingsGranted,
+                contactsGranted = contactsGranted,
                 mediaGranted = mediaGranted,
                 notificationStatus = if (notificationPermission == null) {
                     "Not required on this Android version."
@@ -229,7 +236,9 @@ private data class PermissionReviewStatus(
                 } else {
                     "Not granted."
                 },
-                writeSettingsStatus = if (writeSettingsGranted) {
+                contactsStatus = if (contactsPermission == null) {
+                    "Not required on this Android version."
+                } else if (contactsGranted) {
                     "Granted."
                 } else {
                     "Not granted."
@@ -245,6 +254,13 @@ private data class PermissionReviewStatus(
         }
     }
 }
+
+private fun optionalContactsPermission(): String? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        Manifest.permission.READ_CONTACTS
+    } else {
+        null
+    }
 
 private fun optionalNotificationPermission(): String? =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

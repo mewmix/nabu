@@ -363,19 +363,19 @@ class ActionToolsTest {
     }
 
     @Test
-    fun execute_setBrightnessFallsBackToSettingsWhenPermissionMissing() {
+    fun execute_setBrightnessReturnsErrorWhenPermissionMissing() {
         DeviceAction.brightnessSetter = { _, _ -> false }
-        DeviceAction.canResolveIntent = { _, _ -> true }
-        var launchedIntent: Intent? = null
-        DeviceAction.activityLauncher = { _, intent -> launchedIntent = intent }
 
         val result = ActionTools.execute(
             context,
             ToolCall("set_brightness", mapOf("level" to 40))
         )
 
-        assertFalse(result?.isError ?: true)
-        assertEquals(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS, launchedIntent?.action)
+        assertTrue(result?.isError == true)
+        assertEquals(
+            "Nabu cannot change system brightness unless write-settings access is already granted.",
+            result?.output
+        )
     }
 
     @Test

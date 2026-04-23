@@ -146,7 +146,7 @@ object ActionTools {
         ),
         Tool(
             name = "set_brightness",
-            description = "Set display brightness if permitted, otherwise open the required settings screen.",
+            description = "Set display brightness when write-settings access is already granted.",
             parameters = mapOf(
                 "level" to "Brightness percentage from 0 to 100."
             )

@@ -68,9 +68,6 @@
             <action android:name="android.settings.panel.action.BLUETOOTH" />
         </intent>
         <intent>
-            <action android:name="android.settings.MANAGE_WRITE_SETTINGS" />
-        </intent>
-        <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
         </intent>

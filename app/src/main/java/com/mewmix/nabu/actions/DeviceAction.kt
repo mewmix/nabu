@@ -195,20 +195,10 @@ object DeviceAction {
         if (brightnessSetter(context, level)) {
             return ActionResult("Brightness set to $level%.")
         }
-
-        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-            data = Uri.parse("package:${context.packageName}")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        if (!canResolveIntent(context, intent)) {
-            return ActionResult(
-                "Nabu cannot change system brightness without write settings permission.",
-                true
-            )
-        }
-        return launchIntent(context, intent) {
-            "Opened write-settings permission so brightness can be changed. Requested level: $level%."
-        }
+        return ActionResult(
+            "Nabu cannot change system brightness unless write-settings access is already granted.",
+            true
+        )
     }
 
     fun toggleFlashlight(context: Context, enabled: Boolean): ActionResult {
