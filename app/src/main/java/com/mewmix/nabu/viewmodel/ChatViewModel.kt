@@ -1547,6 +1547,7 @@ class ChatViewModel(
     private var configPersistenceJob: kotlinx.coroutines.Job? = null
     private fun persistVoiceMixConfig() {
         configPersistenceJob?.cancel()
+        SettingsManager.setVoiceMixConfig(context, currentVoiceMixConfig())
         configPersistenceJob = viewModelScope.launch {
             kotlinx.coroutines.delay(500)
             SettingsManager.setVoiceMixConfig(context, currentVoiceMixConfig())

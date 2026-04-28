@@ -167,9 +167,10 @@ fun MixerScreen(
         styleWeights: Map<String, Float> = weights,
         mode: InterpolationMode = interpolationMode,
     ) {
-        // This is now partially handled by LaunchedEffect for debouncing, 
-        // but we keep it for immediate actions if needed.
-        // Actually, let's just let LaunchedEffect handle it.
+        SettingsManager.setVoiceMixConfig(
+            context,
+            VoiceMixConfig(styles, styleWeights, mode)
+        )
     }
 
     fun persistFavorites(updated: List<VoiceMixFavorite>) {

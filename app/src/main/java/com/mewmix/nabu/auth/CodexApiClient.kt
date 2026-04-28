@@ -25,6 +25,7 @@ class CodexApiClient(
 ) {
     companion object {
         private const val ORIGINATOR = "codex_cli_rs"
+        private const val CODEX_CLIENT_COMPAT_VERSION = "1.0.0"
         private const val SESSION_PREFS = "codex_oauth"
         private const val SESSION_ID_KEY = "codex_session_id"
         private const val SSE_OPENAI_BETA = "responses=experimental"
@@ -117,19 +118,20 @@ class CodexApiClient(
                 "instructions=${instructions.isNotBlank()} session_id=$sessionId"
         )
         DebugLogger.log(
-            "CodexApiClient: app_version=${BuildConfig.VERSION_NAME} commit=${BuildConfig.GIT_COMMIT_HASH.take(7)} " +
+            "CodexApiClient: app_version=${BuildConfig.VERSION_NAME} codex_client_version=$CODEX_CLIENT_COMPAT_VERSION " +
+                "commit=${BuildConfig.GIT_COMMIT_HASH.take(7)} " +
                 "endpoint_sse=$CODEX_RESPONSES_URL endpoint_ws=wss://chatgpt.com/backend-api/codex/responses"
         )
         DebugLogger.log("CodexApiClient: payload_shape=${summarizePayload(payload)}")
 
         val headers = mutableMapOf(
             "Authorization" to "Bearer $accessToken",
-            "User-Agent" to "$ORIGINATOR/${BuildConfig.VERSION_NAME} (Android)",
+            "User-Agent" to codexUserAgent(),
             "originator" to ORIGINATOR,
             "Accept" to "text/event-stream",
-            "version" to BuildConfig.VERSION_NAME
+            "version" to CODEX_CLIENT_COMPAT_VERSION
         )
-        headers["chatgpt-account-id"] = accountId
+        headers["ChatGPT-Account-ID"] = accountId
         headers["session_id"] = sessionId
         DebugLogger.log("CodexApiClient: request_headers=${summarizeHeaders(headers)}")
 
@@ -332,11 +334,11 @@ class CodexApiClient(
             ?: return Result.failure(IllegalStateException("Codex account ID is missing from OAuth token."))
         val headers = mutableMapOf(
             "Authorization" to "Bearer $accessToken",
-            "User-Agent" to "$ORIGINATOR/${BuildConfig.VERSION_NAME} (Android)",
+            "User-Agent" to codexUserAgent(),
             "Accept" to "application/json",
             "originator" to ORIGINATOR
         )
-        headers["chatgpt-account-id"] = accountId
+        headers["ChatGPT-Account-ID"] = accountId
 
         val response = withContext(Dispatchers.IO) {
             OAuthHttpClient.getJson(
@@ -712,14 +714,14 @@ class CodexApiClient(
             "originator",
             "Accept",
             "version",
-            "chatgpt-account-id",
+            "ChatGPT-Account-ID",
             "session_id",
             "OpenAI-Beta",
             "User-Agent"
         ).forEach { key ->
             headers[key]?.let { value ->
                 interesting[key] = when {
-                    key.equals("chatgpt-account-id", ignoreCase = true) -> value.take(6) + "..."
+                    key.equals("ChatGPT-Account-ID", ignoreCase = true) -> value.take(6) + "..."
                     key.equals("session_id", ignoreCase = true) -> value.take(8) + "..."
                     else -> value
                 }
@@ -728,6 +730,9 @@ class CodexApiClient(
         interesting["Authorization"] = if (headers.containsKey("Authorization")) "Bearer ***" else "-"
         return JSONObject(interesting as Map<*, *>).toString()
     }
+
+    private fun codexUserAgent(): String =
+        "$ORIGINATOR/$CODEX_CLIENT_COMPAT_VERSION (Android; Nabu ${BuildConfig.VERSION_NAME})"
 
     private fun summarizePayload(payload: JSONObject): String {
         val input = payload.optJSONArray("input")

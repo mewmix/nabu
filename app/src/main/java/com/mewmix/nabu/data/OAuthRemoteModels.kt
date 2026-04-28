@@ -10,7 +10,7 @@ object OAuthRemoteModels {
     // Legacy IDs kept for backward compatibility with older conversations.
     const val LEGACY_CODEX_MODEL_ID = "codex-byos-oauth"
 
-    const val DEFAULT_CODEX_MODEL = "gpt-5.3-codex"
+    const val DEFAULT_CODEX_MODEL = "gpt-5.5"
 
     enum class Provider {
         CODEX
@@ -47,14 +47,14 @@ object OAuthRemoteModels {
     private val codexSpecs = listOf(
         RemoteModelSpec(
             provider = Provider.CODEX,
-            modelSlug = "gpt-5.3-codex",
-            title = "Codex · GPT-5.3 Codex",
+            modelSlug = "gpt-5.5",
+            title = "Codex · GPT-5.5",
             endpointLabel = "chatgpt.com/backend-api/codex/responses"
         ),
         RemoteModelSpec(
             provider = Provider.CODEX,
-            modelSlug = "gpt-5.2-codex",
-            title = "Codex · GPT-5.2 Codex",
+            modelSlug = "gpt-5.4",
+            title = "Codex · GPT-5.4",
             endpointLabel = "chatgpt.com/backend-api/codex/responses"
         ),
     )
@@ -62,6 +62,8 @@ object OAuthRemoteModels {
     fun normalizeModelId(modelId: String): String {
         return when (modelId) {
             LEGACY_CODEX_MODEL_ID -> buildId(Provider.CODEX, DEFAULT_CODEX_MODEL)
+            buildId(Provider.CODEX, "gpt-5.3-codex") -> buildId(Provider.CODEX, DEFAULT_CODEX_MODEL)
+            buildId(Provider.CODEX, "gpt-5.2-codex") -> buildId(Provider.CODEX, "gpt-5.4")
             else -> modelId
         }
     }
@@ -70,8 +72,9 @@ object OAuthRemoteModels {
         when (modelId) {
             LEGACY_CODEX_MODEL_ID -> return RemoteSelection(Provider.CODEX, DEFAULT_CODEX_MODEL)
         }
-        if (modelId.startsWith(REMOTE_PREFIX)) {
-            val route = modelId.removePrefix(REMOTE_PREFIX)
+        val normalizedId = normalizeModelId(modelId)
+        if (normalizedId.startsWith(REMOTE_PREFIX)) {
+            val route = normalizedId.removePrefix(REMOTE_PREFIX)
             val slash = route.indexOf('/')
             if (slash > 0 && slash < route.length - 1) {
                 val provider = normalizeProvider(route.substring(0, slash))

@@ -29,7 +29,15 @@ internal object OAuthHttpClient {
 
     private val loggingInterceptor = Interceptor { chain ->
         val request = chain.request()
-        val headers = request.headers.joinToString(separator = ", ") { "${it.first}: ${it.second}" }
+        val headers = request.headers.joinToString(separator = ", ") { (name, value) ->
+            val safeValue = when {
+                name.equals("Authorization", ignoreCase = true) -> "Bearer ***"
+                name.equals("Cookie", ignoreCase = true) -> "***"
+                name.equals("Set-Cookie", ignoreCase = true) -> "***"
+                else -> value
+            }
+            "$name: $safeValue"
+        }
         val bodyType = request.body?.contentType()?.toString() ?: "null"
         DebugLogger.log("OAuthHttpClient OUT: URL=${request.url} | Headers=[$headers] | BodyCT=$bodyType")
         chain.proceed(request)
