@@ -67,8 +67,25 @@ object ToolCallProtocol {
         if (tools.any { tool -> tool.parameters.keys.any { key -> key.contains("path", ignoreCase = true) } }) {
             lines += "Use absolute Android paths for any path arguments. Prefer /sdcard/Download for downloads."
         }
+        if (tools.any { it.isAvailable && it.needsFilesystemPathHint() }) {
+            lines += "Filesystem path structure: root=/sdcard; common dirs=/sdcard/Download,/sdcard/Documents,/sdcard/DCIM,/sdcard/Pictures,/sdcard/Movies,/sdcard/Music; after list_files, open/find children by appending the returned name to that directory path."
+        }
 
         return lines.joinToString("\n")
+    }
+
+    private fun Tool.needsFilesystemPathHint(): Boolean {
+        val normalizedName = name.lowercase()
+        return normalizedName in setOf(
+            "list_files",
+            "read_file",
+            "open_file",
+            "find_file",
+            "search_files"
+        ) || (
+            parameters.keys.any { it.contains("path", ignoreCase = true) } &&
+                normalizedName.contains("file")
+            )
     }
 
     fun parseDirectUserToolCommand(text: String): ToolCall? {

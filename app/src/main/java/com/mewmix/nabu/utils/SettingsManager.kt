@@ -45,6 +45,7 @@ object SettingsManager {
     private const val KEY_GEMINI_OAUTH_PROJECT_ID = "gemini_oauth_project_id"
     private const val KEY_VOICE_MIX_CONFIG = "voice_mix_config"
     private const val KEY_VOICE_MIX_FAVORITES = "voice_mix_favorites"
+    private const val KEY_VOICE_MIX_FAVORITES_MIGRATED = "voice_mix_favorites_migrated"
     private const val KEY_CHAT_SYSTEM_PROMPT = "chat_system_prompt"
     private const val KEY_CHAT_CONTEXT_MODE = "chat_context_mode"
     private const val KEY_OPTIONAL_PERMISSIONS_REVIEWED = "optional_permissions_reviewed"
@@ -180,34 +181,53 @@ object SettingsManager {
                 }
             }
             .distinctBy { it.name.lowercase() }
+        DatabaseManager.setVoiceMixFavorites(context, normalized)
         DatabaseManager.setSetting(context, KEY_VOICE_MIX_FAVORITES, gson.toJson(normalized, voiceMixFavoritesType))
+        DatabaseManager.setSetting(context, KEY_VOICE_MIX_FAVORITES_MIGRATED, "1")
     }
 
     fun getVoiceMixFavorites(context: Context): List<VoiceMixFavorite> {
-        val saved = DatabaseManager.getSetting(context, KEY_VOICE_MIX_FAVORITES).orEmpty()
-        if (saved.isBlank()) {
+        val dbFavorites = normalizeVoiceMixFavorites(DatabaseManager.getVoiceMixFavorites(context))
+        if (dbFavorites.isNotEmpty()) {
+            return dbFavorites
+        }
+
+        if (DatabaseManager.getSetting(context, KEY_VOICE_MIX_FAVORITES_MIGRATED) == "1") {
             return emptyList()
         }
-        return runCatching {
-            gson.fromJson<List<VoiceMixFavorite>>(saved, voiceMixFavoritesType)
-                ?.mapNotNull { favorite ->
-                    val name = favorite.name.trim()
-                    if (name.isEmpty() || favorite.styles == null || favorite.weights == null || favorite.interpolationMode == null) {
-                        null
-                    } else {
-                        val config = favorite.toConfig().normalized(
-                            favorite.styles.firstOrNull().orEmpty().ifBlank { "af_sky" }
-                        )
-                        favorite.copy(
-                            name = name,
-                            styles = config.styles,
-                            weights = config.weights,
-                            interpolationMode = config.interpolationMode
-                        )
-                    }
-                }
-                .orEmpty()
-        }.getOrDefault(emptyList())
+
+        val saved = DatabaseManager.getSetting(context, KEY_VOICE_MIX_FAVORITES).orEmpty()
+        val migrated = if (saved.isBlank()) {
+            emptyList()
+        } else {
+            runCatching {
+                gson.fromJson<List<VoiceMixFavorite>>(saved, voiceMixFavoritesType)
+                    .orEmpty()
+            }.getOrDefault(emptyList())
+        }
+
+        val normalized = normalizeVoiceMixFavorites(migrated)
+        DatabaseManager.setVoiceMixFavorites(context, normalized)
+        DatabaseManager.setSetting(context, KEY_VOICE_MIX_FAVORITES, gson.toJson(normalized, voiceMixFavoritesType))
+        DatabaseManager.setSetting(context, KEY_VOICE_MIX_FAVORITES_MIGRATED, "1")
+        return normalized
+    }
+
+    private fun normalizeVoiceMixFavorites(favorites: List<VoiceMixFavorite>): List<VoiceMixFavorite> {
+        return favorites.mapNotNull { favorite ->
+            runCatching {
+                val name = favorite.name.trim()
+                val config = favorite.toConfig().normalized(
+                    favorite.styles.firstOrNull().orEmpty().ifBlank { "af_sky" }
+                )
+                favorite.copy(
+                    name = name,
+                    styles = config.styles,
+                    weights = config.weights,
+                    interpolationMode = config.interpolationMode
+                )
+            }.getOrNull()?.takeIf { it.name.isNotEmpty() }
+        }
     }
 
     fun setChatSystemPrompt(context: Context, prompt: String) {

@@ -122,7 +122,26 @@ class ToolCallProtocolTest {
         assertTrue(prompt.contains("The name must exactly match one of these tools"))
         assertTrue(prompt.contains("TOOL_RESULT"))
         assertTrue(prompt.contains("absolute Android paths"))
+        assertTrue(prompt.contains("Filesystem path structure"))
+        assertTrue(prompt.contains("/sdcard/Download"))
         assertTrue(prompt.contains("set_timer"))
         assertTrue(prompt.contains(""""name":"set_timer""""))
+    }
+
+    @Test
+    fun buildSystemPrompt_omitsFilesystemPathStructureWhenNoFileToolsSelected() {
+        val prompt = ToolCallProtocol.buildSystemPrompt(
+            basePrompt = "You are helpful",
+            tools = listOf(
+                Tool(
+                    name = "set_timer",
+                    description = "Set a timer",
+                    parameters = mapOf("seconds" to "Timer duration", "message" to "Timer label"),
+                    isAvailable = true
+                )
+            )
+        )
+
+        assertFalse(prompt.contains("Filesystem path structure"))
     }
 }

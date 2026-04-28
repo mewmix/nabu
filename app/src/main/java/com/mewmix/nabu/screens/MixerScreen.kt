@@ -261,18 +261,22 @@ fun MixerScreen(
                 styleNames = styleLoader.names,
                 selectedStyles = selectedStyles,
                 onAddStyle = {
-                    selectedStyles = selectedStyles + it
-                    weights = weights + (it to 1f)
-                    persistVoiceMixConfig()
+                    val nextStyles = selectedStyles + it
+                    val nextWeights = weights + (it to 1f)
+                    selectedStyles = nextStyles
+                    weights = nextWeights
+                    persistVoiceMixConfig(nextStyles, nextWeights)
                 },
                 onRemoveStyle = {
-                    selectedStyles = selectedStyles - it
-                    weights = weights - it
-                    if (selectedStyles.isEmpty()) {
-                        selectedStyles = listOf(defaultVoice)
-                        weights = mapOf(defaultVoice to 1f)
+                    var nextStyles = selectedStyles - it
+                    var nextWeights = weights - it
+                    if (nextStyles.isEmpty()) {
+                        nextStyles = listOf(defaultVoice)
+                        nextWeights = mapOf(defaultVoice to 1f)
                     }
-                    persistVoiceMixConfig()
+                    selectedStyles = nextStyles
+                    weights = nextWeights
+                    persistVoiceMixConfig(nextStyles, nextWeights)
                 }
             )
         }
@@ -302,7 +306,7 @@ fun MixerScreen(
                     selectedStyles = config.styles
                     weights = config.weights
                     interpolationMode = config.interpolationMode
-                    persistVoiceMixConfig()
+                    persistVoiceMixConfig(config.styles, config.weights, config.interpolationMode)
                 },
                 onDeleteFavorite = { name ->
                     persistFavorites(favorites.filterNot { it.name.equals(name, ignoreCase = true) })
@@ -313,8 +317,9 @@ fun MixerScreen(
                 selectedStyles = selectedStyles,
                 weights = weights,
                 onWeightChanged = { style, value ->
-                    weights = weights.toMutableMap().apply { put(style, value.coerceIn(0f, 1f)) }
-                    persistVoiceMixConfig()
+                    val nextWeights = weights.toMutableMap().apply { put(style, value.coerceIn(0f, 1f)) }
+                    weights = nextWeights
+                    persistVoiceMixConfig(styleWeights = nextWeights)
                 }
             )
 
@@ -322,7 +327,7 @@ fun MixerScreen(
                 currentMode = interpolationMode,
                 onModeSelected = {
                     interpolationMode = it
-                    persistVoiceMixConfig()
+                    persistVoiceMixConfig(mode = it)
                 }
             )
         }
@@ -330,9 +335,11 @@ fun MixerScreen(
         val supertonicStyles = if (isSupertonicLoaded) styleLoader.names else emptyList()
         LaunchedEffect(isSupertonicLoaded, supertonicStyles) {
             if (isSupertonicLoaded && supertonicStyles.isNotEmpty() && selectedStyles.firstOrNull() !in supertonicStyles) {
-                selectedStyles = listOf(supertonicStyles.first())
-                weights = mapOf(selectedStyles.first() to (weights[selectedStyles.first()] ?: 1f))
-                persistVoiceMixConfig()
+                val nextStyles = listOf(supertonicStyles.first())
+                val nextWeights = mapOf(nextStyles.first() to (weights[nextStyles.first()] ?: 1f))
+                selectedStyles = nextStyles
+                weights = nextWeights
+                persistVoiceMixConfig(nextStyles, nextWeights)
             }
         }
 
@@ -341,9 +348,11 @@ fun MixerScreen(
                 styleNames = supertonicStyles,
                 selectedStyle = selectedStyles.firstOrNull(),
                 onSelected = {
-                    selectedStyles = listOf(it)
-                    weights = mapOf(it to (weights[it] ?: 1f))
-                    persistVoiceMixConfig()
+                    val nextStyles = listOf(it)
+                    val nextWeights = mapOf(it to (weights[it] ?: 1f))
+                    selectedStyles = nextStyles
+                    weights = nextWeights
+                    persistVoiceMixConfig(nextStyles, nextWeights)
                 }
             )
 

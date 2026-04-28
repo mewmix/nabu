@@ -8,6 +8,13 @@ import java.io.File
 
 object DatabaseManager {
     private var dbHelper: DatabaseHelper? = null
+    private val gson = Gson()
+    private val stringListType = TypeToken.getParameterized(List::class.java, String::class.java).type
+    private val weightsMapType = TypeToken.getParameterized(
+        Map::class.java,
+        String::class.java,
+        java.lang.Float::class.java
+    ).type
 
     private fun getHelper(context: Context): DatabaseHelper {
         return dbHelper ?: synchronized(this) {
@@ -224,5 +231,63 @@ object DatabaseManager {
 
         cursor.close()
         return value
+    }
+
+    fun setVoiceMixFavorites(context: Context, favorites: List<VoiceMixFavorite>) {
+        val db = getHelper(context).writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete(DatabaseHelper.TABLE_VOICE_MIXES, null, null)
+            favorites.forEachIndexed { index, favorite ->
+                val values = ContentValues().apply {
+                    put(DatabaseHelper.COLUMN_NAME, favorite.name)
+                    put(DatabaseHelper.COLUMN_STYLES, gson.toJson(favorite.styles, stringListType))
+                    put(DatabaseHelper.COLUMN_WEIGHTS, gson.toJson(favorite.weights, weightsMapType))
+                    put(DatabaseHelper.COLUMN_MODE, favorite.interpolationMode.name)
+                    put(DatabaseHelper.COLUMN_POSITION, index)
+                }
+                db.replace(DatabaseHelper.TABLE_VOICE_MIXES, null, values)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getVoiceMixFavorites(context: Context): List<VoiceMixFavorite> {
+        val db = getHelper(context).readableDatabase
+        val cursor = db.query(
+            DatabaseHelper.TABLE_VOICE_MIXES,
+            arrayOf(
+                DatabaseHelper.COLUMN_NAME,
+                DatabaseHelper.COLUMN_STYLES,
+                DatabaseHelper.COLUMN_WEIGHTS,
+                DatabaseHelper.COLUMN_MODE,
+                DatabaseHelper.COLUMN_POSITION
+            ),
+            null,
+            null,
+            null,
+            null,
+            "${DatabaseHelper.COLUMN_POSITION} ASC, ${DatabaseHelper.COLUMN_ID} ASC"
+        )
+
+        val favorites = mutableListOf<VoiceMixFavorite>()
+        while (cursor.moveToNext()) {
+            runCatching {
+                val name = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_NAME)).trim()
+                val stylesJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_STYLES))
+                val weightsJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_WEIGHTS))
+                val modeName = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_MODE))
+                val styles = gson.fromJson<List<String>>(stylesJson, stringListType)
+                val weights = gson.fromJson<Map<String, Float>>(weightsJson, weightsMapType)
+                val mode = InterpolationMode.valueOf(modeName)
+                if (name.isNotEmpty() && styles != null && weights != null) {
+                    favorites += VoiceMixFavorite(name, styles, weights, mode)
+                }
+            }
+        }
+        cursor.close()
+        return favorites
     }
 }

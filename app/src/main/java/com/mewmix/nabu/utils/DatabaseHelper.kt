@@ -8,7 +8,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "kokoro.db"
-        private const val DATABASE_VERSION = 5
+        private const val DATABASE_VERSION = 6
         const val TABLE_PROJECTS = "projects"
         const val COLUMN_ID = "_id"
         const val COLUMN_URI = "uri"
@@ -35,6 +35,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_MESSAGES = "messages"
         const val COLUMN_CREATED_AT = "created_at"
         const val COLUMN_UPDATED_AT = "updated_at"
+
+        const val TABLE_VOICE_MIXES = "voice_mixes"
+        const val COLUMN_POSITION = "position"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -73,6 +76,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 "$COLUMN_CREATED_AT INTEGER NOT NULL," +
                 "$COLUMN_UPDATED_AT INTEGER NOT NULL)"
         db.execSQL(createConversationsTable)
+
+        createVoiceMixesTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -95,5 +100,20 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     "$COLUMN_UPDATED_AT INTEGER NOT NULL)"
             db.execSQL(createConversationsTable)
         }
+
+        if (oldVersion < 6) {
+            createVoiceMixesTable(db)
+        }
+    }
+
+    private fun createVoiceMixesTable(db: SQLiteDatabase) {
+        val createVoiceMixesTable = "CREATE TABLE IF NOT EXISTS $TABLE_VOICE_MIXES (" +
+                "$COLUMN_ID INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "$COLUMN_NAME TEXT NOT NULL UNIQUE," +
+                "$COLUMN_STYLES TEXT NOT NULL," +
+                "$COLUMN_WEIGHTS TEXT NOT NULL," +
+                "$COLUMN_MODE TEXT NOT NULL," +
+                "$COLUMN_POSITION INTEGER NOT NULL DEFAULT 0)"
+        db.execSQL(createVoiceMixesTable)
     }
 }

@@ -21,6 +21,9 @@ class VoiceMixSettingsTest {
         context = ApplicationProvider.getApplicationContext()
         // Clear settings before each test
         DatabaseManager.setSetting(context, "voice_mix_config", "")
+        DatabaseManager.setSetting(context, "voice_mix_favorites", "")
+        DatabaseManager.setSetting(context, "voice_mix_favorites_migrated", "")
+        DatabaseManager.setVoiceMixFavorites(context, emptyList())
     }
 
     @Test
@@ -100,5 +103,26 @@ class VoiceMixSettingsTest {
         
         assertEquals(1, favorites.size)
         assertEquals("Good One", favorites[0].name)
+    }
+
+    @Test
+    fun setVoiceMixFavorites_persistsInDatabaseTable() {
+        val favorite = VoiceMixFavorite(
+            name = "Space Mix",
+            styles = listOf("af_sky", "af_bella"),
+            weights = mapOf("af_sky" to 0.25f, "af_bella" to 0.75f),
+            interpolationMode = InterpolationMode.SPHERICAL
+        )
+
+        SettingsManager.setVoiceMixFavorites(context, listOf(favorite))
+        DatabaseManager.setSetting(context, "voice_mix_favorites", "")
+
+        val favorites = SettingsManager.getVoiceMixFavorites(context)
+
+        assertEquals(1, favorites.size)
+        assertEquals("Space Mix", favorites[0].name)
+        assertEquals(listOf("af_sky", "af_bella"), favorites[0].styles)
+        assertEquals(0.75f, favorites[0].weights["af_bella"]!!, 0.01f)
+        assertEquals(InterpolationMode.SPHERICAL, favorites[0].interpolationMode)
     }
 }
