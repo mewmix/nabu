@@ -40,3 +40,12 @@ app/release/output-metadata.json
 # Build output
 build/
 .cxx/
+
+# OS files
+.DS_Store
+*/.DS_Store
+
+# Nabu temporary files
+device_model_backups/
+session
+tmp_device_logs/

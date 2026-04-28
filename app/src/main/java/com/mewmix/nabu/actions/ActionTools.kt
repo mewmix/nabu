@@ -10,7 +10,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 object ActionTools {
+    const val SCHEDULED_AGENT_STEP_TOOL = "run_agent"
+
     private val schedulableToolNames = setOf(
+        SCHEDULED_AGENT_STEP_TOOL,
         "search_web_context",
         "get_current_time",
         "get_weather",
@@ -34,14 +37,15 @@ object ActionTools {
         ),
         Tool(
             name = "schedule_action",
-            description = "Schedule a background-safe tool execution at a specific local date-time.",
+            description = "Schedule one or more background-safe tool steps at a specific local date-time.",
             parameters = mapOf(
                 "instruction" to "Human-readable description of what should happen when due.",
                 "run_at_local" to "Local datetime in yyyy-MM-dd HH:mm format.",
                 "title" to "Short title.",
                 "recurrence" to "none, daily, or weekly",
                 "tool_name" to "The background-safe tool name to execute when due.",
-                "tool_arguments" to "JSON object of arguments for the deferred tool call."
+                "tool_arguments" to "JSON object of arguments for the deferred tool call.",
+                "steps" to "Optional JSON array of step objects: title, tool_name, tool_arguments, continue_on_error."
             )
         ),
         Tool(
@@ -53,7 +57,7 @@ object ActionTools {
         ),
         Tool(
             name = "list_scheduled_actions",
-            description = "List pending scheduled actions.",
+            description = "List scheduled actions with due/completed state and last run summary.",
             parameters = emptyMap()
         ),
         Tool(
@@ -277,6 +281,13 @@ object ActionTools {
 
     fun isSchedulableTool(toolName: String): Boolean = toolName in schedulableToolNames
 
+    fun schedulableToolsForAgent(): List<Tool> =
+        tools.filter { tool ->
+            tool.isAvailable &&
+                tool.name != SCHEDULED_AGENT_STEP_TOOL &&
+                isSchedulableTool(tool.name)
+        }
+
     private fun runGetCurrentTime(call: ToolCall): ToolResult {
         val current = LocalDateTime.now(ZoneId.systemDefault())
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -473,12 +484,13 @@ object ActionTools {
         val recurrence = call.arguments["recurrence"]?.toString()?.trim()?.lowercase().normalizeRecurrence()
         val toolName = call.arguments["tool_name"]?.toString()?.trim().orEmpty()
         val toolArguments = call.arguments["tool_arguments"].asStringKeyedMap()
+        val parsedSteps = parseScheduledSteps(call.arguments["steps"])
 
         if (runAtLocal.isBlank()) {
             return ToolResult(call.toolName, "Missing required parameter: run_at_local", true)
         }
-        if (instruction.isBlank() && toolName.isBlank()) {
-            return ToolResult(call.toolName, "Provide at least one of: instruction or tool_name", true)
+        if (instruction.isBlank() && toolName.isBlank() && parsedSteps.isEmpty()) {
+            return ToolResult(call.toolName, "Provide at least one of: instruction, tool_name, or steps", true)
         }
         if (toolName.isNotBlank() && !isSchedulableTool(toolName)) {
             return ToolResult(
@@ -490,12 +502,22 @@ object ActionTools {
         if (toolName.isBlank() && toolArguments.isNotEmpty()) {
             return ToolResult(call.toolName, "tool_arguments requires tool_name", true)
         }
+        val unsafeStep = parsedSteps.firstOrNull { !isSchedulableTool(it.toolName) }
+        if (unsafeStep != null) {
+            return ToolResult(
+                call.toolName,
+                "Tool '${unsafeStep.toolName}' cannot be scheduled from background execution. Allowed tools: ${schedulableToolNames.joinToString(", ")}",
+                true
+            )
+        }
 
         val triggerAt = parseLocalDateTime(runAtLocal)
             ?: return ToolResult(call.toolName, "Invalid run_at_local format. Use yyyy-MM-dd HH:mm", true)
 
         val resolvedInstruction = instruction.ifBlank {
-            if (toolArguments.isEmpty()) {
+            if (parsedSteps.isNotEmpty()) {
+                "Run ${parsedSteps.size} scheduled steps."
+            } else if (toolArguments.isEmpty()) {
                 "Run scheduled tool $toolName."
             } else {
                 "Run scheduled tool $toolName with arguments ${toolArguments.keys.joinToString(", ")}."
@@ -509,18 +531,37 @@ object ActionTools {
             triggerAtEpochMs = triggerAt,
             recurrence = recurrence,
             toolName = toolName.ifBlank { null },
-            toolArguments = toolArguments
+            toolArguments = toolArguments,
+            steps = parsedSteps.takeIf { it.isNotEmpty() }
         )
 
-        val executionSummary = if (action.toolName.isNullOrBlank()) {
-            "notification only"
-        } else {
-            "tool=${action.toolName}"
+        val executionSummary = when {
+            action.effectiveSteps().isEmpty() -> "notification only"
+            action.effectiveSteps().size == 1 -> "tool=${action.effectiveSteps().first().toolName}"
+            else -> "steps=${action.effectiveSteps().size}"
         }
         return ToolResult(
             call.toolName,
             "Scheduled '${action.title}' for ${formatEpoch(action.triggerAtEpochMs)} ($executionSummary, recurrence=${action.recurrence}, id=${action.id})."
         )
+    }
+
+    private fun parseScheduledSteps(rawSteps: Any?): List<ActionStep> {
+        val rawList = rawSteps as? List<*> ?: return emptyList()
+        return rawList.mapIndexedNotNull { index, raw ->
+            val map = raw.asStringKeyedMap()
+            val tool = (map["tool_name"] ?: map["name"] ?: map["tool"])?.toString()?.trim().orEmpty()
+            if (tool.isBlank()) return@mapIndexedNotNull null
+            val arguments = (map["tool_arguments"] ?: map["arguments"] ?: map["args"]).asStringKeyedMap()
+            val title = map["title"]?.toString()?.trim().orEmpty().ifBlank { "Step ${index + 1}: $tool" }
+            ActionStep(
+                id = map["id"]?.toString()?.trim().orEmpty().ifBlank { java.util.UUID.randomUUID().toString() },
+                title = title,
+                toolName = tool,
+                toolArguments = arguments,
+                continueOnError = parseBooleanArgument(map["continue_on_error"]) ?: false
+            )
+        }
     }
 
     private fun runFuzzyAction(context: Context, call: ToolCall): ToolResult {
@@ -554,12 +595,19 @@ object ActionTools {
         val actions = ScheduledActionStore.list(context)
         if (actions.isEmpty()) return ToolResult("list_scheduled_actions", "No scheduled actions.")
         val lines = actions.joinToString("\n") {
-            val execution = if (it.toolName.isNullOrBlank()) {
-                "notification only"
-            } else {
-                "tool=${it.toolName}"
+            val steps = it.effectiveSteps()
+            val execution = when {
+                steps.isEmpty() -> "notification only"
+                steps.size == 1 -> "tool=${steps.first().toolName}"
+                else -> "steps=${steps.size}"
             }
-            "- ${it.title} at ${formatEpoch(it.triggerAtEpochMs)} ($execution, recurrence=${it.recurrence}, id=${it.id})"
+            val state = if (it.completedAtEpochMs != null) {
+                "completed ${formatEpoch(it.completedAtEpochMs)}"
+            } else {
+                "due ${formatEpoch(it.triggerAtEpochMs)}"
+            }
+            val lastRun = it.lastRun?.let { run -> ", last=${run.status}: ${run.summary}" }.orEmpty()
+            "- ${it.title} $state ($execution, recurrence=${it.recurrence}, id=${it.id}$lastRun)"
         }
         return ToolResult("list_scheduled_actions", lines)
     }

@@ -5,11 +5,11 @@ import android.os.SystemClock
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mewmix.nabu.agent.AgentTurnRunner
 import com.mewmix.nabu.chat.ChatMessage
 import com.mewmix.nabu.chat.LlmBackend
-import com.mewmix.nabu.chat.CodexOAuthBackend
-import com.mewmix.nabu.chat.LiteRtLmBackend
 import com.mewmix.nabu.chat.LlamaCppBackend
+import com.mewmix.nabu.chat.LlmBackendFactory
 import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import com.mewmix.nabu.chat.MediaPipeBackend
 import com.mewmix.nabu.chat.LlmMessage
@@ -19,7 +19,6 @@ import com.mewmix.nabu.data.ConversationRole
 import com.mewmix.nabu.data.ConversationSummary
 import com.mewmix.nabu.data.ConversationTurn
 import com.mewmix.nabu.data.Model
-import com.mewmix.nabu.data.findDownloadedLlmArtifact
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.data.OAuthRemoteModels
@@ -58,7 +57,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.LinkedHashSet
@@ -82,7 +80,7 @@ class ChatViewModel(
     private val requestedInitialModelId = initialModelId
 
     companion object {
-        private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
+        private const val DEFAULT_MAX_CONTEXT_TOKENS = LlmBackendFactory.DEFAULT_MAX_CONTEXT_TOKENS
         private const val MAX_TOOL_CALLS_PER_TURN = 4
         private const val TOOL_EXECUTION_TIMEOUT_MS = 30_000L
         private const val DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
@@ -546,7 +544,6 @@ class ChatViewModel(
             BenchmarkManager.startLlm()
         }
 
-        val responseBuilder = StringBuilder()
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
@@ -585,19 +582,6 @@ class ChatViewModel(
         val appContext = context.applicationContext
 
         viewModelScope.launch(Dispatchers.IO) {
-            fun formatSyntheticToolCall(toolCall: ToolCall): String {
-                val args = toolCall.arguments.entries.joinToString(",") { (key, value) ->
-                    val encodedValue = when (value) {
-                        is Number, is Boolean -> value.toString()
-                        else -> "\"" + value.toString()
-                            .replace("\\", "\\\\")
-                            .replace("\"", "\\\"") + "\""
-                    }
-                    "\"$key\":$encodedValue"
-                }
-                return """<tool_call>{"name":"${toolCall.toolName}","arguments":{$args}}</tool_call>"""
-            }
-
             fun updateAssistantPlaceholder(content: String) {
                 viewModelScope.launch {
                     val last = _chatMessages.value.lastOrNull()
@@ -628,170 +612,64 @@ class ChatViewModel(
                 }
             }
 
-            fun runInference(
-                conversation: List<LlmMessage>,
-                remainingToolCalls: Int,
-                lastToolResult: ToolResult? = null,
-                usedBlankRecovery: Boolean = false
-            ) {
-                responseBuilder.clear()
-                sentenceBuilder.clear()
-                var suppressSpeechForThisPass = false
-
-                backend.sendMessage(conversation) { partial, done ->
-                    if (benchmarkEnabled && !done) {
+            val availableToolNames = ToolRegistry.tools.value
+                .filter { it.isAvailable }
+                .map { it.name }
+                .toSet()
+            AgentTurnRunner(
+                backend = backend,
+                scope = viewModelScope,
+                toolExecutor = { toolCall ->
+                    withContext(Dispatchers.IO) {
+                        executeToolCallInternal(appContext, toolCall)
+                    }
+                },
+                inferToolCallFromModelFailure = Companion::inferToolCallFromModelFailure,
+                recoveryConversationProvider = {
+                    prepareConversationForModel(
+                        maxTokens = backendMaxTokens,
+                        forceSingleTurn = true,
+                        recoveryMode = true
+                    )
+                },
+                logger = { DebugLogger.log(it) }
+            ).run(
+                initialConversation = conversationForModel,
+                latestUserMessage = trimmed,
+                availableToolNames = availableToolNames,
+                maxToolCalls = MAX_TOOL_CALLS_PER_TURN,
+                onPartialText = ::updateAssistantPlaceholder,
+                onSpeakablePartial = { partial, done ->
+                    sentenceBuilder.append(partial)
+                    if (!done) {
+                        processSentences(sentenceBuilder, false)
+                    }
+                },
+                onSuppressSpeakablePartials = {
+                    sentenceBuilder.clear()
+                },
+                onToolStart = { toolCall ->
+                    updateAssistantPlaceholder("Running tool ${toolCall.toolName}...")
+                },
+                onBenchmarkPartial = { partial ->
+                    if (benchmarkEnabled) {
                         BenchmarkManager.recordPartial(partial)
                     }
-
-                    if (!done) {
-                        responseBuilder.append(partial)
-                        if (partial.contains("<tool_call>", ignoreCase = true)) {
-                            suppressSpeechForThisPass = true
-                            sentenceBuilder.clear()
-                        } else {
-                            sentenceBuilder.append(partial)
-                        }
-                        updateAssistantPlaceholder(responseBuilder.toString())
-                        if (!suppressSpeechForThisPass) {
-                            processSentences(sentenceBuilder, false)
-                        }
-                        return@sendMessage
-                    }
-
-                    if (partial.isNotEmpty()) {
-                        responseBuilder.append(partial)
-                        if (partial.contains("<tool_call>", ignoreCase = true)) {
-                            suppressSpeechForThisPass = true
-                            sentenceBuilder.clear()
-                        } else {
-                            sentenceBuilder.append(partial)
-                        }
-                    }
-
-                    val finalResponse = responseBuilder.toString()
-                    val toolCall = ToolCallProtocol.extractToolCall(finalResponse)
-                    val looksLikeMalformedToolAttempt =
-                        finalResponse.trim().startsWith("```") ||
-                            finalResponse.contains("<tool_call", ignoreCase = true)
-                    val availableToolNames = ToolRegistry.tools.value
-                        .filter { it.isAvailable }
-                        .map { it.name }
-                        .toSet()
-                    val inferredToolCall =
-                        if (toolCall == null && lastToolResult == null &&
-                            (finalResponse.isBlank() || looksLikeMalformedToolAttempt)
-                        ) {
-                            inferToolCallFromModelFailure(trimmed, availableToolNames)
-                        } else {
-                            null
-                        }
-                    val effectiveToolCall = toolCall ?: inferredToolCall
-                    DebugLogger.log(
-                        "ChatViewModel: final response len=${finalResponse.length}, " +
-                            "toolDetected=${effectiveToolCall != null}, remainingToolCalls=$remainingToolCalls"
-                    )
-                    if (toolCall == null && inferredToolCall != null) {
-                        DebugLogger.log(
-                            "ChatViewModel: inferred tool ${inferredToolCall.toolName} from failed model response " +
-                                "using user message: ${trimmed.take(160)}"
-                        )
-                    }
-                    if (effectiveToolCall == null && finalResponse.isNotBlank()) {
-                        DebugLogger.log("ChatViewModel: final response preview: ${finalResponse.take(220)}")
-                    }
-                    if (effectiveToolCall != null && remainingToolCalls > 0) {
-                        DebugLogger.log(
-                            "ChatViewModel: executing tool ${effectiveToolCall.toolName} with ${effectiveToolCall.arguments}"
-                        )
-                        updateAssistantPlaceholder("Running tool ${effectiveToolCall.toolName}...")
-                        viewModelScope.launch(Dispatchers.IO) {
-                            val result = executeToolCallInternal(appContext, effectiveToolCall)
-                            DebugLogger.log(
-                                "ChatViewModel: tool ${effectiveToolCall.toolName} finished " +
-                                    "(error=${result.isError}, outputLength=${result.output.length})"
-                            )
-                            val modelToolCallMessage = if (toolCall != null) {
-                                finalResponse
-                            } else {
-                                formatSyntheticToolCall(effectiveToolCall)
-                            }
-                            val followUpConversation = conversation + listOf(
-                                LlmMessage(role = "model", content = modelToolCallMessage),
-                                LlmMessage(
-                                    role = "user",
-                                    content = ToolCallProtocol.formatToolResultForModel(result)
-                                )
-                            )
-                            runInference(
-                                followUpConversation,
-                                remainingToolCalls - 1,
-                                lastToolResult = result,
-                                usedBlankRecovery = false
-                            )
-                        }
-                        return@sendMessage
-                    }
-
-                    val shouldRetryAfterBlankResponse =
-                        finalResponse.isBlank() &&
-                            lastToolResult == null &&
-                            !usedBlankRecovery
-                    if (shouldRetryAfterBlankResponse) {
-                        val recoveryConversation = prepareConversationForModel(
-                            maxTokens = backendMaxTokens,
-                            forceSingleTurn = true,
-                            recoveryMode = true
-                        )
-                        val recoveryWouldChangePrompt = recoveryConversation != conversation
-                        if (recoveryWouldChangePrompt) {
-                            DebugLogger.log(
-                                "ChatViewModel: blank model response, retrying once with compacted single-turn recovery context"
-                            )
-                            updateAssistantPlaceholder("Retrying with compacted context...")
-                            runInference(
-                                recoveryConversation,
-                                remainingToolCalls = remainingToolCalls,
-                                lastToolResult = null,
-                                usedBlankRecovery = true
-                            )
-                            return@sendMessage
-                        }
-                        DebugLogger.log(
-                            "ChatViewModel: blank model response; skipping compacted-context retry because recovery prompt is unchanged"
-                        )
-                    }
-
-                    val exhaustedToolBudget = effectiveToolCall != null && remainingToolCalls <= 0
-                    val shouldFallbackToToolResult = lastToolResult != null && (
-                        finalResponse.isBlank() ||
-                            effectiveToolCall != null ||
-                            finalResponse.contains("<tool_call>", ignoreCase = true)
-                        )
-                    val resolvedResponse = when {
-                        exhaustedToolBudget && lastToolResult != null -> summarizeToolResultMessage(lastToolResult)
-                        exhaustedToolBudget -> "Tool-call limit reached for this turn."
-                        shouldFallbackToToolResult -> summarizeToolResultMessage(lastToolResult!!)
-                        finalResponse.isBlank() ->
-                            if (usedBlankRecovery) {
-                                "Model returned no usable output after retry."
-                            } else {
-                                "Model returned no usable output."
-                            }
-                        else -> finalResponse
-                    }
-
+                },
+                onRecoveryRetry = {
+                    updateAssistantPlaceholder("Retrying with compacted context...")
+                },
+                onComplete = { result ->
                     if (benchmarkEnabled) {
                         BenchmarkManager.finishLlm()
                         BenchmarkManager.profileSystem(context)
                     }
                     finalizeAssistantResponse(
-                        finalResponse = resolvedResponse,
-                        speakOutput = toolCall == null && !shouldFallbackToToolResult && !exhaustedToolBudget
+                        finalResponse = result.finalResponse,
+                        speakOutput = result.speakOutput
                     )
                 }
-            }
-
-            runInference(conversationForModel, MAX_TOOL_CALLS_PER_TURN)
+            )
         }
     }
 
@@ -909,57 +787,22 @@ class ChatViewModel(
             return
         }
 
-        val remoteSelection = OAuthRemoteModels.detectSelection(model.id, model.backend)
-        when (remoteSelection?.provider) {
-            OAuthRemoteModels.Provider.CODEX -> {
-                _activeModel.value = model
-                llmBackend?.close()
-                llmBackend = CodexOAuthBackend(
-                    context = context,
-                    model = remoteSelection.modelSlug
-                )
-                DebugLogger.log(
-                    "ChatViewModel: selected remote model provider=codex model=${remoteSelection.modelSlug} " +
-                        "endpoint=chatgpt.com/backend-api/codex/responses"
-                )
-                llmBackend?.initialize()
-            }
-            null -> {
-                val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
-                if (artifact == null) {
-                    DebugLogger.log("Model file not found for ${model.id} (.task/.litertlm/.gguf)")
-                    llmBackend = null
-                    return
-                }
-                _activeModel.value = model
-                llmBackend?.close()
-                llmBackend = when (artifact.backend) {
-                    "llama" -> {
-                        val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
-                        LlamaCppBackend(context, artifact.file.absolutePath, runtimeConfig).also { llama ->
-                            viewModelScope.launch(Dispatchers.IO) {
-                                llama.initialize()
-                            }
-                        }
-                    }
-                    "litertlm" -> {
-                        LiteRtLmBackend(
-                            context = context,
-                            modelPath = artifact.file.absolutePath
-                        ).also { liteRtLm ->
-                            liteRtLm.initialize()
-                        }
-                    }
-                    else -> {
-                        MediaPipeBackend(
-                            context = context,
-                            modelPath = artifact.file.absolutePath,
-                            initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
-                        ).also { mediaPipe ->
-                            mediaPipe.initialize()
-                        }
-                    }
-                }
+        val created = LlmBackendFactory.create(
+            context = context,
+            modelId = model.id,
+            llmOverrides = llmOverrides,
+            initializeSynchronously = false
+        )
+        if (created == null) {
+            llmBackend = null
+            return
+        }
+        _activeModel.value = model
+        llmBackend?.close()
+        llmBackend = created.backend
+        if (created.backend is LlamaCppBackend) {
+            viewModelScope.launch(Dispatchers.IO) {
+                created.backend.initialize()
             }
         }
         if (persistConversation) {
@@ -1186,13 +1029,7 @@ class ChatViewModel(
         needles.any { text.contains(it) }
 
     private fun summarizeToolResultMessage(result: ToolResult): String {
-        val cleaned = result.output.trim()
-        val clipped = if (cleaned.length > 700) "${cleaned.take(700)}..." else cleaned
-        return if (result.isError) {
-            "Tool ${result.toolName} failed: ${if (clipped.isNotEmpty()) clipped else "no error details"}"
-        } else {
-            "Tool ${result.toolName} result:\n$clipped"
-        }
+        return AgentTurnRunner.summarizeToolResultMessage(result)
     }
 
     private suspend fun executeToolCallInternal(appContext: Context, toolCall: ToolCall): ToolResult {

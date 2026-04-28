@@ -15,8 +15,8 @@ android {
         applicationId = "com.mewmix.nabu"
         minSdk = 29
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.5.13"
+        versionCode = 20
+        versionName = "0.5.14"
 
         val gitCommitHashProvider = providers.exec {
             commandLine("git", "rev-parse", "--short=7", "HEAD")

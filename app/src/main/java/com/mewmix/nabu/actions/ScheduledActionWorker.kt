@@ -10,7 +10,6 @@ import androidx.work.WorkerParameters
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mewmix.nabu.R
-import com.mewmix.nabu.tools.ToolCall
 import kotlin.math.absoluteValue
 
 class ScheduledActionWorker(
@@ -22,60 +21,85 @@ class ScheduledActionWorker(
 
     override fun doWork(): Result {
         val actionId = inputData.getString(KEY_ACTION_ID).orEmpty()
+        val fallbackAction = actionFromInputData(actionId)
+        val action = ScheduledActionStore.find(applicationContext, actionId) ?: fallbackAction
+        val executionRun = if (action.effectiveSteps().isNotEmpty()) {
+            ActionPlanRunner.run(applicationContext, action) { appContext, call ->
+                val step = action.effectiveSteps().firstOrNull {
+                    it.toolName == call.toolName && it.toolArguments == call.arguments
+                }
+                if (call.toolName == ActionTools.SCHEDULED_AGENT_STEP_TOOL && step != null) {
+                    ScheduledAgentStepExecutor.execute(appContext, action, step)
+                } else {
+                    ActionTools.execute(appContext, call)
+                }
+            }
+        } else {
+            null
+        }
+
+        if (executionRun != null) {
+            ScheduledActionStore.recordRun(applicationContext, action.id, executionRun)
+        }
+
+        val storedAction = ScheduledActionStore.find(applicationContext, action.id) ?: action
+
+        if (storedAction.recurrence == ScheduledAction.RECURRENCE_DAILY || storedAction.recurrence == ScheduledAction.RECURRENCE_WEEKLY) {
+            val step = if (storedAction.recurrence == ScheduledAction.RECURRENCE_WEEKLY) {
+                7L * 24L * 60L * 60L * 1000L
+            } else {
+                24L * 60L * 60L * 1000L
+            }
+            val next = storedAction.copy(
+                triggerAtEpochMs = storedAction.triggerAtEpochMs + step,
+                completedAtEpochMs = null
+            )
+            ScheduledActionScheduler.schedule(applicationContext, next)
+        } else {
+            val finalRun = executionRun ?: ActionRun(
+                id = java.util.UUID.randomUUID().toString(),
+                actionId = action.id,
+                startedAtEpochMs = System.currentTimeMillis(),
+                finishedAtEpochMs = System.currentTimeMillis(),
+                status = ActionRun.STATUS_SUCCEEDED,
+                stepResults = emptyList(),
+                summary = action.instruction
+            )
+            ScheduledActionStore.complete(applicationContext, action.id, finalRun)
+        }
+
+        ensureChannel()
+        NotificationManagerCompat.from(applicationContext).notify(
+            action.id.hashCode().absoluteValue,
+            NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_chat_24)
+                .setContentTitle(action.title.ifBlank { "Scheduled action" })
+                .setContentText(notificationText(action.instruction, executionRun))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody(action.instruction, executionRun)))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .build()
+        )
+
+        return Result.success()
+    }
+
+    private fun actionFromInputData(actionId: String): ScheduledAction {
         val title = inputData.getString(KEY_TITLE).orEmpty().ifBlank { "Scheduled action" }
         val instruction = inputData.getString(KEY_INSTRUCTION).orEmpty().ifBlank { "Action is due now." }
         val triggerAt = inputData.getLong(KEY_TRIGGER_AT, System.currentTimeMillis())
         val recurrence = inputData.getString(KEY_RECURRENCE).orEmpty().ifBlank { ScheduledAction.RECURRENCE_NONE }
         val toolName = inputData.getString(KEY_TOOL_NAME)?.trim().orEmpty()
         val toolArguments = parseToolArguments(inputData.getString(KEY_TOOL_ARGUMENTS_JSON))
-
-        val executionResult = if (toolName.isNotBlank()) {
-            ActionTools.execute(
-                applicationContext,
-                ToolCall(toolName, toolArguments)
-            ) ?: com.mewmix.nabu.tools.ToolResult(
-                toolName = toolName,
-                output = "Scheduled tool '$toolName' is unavailable.",
-                isError = true
-            )
-        } else {
-            null
-        }
-
-        ensureChannel()
-        NotificationManagerCompat.from(applicationContext).notify(
-            actionId.hashCode().absoluteValue,
-            NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_chat_24)
-                .setContentTitle(title)
-                .setContentText(notificationText(instruction, executionResult))
-                .setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody(instruction, executionResult)))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setAutoCancel(true)
-                .build()
+        return ScheduledAction(
+            id = actionId.ifBlank { java.util.UUID.randomUUID().toString() },
+            title = title,
+            instruction = instruction,
+            triggerAtEpochMs = triggerAt,
+            recurrence = recurrence,
+            toolName = toolName.ifBlank { null },
+            toolArguments = toolArguments
         )
-
-        if (recurrence == ScheduledAction.RECURRENCE_DAILY || recurrence == ScheduledAction.RECURRENCE_WEEKLY) {
-            val step = if (recurrence == ScheduledAction.RECURRENCE_WEEKLY) {
-                7L * 24L * 60L * 60L * 1000L
-            } else {
-                24L * 60L * 60L * 1000L
-            }
-            val next = ScheduledAction(
-                id = actionId,
-                title = title,
-                instruction = instruction,
-                triggerAtEpochMs = triggerAt + step,
-                recurrence = recurrence,
-                toolName = toolName.ifBlank { null },
-                toolArguments = toolArguments
-            )
-            ScheduledActionScheduler.schedule(applicationContext, next)
-        } else {
-            ScheduledActionStore.remove(applicationContext, actionId)
-        }
-
-        return Result.success()
     }
 
     private fun ensureChannel() {
@@ -116,25 +140,27 @@ class ScheduledActionWorker(
 
     private fun notificationText(
         instruction: String,
-        executionResult: com.mewmix.nabu.tools.ToolResult?
+        executionRun: ActionRun?
     ): String {
         return when {
-            executionResult == null -> instruction
-            executionResult.isError -> "Scheduled action failed"
+            executionRun == null -> instruction
+            executionRun.status == ActionRun.STATUS_FAILED -> "Scheduled action failed"
             else -> "Scheduled action completed"
         }
     }
 
     private fun notificationBody(
         instruction: String,
-        executionResult: com.mewmix.nabu.tools.ToolResult?
+        executionRun: ActionRun?
     ): String {
-        if (executionResult == null) return instruction
-        val clippedOutput = executionResult.output.trim().ifBlank { "No output." }
-        return if (executionResult.isError) {
-            "Tool ${executionResult.toolName} failed: $clippedOutput"
-        } else {
-            "Tool ${executionResult.toolName} result: $clippedOutput"
+        if (executionRun == null) return instruction
+        val stepLines = executionRun.stepResults.joinToString("\n") { result ->
+            val clippedOutput = result.output.trim().ifBlank { "No output." }.take(240)
+            val state = if (result.isError) "failed" else "completed"
+            "${result.title} ($state): $clippedOutput"
         }
+        return listOf(executionRun.summary, stepLines)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
     }
 }

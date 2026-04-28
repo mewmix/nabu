@@ -234,6 +234,68 @@ class ActionToolsTest {
     }
 
     @Test
+    fun execute_scheduleActionAcceptsStepSeries() {
+        val result = ActionTools.execute(
+            context,
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Morning context",
+                    "instruction" to "Prepare morning context.",
+                    "run_at_local" to "2030-01-01 12:00",
+                    "steps" to listOf(
+                        mapOf(
+                            "title" to "Check weather",
+                            "tool_name" to "get_weather",
+                            "tool_arguments" to mapOf("location" to "Seattle")
+                        ),
+                        mapOf(
+                            "title" to "Remember run",
+                            "tool_name" to "save_memory",
+                            "tool_arguments" to mapOf("fact" to "morning context ran"),
+                            "continue_on_error" to true
+                        )
+                    )
+                )
+            )
+        )
+
+        assertFalse(result?.isError ?: true)
+        assertTrue(result?.output?.contains("steps=2") == true)
+        val stored = ScheduledActionStore.list(context).firstOrNull { it.title == "Morning context" }
+        assertNotNull(stored)
+        assertEquals(2, stored?.effectiveSteps()?.size)
+    }
+
+    @Test
+    fun execute_scheduleActionAcceptsAgentStep() {
+        val result = ActionTools.execute(
+            context,
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Agent check",
+                    "run_at_local" to "2030-01-01 12:00",
+                    "steps" to listOf(
+                        mapOf(
+                            "title" to "Reason with tools",
+                            "tool_name" to ActionTools.SCHEDULED_AGENT_STEP_TOOL,
+                            "tool_arguments" to mapOf(
+                                "instruction" to "Check the weather and summarize it.",
+                                "model_id" to "local-test-model",
+                                "max_tool_calls" to 2
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        assertFalse(result?.isError ?: true)
+        assertTrue(result?.output?.contains("tool=${ActionTools.SCHEDULED_AGENT_STEP_TOOL}") == true)
+    }
+
+    @Test
     fun execute_scheduleActionRejectsInteractiveIntentTool() {
         val result = ActionTools.execute(
             context,

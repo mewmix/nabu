@@ -46,7 +46,8 @@ object ScheduledActionScheduler {
         triggerAtEpochMs: Long,
         recurrence: String,
         toolName: String? = null,
-        toolArguments: Map<String, Any> = emptyMap()
+        toolArguments: Map<String, Any> = emptyMap(),
+        steps: List<ActionStep>? = null
     ): ScheduledAction {
         val action = ScheduledAction(
             id = UUID.randomUUID().toString(),
@@ -55,7 +56,8 @@ object ScheduledActionScheduler {
             triggerAtEpochMs = triggerAtEpochMs,
             recurrence = recurrence,
             toolName = toolName,
-            toolArguments = toolArguments
+            toolArguments = toolArguments,
+            steps = steps
         )
         schedule(context, action)
         return action
