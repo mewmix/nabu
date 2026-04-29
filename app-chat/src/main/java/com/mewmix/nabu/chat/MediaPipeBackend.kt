@@ -73,8 +73,9 @@ class MediaPipeBackend(
         }
 
         val payload = buildConversationPayload(conversation)
-        DebugLogger.log("MediaPipeBackend sendMessage with ${conversation.size} turns")
-        generateWithSession(payload, resultListener)
+        val image = conversation.lastOrNull { it.images.isNotEmpty() }?.images?.firstOrNull()
+        DebugLogger.log("MediaPipeBackend sendMessage with ${conversation.size} turns (hasImage=${image != null})")
+        generateWithSession(payload, resultListener, image)
     }
 
     override fun supportsImageInput(): Boolean = true

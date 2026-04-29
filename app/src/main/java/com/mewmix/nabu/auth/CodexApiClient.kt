@@ -296,9 +296,22 @@ class CodexApiClient(
                         }
                     }
                     
+                    val contentParts = JSONArray()
+                    if (textContent.isNotBlank()) {
+                        contentParts.put(JSONObject().put("type", "input_text").put("text", textContent))
+                    }
+                    message.images.forEach { img ->
+                        val b64 = bitmapToBase64(img.bitmap)
+                        contentParts.put(
+                            JSONObject().put("type", "input_image")
+                                .put("image_data", b64)
+                                .put("detail", "auto")
+                        )
+                    }
+
                     input.put(
                         JSONObject().put("type", "message").put("role", "user")
-                            .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", textContent)))
+                            .put("content", contentParts)
                     )
                 }
             }
@@ -324,6 +337,13 @@ class CodexApiClient(
             userCount = userInputCount,
             assistantCount = assistantInputCount
         )
+    }
+
+    private fun bitmapToBase64(bitmap: android.graphics.Bitmap): String {
+        val outputStream = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
+        val byteArray = outputStream.toByteArray()
+        return android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
     }
 
     suspend fun fetchUsageSummary(context: Context): Result<String> {

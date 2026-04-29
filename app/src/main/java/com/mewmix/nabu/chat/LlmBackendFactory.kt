@@ -58,6 +58,7 @@ object LlmBackendFactory {
             "litertlm" -> {
                 LiteRtLmBackend(
                     context = appContext,
+                    modelId = model.id,
                     modelPath = artifact.file.absolutePath
                 ).also { it.initialize() }
             }

@@ -21,6 +21,7 @@ data class ConversationSummary(
 data class ConversationTurn(
     val role: ConversationRole,
     val content: String,
+    val imagePath: String? = null
 )
 
 enum class ConversationRole {

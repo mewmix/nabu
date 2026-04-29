@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 class LiteRtLmBackend(
     private val context: Context,
+    private val modelId: String,
     private val modelPath: String
 ) : LlmBackend {
     private val initialized = AtomicBoolean(false)
@@ -31,24 +32,25 @@ class LiteRtLmBackend(
         if (initialized.get()) return
         synchronized(this) {
             if (initialized.get()) return
-            DebugLogger.log("LiteRtLmBackend initialize with model $modelPath")
+            DebugLogger.log("LiteRtLmBackend initialize with model $modelId at $modelPath")
             initializationError.set(null)
+            val baseBackend = selectBackendForModel(modelPath)
+            val isVisionSupported = VisionModelSupport.supportsImageInput(modelId)
+            
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = selectBackendForModel(modelPath),
-                // Keep optional modalities unset for text-only models.
-                visionBackend = null,
-                audioBackend = null,
-                // Let the runtime use the model's supported context budget.
+                backend = baseBackend,
+                visionBackend = if (isVisionSupported) baseBackend else null,
+                audioBackend = null, // placeholder for future audio support
                 maxNumTokens = null,
-                maxNumImages = null,
+                maxNumImages = if (isVisionSupported) 1 else null,
                 cacheDir = context.cacheDir.absolutePath
             )
             try {
                 engine = Engine(engineConfig)
                 engine?.initialize()
                 initialized.set(true)
-                DebugLogger.log("LiteRtLmBackend initialized backend=${engineConfig.backend}")
+                DebugLogger.log("LiteRtLmBackend initialized modelId=$modelId backend=${engineConfig.backend} vision=${engineConfig.visionBackend != null}")
             } catch (t: Throwable) {
                 engine = null
                 initialized.set(false)
@@ -56,6 +58,41 @@ class LiteRtLmBackend(
                 initializationError.set(message)
                 DebugLogger.log("LiteRtLmBackend initialize failed: $message")
             }
+        }
+    }
+
+    override fun supportsImageInput(): Boolean = VisionModelSupport.supportsImageInput(modelId)
+
+    override fun sendMessage(
+        conversation: List<LlmMessage>,
+        image: LlmImageInput,
+        resultListener: (partialResult: String, done: Boolean) -> Unit
+    ) {
+        val engine = ensureEngine(resultListener) ?: return
+        val prepared = prepareConversationInput(conversation)
+        if (prepared == null) {
+            resultListener("LiteRT-LM image request is missing a user message.", true)
+            return
+        }
+
+        try {
+            engine.createConversation(prepared.config).use { liteConversation ->
+                activeConversation.set(liteConversation)
+                // In LiteRT-LM, images are often passed as parts of the message or via a specific API.
+                // Assuming sendMessageAsync supports multimodal content if the engine is configured for vision.
+                // We pass the image alongside the prompt.
+                streamMessage(
+                    conversation = liteConversation,
+                    prompt = prepared.prompt,
+                    image = image,
+                    resultListener = resultListener
+                )
+            }
+        } catch (t: Throwable) {
+            DebugLogger.log("LiteRtLmBackend image generation error: ${t.message}")
+            resultListener("LiteRT-LM image generation failed.", true)
+        } finally {
+            activeConversation.set(null)
         }
     }
 
@@ -76,6 +113,7 @@ class LiteRtLmBackend(
                 streamMessage(
                     conversation = liteConversation,
                     prompt = prepared.prompt,
+                    image = prepared.image,
                     resultListener = resultListener
                 )
             }
@@ -144,11 +182,21 @@ class LiteRtLmBackend(
     private fun streamMessage(
         conversation: Conversation,
         prompt: String,
+        image: LlmImageInput? = null,
         resultListener: (partialResult: String, done: Boolean) -> Unit
     ) {
         var emittedText = ""
         runBlocking {
-            conversation.sendMessageAsync(prompt).collect { chunk ->
+            val flow = if (image != null) {
+                val contents = mutableListOf<Contents>()
+                if (prompt.isNotBlank()) contents.add(Contents.of(prompt))
+                contents.add(Contents.of(image.bitmap))
+                conversation.sendMessageAsync(contents)
+            } else {
+                conversation.sendMessageAsync(prompt)
+            }
+
+            flow.collect { chunk ->
                 val fullText = chunk.toString()
                 val delta = if (fullText.startsWith(emittedText)) {
                     fullText.removePrefix(emittedText)
@@ -167,8 +215,8 @@ class LiteRtLmBackend(
     private fun prepareConversationInput(conversation: List<LlmMessage>): PreparedConversationInput? {
         val systemPrompt = conversation.firstOrNull { it.role == "system" }?.content?.trim().orEmpty()
         val nonSystemMessages = conversation.filterNot { it.role == "system" }
-        val latestUserMessage = nonSystemMessages.lastOrNull { it.role == "user" }?.content?.trim().orEmpty()
-        if (latestUserMessage.isBlank()) return null
+        val latestUserMessage = nonSystemMessages.lastOrNull { it.role == "user" }
+        if (latestUserMessage == null || (latestUserMessage.content.isBlank() && latestUserMessage.images.isEmpty())) return null
 
         val latestUserIndex = nonSystemMessages.indexOfLast { it.role == "user" }
         val initialMessages = nonSystemMessages
@@ -188,16 +236,28 @@ class LiteRtLmBackend(
 
         return PreparedConversationInput(
             config = config,
-            prompt = latestUserMessage
+            prompt = latestUserMessage.content,
+            image = latestUserMessage.images.firstOrNull()
         )
     }
 
     private fun toLiteRtLmMessage(message: LlmMessage): Message? {
         val content = message.content.trim()
-        if (content.isBlank()) return null
+        val images = message.images
+        if (content.isBlank() && images.isEmpty()) return null
+
         return when (message.role) {
             "model" -> Message.Companion.model(content)
-            "user" -> Message.Companion.user(content)
+            "user" -> {
+                if (images.isEmpty()) {
+                    Message.Companion.user(content)
+                } else {
+                    val contents = mutableListOf<Contents>()
+                    if (content.isNotBlank()) contents.add(Contents.of(content))
+                    images.forEach { contents.add(Contents.of(it.bitmap)) }
+                    Message.Companion.user(contents)
+                }
+            }
             else -> null
         }
     }
@@ -220,6 +280,7 @@ class LiteRtLmBackend(
 
     private data class PreparedConversationInput(
         val config: ConversationConfig,
-        val prompt: String
+        val prompt: String,
+        val image: LlmImageInput? = null
     )
 }
