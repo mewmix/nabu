@@ -10,7 +10,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.lang.StringBuilder
 
-data class ChatMessage(val message: String, val isFromUser: Boolean)
+data class ChatMessage(
+    val message: String,
+    val isFromUser: Boolean,
+    val image: LlmImageInput? = null
+)
 
 class ChatViewModel(private val llmBackend: LlmBackend) : ViewModel() {
 

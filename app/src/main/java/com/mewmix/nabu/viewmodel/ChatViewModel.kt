@@ -79,6 +79,32 @@ class ChatViewModel(
 ) : ViewModel() {
     private val requestedInitialModelId = initialModelId
 
+    private val _pendingImage = MutableStateFlow<LlmImageInput?>(null)
+    val pendingImage = _pendingImage.asStateFlow()
+
+    fun setPendingImage(image: LlmImageInput?) {
+        _pendingImage.value = image
+    }
+
+    private fun saveImageToInternalStorage(bitmap: android.graphics.Bitmap): String {
+        val filename = "img_${System.currentTimeMillis()}.png"
+        val file = File(context.filesDir, "chat_images").apply { if (!exists()) mkdirs() }
+        val imageFile = File(file, filename)
+        java.io.FileOutputStream(imageFile).use { out ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+        }
+        return imageFile.absolutePath
+    }
+
+    private fun loadBitmapFromPath(path: String): android.graphics.Bitmap? {
+        return try {
+            android.graphics.BitmapFactory.decodeFile(path)
+        } catch (e: Exception) {
+            DebugLogger.log("Error loading bitmap from $path: ${e.message}")
+            null
+        }
+    }
+
     companion object {
         private const val DEFAULT_MAX_CONTEXT_TOKENS = LlmBackendFactory.DEFAULT_MAX_CONTEXT_TOKENS
         private const val MAX_TOOL_CALLS_PER_TURN = 4
@@ -525,7 +551,8 @@ class ChatViewModel(
 
     fun sendMessage(message: String) {
         val trimmed = message.trim()
-        if (trimmed.isEmpty()) return
+        val image = _pendingImage.value
+        if (trimmed.isEmpty() && image == null) return
         val conversationId = _activeConversationId.value ?: run {
             DebugLogger.log("No active conversation; ignoring message")
             return
@@ -533,9 +560,13 @@ class ChatViewModel(
         val directToolCall = ToolCallProtocol.parseDirectUserToolCommand(trimmed)
 
         dropQueuedAudio = false
-        DebugLogger.log("ChatViewModel sendMessage: $trimmed")
-        _chatMessages.value += ChatMessage(trimmed, true)
-        conversationHistory.add(ConversationTurn(ConversationRole.USER, trimmed))
+        DebugLogger.log("ChatViewModel sendMessage: $trimmed (hasImage=${image != null})")
+        _chatMessages.value += ChatMessage(trimmed, true, image)
+        
+        val imagePath = image?.let { saveImageToInternalStorage(it.bitmap) }
+        conversationHistory.add(ConversationTurn(ConversationRole.USER, trimmed, imagePath))
+        
+        _pendingImage.value = null
         persistConversationMessages()
         _isLoading.value = true
 
@@ -762,7 +793,12 @@ class ChatViewModel(
         conversationHistory.clear()
         if (conversation != null) {
             conversationHistory.addAll(conversation.messages)
-            _chatMessages.value = conversation.messages.map { ChatMessage(it.content, it.role == ConversationRole.USER) }
+            _chatMessages.value = conversation.messages.map { turn ->
+                val image = if (!turn.imagePath.isNullOrBlank()) {
+                    loadBitmapFromPath(turn.imagePath)?.let { LlmImageInput(it) }
+                } else null
+                ChatMessage(turn.content, turn.role == ConversationRole.USER, image)
+            }
         } else {
             _chatMessages.value = emptyList()
         }
@@ -922,7 +958,13 @@ class ChatViewModel(
                 ConversationRole.USER -> "user"
                 ConversationRole.AGENT -> "model" // Changed from "agent" to "model"
             }
-            LlmMessage(role = role, content = turn.content)
+            val images = if (!turn.imagePath.isNullOrBlank()) {
+                val bitmap = loadBitmapFromPath(turn.imagePath)
+                if (bitmap != null) listOf(LlmImageInput(bitmap)) else emptyList()
+            } else {
+                emptyList()
+            }
+            LlmMessage(role = role, content = turn.content, images = images)
         })
         return messages
     }

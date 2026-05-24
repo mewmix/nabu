@@ -43,6 +43,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.MessageBubble
 import com.mewmix.nabu.tools.Tool
 import com.mewmix.nabu.tools.ToolRegistry
@@ -63,6 +75,7 @@ fun ChatScreen(
     viewModel: ChatViewModel,
     initialMessage: String = "",
 ) {
+    val context = LocalContext.current
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isSynthesizing by viewModel.isSynthesizing.collectAsState()
@@ -74,6 +87,24 @@ fun ChatScreen(
     val activeModel by viewModel.activeModel.collectAsState()
     val chatContextMode by viewModel.chatContextMode.collectAsState()
     val availableTools by ToolRegistry.tools.collectAsState()
+    val pendingImage by viewModel.pendingImage.collectAsState()
+
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            val bitmap = if (android.os.Build.VERSION.SDK_INT < 28) {
+                @Suppress("DEPRECATION")
+                android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, it)
+            } else {
+                val source = android.graphics.ImageDecoder.createSource(context.contentResolver, it)
+                android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                    decoder.isMutableRequired = true
+                }
+            }
+            viewModel.setPendingImage(LlmImageInput(bitmap))
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshStyles()
@@ -498,6 +529,31 @@ fun ChatScreen(
                 }
             }
 
+            if (pendingImage != null) {
+                Box(
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(100.dp)
+                        .border(1.dp, Brutal.amber, RoundedCornerShape(8.dp))
+                ) {
+                    Image(
+                        bitmap = pendingImage!!.bitmap.asImageBitmap(),
+                        contentDescription = "Pending image",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Clear image",
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .clickable { viewModel.setPendingImage(null) },
+                        tint = Brutal.red
+                    )
+                }
+            }
+
             if (isLoading) {
                 Box(
                     modifier = Modifier
@@ -522,6 +578,14 @@ fun ChatScreen(
                         .weight(1f)
                         .border(1.dp, Brutal.hairline, RoundedCornerShape(24.dp)),
                     placeholder = { Text("Message", color = Brutal.textDim) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = "Add image",
+                            modifier = Modifier.clickable { imagePicker.launch("image/*") },
+                            tint = Brutal.textDim
+                        )
+                    },
                     shape = RoundedCornerShape(24.dp),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Brutal.panelBg,
