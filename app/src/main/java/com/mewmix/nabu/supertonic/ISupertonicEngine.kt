@@ -22,4 +22,24 @@ interface ISupertonicEngine : TTSEngine {
         rng: Random = Random.Default,
         env: OrtEnvironment = OrtEnvironment.getEnvironment()
     ): SupertonicResult
+
+    suspend fun synthesize(
+        text: String,
+        language: String,
+        style: SupertonicStyle,
+        totalStep: Int = 8,
+        speed: Float = 1.05f,
+        rng: Random = Random.Default,
+        env: OrtEnvironment = OrtEnvironment.getEnvironment()
+    ): SupertonicResult = synthesize(text, style, totalStep, speed, rng, env)
+
+    suspend fun synthesize(
+        texts: List<String>,
+        languages: List<String>,
+        style: SupertonicStyle,
+        totalStep: Int = 8,
+        speed: Float = 1.05f,
+        rng: Random = Random.Default,
+        env: OrtEnvironment = OrtEnvironment.getEnvironment()
+    ): SupertonicResult = synthesize(texts, style, totalStep, speed, rng, env)
 }

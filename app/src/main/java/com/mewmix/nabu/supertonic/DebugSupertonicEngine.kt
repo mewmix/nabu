@@ -11,18 +11,27 @@ import kotlin.random.Random
 
 class DebugSupertonicEngine(
     private val delegate: ISupertonicEngine,
-    private val modelDir: File
+    private val modelDir: File,
+    private val defaultLanguage: String = "en"
 ) : AutoCloseable, TTSEngine {
 
     private var defaultStyle: SupertonicStyle? = null
 
-    constructor(modelDir: File, env: OrtEnvironment = OrtEnvironment.getEnvironment()) : this(
-        if (modelDir.name.contains("supertonic-2") || File(modelDir, "config.json").exists()) {
+    constructor(
+        modelDir: File,
+        env: OrtEnvironment = OrtEnvironment.getEnvironment(),
+        defaultLanguage: String = "en"
+    ) : this(
+        if (modelDir.name.contains("supertonic-2") ||
+            modelDir.name.contains("supertonic-3") ||
+            File(modelDir, "config.json").exists()
+        ) {
             Supertonic2Engine(modelDir, env)
         } else {
             SupertonicEngine(modelDir, env)
         },
-        modelDir
+        modelDir,
+        defaultLanguage
     )
 
     init {
@@ -67,8 +76,13 @@ class DebugSupertonicEngine(
          DebugLogger.log("DebugSupertonicEngine: synthesize called via TTSEngine interface")
          val style = defaultStyle ?: throw IllegalStateException("No style loaded. Cannot synthesize.")
 
-         val result = synthesize(text, style, speed = speed)
+         val result = synthesize(text, defaultLanguage, style, speed = speed)
          return AudioResult(result.wav, result.sampleRate)
+    }
+
+    suspend fun synthesize(text: String, speed: Float, language: String): SupertonicResult {
+        val style = defaultStyle ?: throw IllegalStateException("No style loaded. Cannot synthesize.")
+        return synthesize(text, language, style, speed = speed)
     }
 
     suspend fun synthesize(
@@ -83,7 +97,7 @@ class DebugSupertonicEngine(
     suspend fun synthesize(
         text: String,
         style: SupertonicStyle,
-        totalStep: Int = 5,
+        totalStep: Int = 8,
         speed: Float = 1.05f,
         rng: Random = Random.Default,
         env: OrtEnvironment = OrtEnvironment.getEnvironment()
@@ -102,9 +116,31 @@ class DebugSupertonicEngine(
     }
 
     suspend fun synthesize(
+        text: String,
+        language: String,
+        style: SupertonicStyle,
+        totalStep: Int = 8,
+        speed: Float = 1.05f,
+        rng: Random = Random.Default,
+        env: OrtEnvironment = OrtEnvironment.getEnvironment()
+    ): SupertonicResult {
+        DebugLogger.log("DebugSupertonicEngine: synthesizing text='$text', lang=$language, steps=$totalStep, speed=$speed")
+        val start = System.currentTimeMillis()
+        return try {
+            val result = delegate.synthesize(text, language, style, totalStep, speed, rng, env)
+            val duration = System.currentTimeMillis() - start
+            DebugLogger.log("DebugSupertonicEngine: synthesis complete in ${duration}ms. Audio duration: ${result.duration.sum()}s")
+            result
+        } catch (e: Exception) {
+            DebugLogger.log("DebugSupertonicEngine: synthesis failed: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun synthesize(
         texts: List<String>,
         style: SupertonicStyle,
-        totalStep: Int = 5,
+        totalStep: Int = 8,
         speed: Float = 1.05f,
         rng: Random = Random.Default,
         env: OrtEnvironment = OrtEnvironment.getEnvironment()

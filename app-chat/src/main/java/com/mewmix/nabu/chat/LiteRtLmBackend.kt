@@ -2,6 +2,7 @@ package com.mewmix.nabu.chat
 
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Contents
@@ -13,6 +14,7 @@ import com.google.ai.edge.litertlm.ToolProvider
 import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -188,10 +190,10 @@ class LiteRtLmBackend(
         var emittedText = ""
         runBlocking {
             val flow = if (image != null) {
-                val contents = mutableListOf<Contents>()
-                if (prompt.isNotBlank()) contents.add(Contents.of(prompt))
-                contents.add(Contents.of(image.bitmap))
-                conversation.sendMessageAsync(contents)
+                val contents = mutableListOf<Content>()
+                if (prompt.isNotBlank()) contents.add(Content.Text(prompt))
+                contents.add(Content.ImageBytes(image.toPngBytes()))
+                conversation.sendMessageAsync(Contents.of(contents))
             } else {
                 conversation.sendMessageAsync(prompt)
             }
@@ -252,10 +254,10 @@ class LiteRtLmBackend(
                 if (images.isEmpty()) {
                     Message.Companion.user(content)
                 } else {
-                    val contents = mutableListOf<Contents>()
-                    if (content.isNotBlank()) contents.add(Contents.of(content))
-                    images.forEach { contents.add(Contents.of(it.bitmap)) }
-                    Message.Companion.user(contents)
+                    val contents = mutableListOf<Content>()
+                    if (content.isNotBlank()) contents.add(Content.Text(content))
+                    images.forEach { contents.add(Content.ImageBytes(it.toPngBytes())) }
+                    Message.Companion.user(Contents.of(contents))
                 }
             }
             else -> null
@@ -283,4 +285,10 @@ class LiteRtLmBackend(
         val prompt: String,
         val image: LlmImageInput? = null
     )
+
+    private fun LlmImageInput.toPngBytes(): ByteArray {
+        val output = ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
+        return output.toByteArray()
+    }
 }

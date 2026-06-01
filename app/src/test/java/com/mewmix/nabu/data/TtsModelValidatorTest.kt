@@ -39,6 +39,7 @@ class TtsModelValidatorTest {
             createSizedFile(target, minBytes.toLong())
         }
         assertTrue(TtsModelValidator.hasAllRequiredFiles("supertonic-2-onnx", root))
+        assertTrue(TtsModelValidator.hasAllRequiredFiles("supertonic-3-onnx", root))
     }
 
     private fun createSizedFile(file: File, sizeBytes: Long) {

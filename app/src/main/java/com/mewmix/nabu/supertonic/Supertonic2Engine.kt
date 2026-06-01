@@ -55,7 +55,43 @@ class Supertonic2Engine(
         speed: Float,
         rng: Random,
         env: OrtEnvironment
-    ): SupertonicResult = synthesize(listOf(text), style, totalStep, speed, rng, env)
+    ): SupertonicResult = synthesize(text, "en", style, totalStep, speed, rng, env)
+
+    override suspend fun synthesize(
+        text: String,
+        language: String,
+        style: SupertonicStyle,
+        totalStep: Int,
+        speed: Float,
+        rng: Random,
+        env: OrtEnvironment
+    ): SupertonicResult = withContext(Dispatchers.Default) {
+        val maxLen = if (language == "ko" || language == "ja") 120 else 300
+        val chunks = chunkText(text, maxLen)
+        val pieces = mutableListOf<FloatArray>()
+        var totalDuration = 0f
+
+        chunks.forEachIndexed { index, chunk ->
+            val result = synthesize(listOf(chunk), listOf(language), style, totalStep, speed, rng, env)
+            val chunkDuration = result.duration.firstOrNull() ?: 0f
+            val sampleCount = (chunkDuration * config.sampleRate).toInt().coerceIn(0, result.wav.size)
+            if (index > 0) {
+                val silence = FloatArray((0.3f * config.sampleRate).toInt())
+                pieces.add(silence)
+                totalDuration += 0.3f
+            }
+            pieces.add(result.wav.copyOf(sampleCount))
+            totalDuration += chunkDuration
+        }
+
+        val merged = FloatArray(pieces.sumOf { it.size })
+        var offset = 0
+        pieces.forEach { piece ->
+            piece.copyInto(merged, offset)
+            offset += piece.size
+        }
+        SupertonicResult(wav = merged, duration = floatArrayOf(totalDuration), sampleRate = config.sampleRate)
+    }
 
     override suspend fun synthesize(
         texts: List<String>,
@@ -64,11 +100,22 @@ class Supertonic2Engine(
         speed: Float,
         rng: Random,
         env: OrtEnvironment
+    ): SupertonicResult = synthesize(texts, List(texts.size) { "en" }, style, totalStep, speed, rng, env)
+
+    override suspend fun synthesize(
+        texts: List<String>,
+        languages: List<String>,
+        style: SupertonicStyle,
+        totalStep: Int,
+        speed: Float,
+        rng: Random,
+        env: OrtEnvironment
     ): SupertonicResult = withContext(Dispatchers.Default) {
         require(texts.isNotEmpty()) { "No input text" }
+        require(texts.size == languages.size) { "Text and language counts must match" }
         val bsz = texts.size
 
-        val textResult = textProcessor.process(texts, "en")
+        val textResult = textProcessor.process(texts, languages)
         val textIdsTensor = createLongTensor(textResult.textIds, env)
         val textMaskTensor = createFloatTensor(textResult.textMask, env)
 
@@ -228,7 +275,11 @@ private class Supertonic2UnicodeProcessor(indexerFile: File) {
     private val indexer: LongArray = loadJsonLongArray(indexerFile)
 
     fun process(textList: List<String>, lang: String): UnicodeProcessor.TextProcessResult {
-        val processed = textList.map { preprocess(it, lang) }
+        return process(textList, List(textList.size) { lang })
+    }
+
+    fun process(textList: List<String>, languages: List<String>): UnicodeProcessor.TextProcessResult {
+        val processed = textList.mapIndexed { index, text -> preprocess(text, languages[index]) }
         val unicodeVals = processed.map { it.codePoints().toArray() }
         val lengths = unicodeVals.map { it.size }
         val maxLen = lengths.maxOrNull() ?: 0
@@ -244,6 +295,7 @@ private class Supertonic2UnicodeProcessor(indexerFile: File) {
     }
 
     private fun preprocess(text: String, lang: String): String {
+        val normalizedLang = normalizeSupertonicLanguage(lang)
         var t = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKD)
         t = removeEmojis(t)
         val replacements = mapOf(
@@ -285,7 +337,7 @@ private class Supertonic2UnicodeProcessor(indexerFile: File) {
         if (!t.matches(Regex(".*[.!?;:,'\"\\u201C\\u201D\\u2018\\u2019)\\]}…。」』】〉》›»]$"))) {
             t += "."
         }
-        return "<${lang}>${t}</${lang}>"
+        return "<$normalizedLang>$t</$normalizedLang>"
     }
 
     private fun removeEmojis(text: String): String {
@@ -319,4 +371,108 @@ private class Supertonic2UnicodeProcessor(indexerFile: File) {
             Array(1) { FloatArray(maxLen) { idx -> if (idx < lengths[b]) 1f else 0f } }
         }
     }
+}
+
+private val supertonicAbbreviations = listOf(
+    "Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Sr.", "Jr.",
+    "St.", "Ave.", "Rd.", "Blvd.", "Dept.", "Inc.", "Ltd.",
+    "Co.", "Corp.", "etc.", "vs.", "i.e.", "e.g.", "Ph.D."
+)
+
+private fun chunkText(text: String, maxLen: Int): List<String> {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return listOf("")
+
+    val chunks = mutableListOf<String>()
+    trimmed.split(Regex("\\n\\s*\\n")).forEach { rawParagraph ->
+        val paragraph = rawParagraph.trim()
+        if (paragraph.isEmpty()) return@forEach
+        if (paragraph.length <= maxLen) {
+            chunks.add(paragraph)
+            return@forEach
+        }
+
+        val current = StringBuilder()
+        var currentLen = 0
+        splitSentences(paragraph).forEach { rawSentence ->
+            val sentence = rawSentence.trim()
+            if (sentence.isEmpty()) return@forEach
+            if (sentence.length > maxLen) {
+                if (current.isNotEmpty()) {
+                    chunks.add(current.toString().trim())
+                    current.clear()
+                    currentLen = 0
+                }
+                splitLongSentence(sentence, maxLen, chunks)
+                return@forEach
+            }
+            if (currentLen + sentence.length + 1 > maxLen && current.isNotEmpty()) {
+                chunks.add(current.toString().trim())
+                current.clear()
+                currentLen = 0
+            }
+            if (current.isNotEmpty()) {
+                current.append(' ')
+                currentLen += 1
+            }
+            current.append(sentence)
+            currentLen += sentence.length
+        }
+        if (current.isNotEmpty()) chunks.add(current.toString().trim())
+    }
+
+    return chunks.ifEmpty { listOf("") }
+}
+
+private fun splitLongSentence(sentence: String, maxLen: Int, chunks: MutableList<String>) {
+    val current = StringBuilder()
+    var currentLen = 0
+    sentence.split(",").forEach { rawPart ->
+        val part = rawPart.trim()
+        if (part.isEmpty()) return@forEach
+        if (part.length > maxLen) {
+            splitWords(part, maxLen, chunks)
+            return@forEach
+        }
+        if (currentLen + part.length + 2 > maxLen && current.isNotEmpty()) {
+            chunks.add(current.toString().trim())
+            current.clear()
+            currentLen = 0
+        }
+        if (current.isNotEmpty()) {
+            current.append(", ")
+            currentLen += 2
+        }
+        current.append(part)
+        currentLen += part.length
+    }
+    if (current.isNotEmpty()) chunks.add(current.toString().trim())
+}
+
+private fun splitWords(text: String, maxLen: Int, chunks: MutableList<String>) {
+    val current = StringBuilder()
+    var currentLen = 0
+    text.split(Regex("\\s+")).forEach { word ->
+        if (currentLen + word.length + 1 > maxLen && current.isNotEmpty()) {
+            chunks.add(current.toString().trim())
+            current.clear()
+            currentLen = 0
+        }
+        if (current.isNotEmpty()) {
+            current.append(' ')
+            currentLen += 1
+        }
+        current.append(word)
+        currentLen += word.length
+    }
+    if (current.isNotEmpty()) chunks.add(current.toString().trim())
+}
+
+private fun splitSentences(text: String): List<String> {
+    val protectedText = supertonicAbbreviations.fold(text) { current, abbreviation ->
+        current.replace(abbreviation, abbreviation.replace(".", "<dot>"))
+    }
+    return protectedText
+        .split(Regex("(?<=[.!?])\\s+"))
+        .map { it.replace("<dot>", ".") }
 }

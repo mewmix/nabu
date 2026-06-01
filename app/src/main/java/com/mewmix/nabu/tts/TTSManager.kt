@@ -25,6 +25,7 @@ object TTSManager {
     private var activeEngineKind: EngineKind? = null
     private var activeRuntimePreference: RunEp? = null
     private var activeSupertonicModelId: String? = null
+    private var activeSupertonicLanguage: String? = null
     private var activeSopranoModelId: String? = null
 
     private const val SOPRANO_MODEL_ID = "soprano-80m-onnx"
@@ -55,6 +56,7 @@ object TTSManager {
         activeEngineKind = null
         activeRuntimePreference = null
         activeSupertonicModelId = null
+        activeSupertonicLanguage = null
         activeSopranoModelId = null
     }
 
@@ -63,6 +65,7 @@ object TTSManager {
         val preferredEngine = SettingsManager.getTtsEngine(context)
         val preferredRuntime = SettingsManager.getRuntimePreference(context)
         val preferredSupertonicModel = SettingsManager.getSupertonicModelId(context)
+        val preferredSupertonicLanguage = SettingsManager.getSupertonicLanguage(context)
 
         val inferredActiveKind = activeEngineKind ?: resolveEngineKind(activeEngine).also { activeEngineKind = it }
         DebugLogger.log(
@@ -80,7 +83,8 @@ object TTSManager {
                 "kokoro" -> inferredActiveKind == EngineKind.KOKORO &&
                     activeRuntimePreference == preferredRuntime
                 "supertonic" -> inferredActiveKind == EngineKind.SUPERTONIC &&
-                    (preferredSupertonicModel == null || activeSupertonicModelId == preferredSupertonicModel)
+                    (preferredSupertonicModel == null || activeSupertonicModelId == preferredSupertonicModel) &&
+                    activeSupertonicLanguage == preferredSupertonicLanguage
                 "soprano" -> inferredActiveKind == EngineKind.SOPRANO &&
                     activeSopranoModelId == SOPRANO_MODEL_ID
                 else -> false
@@ -142,6 +146,7 @@ object TTSManager {
                     activeEngineKind = EngineKind.SOPRANO
                     activeRuntimePreference = RunEp.CPU
                     activeSupertonicModelId = null
+                    activeSupertonicLanguage = null
                     activeSopranoModelId = modelId
                     DebugLogger.log("TTSManager: Switched to Soprano ($modelId)")
                     activeEngine
@@ -170,11 +175,15 @@ object TTSManager {
             if (model != null) {
                 val modelDir = File(context.filesDir, "models/${model.id}")
                 try {
-                    val engine = DebugSupertonicEngine(modelDir)
+                    val engine = DebugSupertonicEngine(
+                        modelDir = modelDir,
+                        defaultLanguage = preferredSupertonicLanguage
+                    )
                     activeEngine = BenchmarkingTTSEngine(engine)
                     activeEngineKind = EngineKind.SUPERTONIC
                     activeRuntimePreference = null
                     activeSupertonicModelId = model.id
+                    activeSupertonicLanguage = preferredSupertonicLanguage
                     activeSopranoModelId = null
                     DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
                     return activeEngine
@@ -205,6 +214,7 @@ object TTSManager {
                  activeEngineKind = EngineKind.KOKORO
                  activeRuntimePreference = preferredRuntime
                  activeSupertonicModelId = null
+                 activeSupertonicLanguage = null
                  activeSopranoModelId = null
                  DebugLogger.log("TTSManager: Switched to Kokoro (fallback or default)")
                  return activeEngine

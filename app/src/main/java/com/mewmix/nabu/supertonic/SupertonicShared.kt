@@ -32,6 +32,24 @@ data class SupertonicStyle(
     }
 }
 
+object SupertonicLanguages {
+    val available: List<String> = listOf(
+        "en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es", "et", "fi",
+        "fr", "hi", "hr", "hu", "id", "it", "lt", "lv", "nl", "pl", "pt", "ro",
+        "ru", "sk", "sl", "sv", "tr", "uk", "vi", "na"
+    )
+
+    fun isValid(language: String): Boolean = language in available
+}
+
+internal fun normalizeSupertonicLanguage(language: String?): String {
+    val normalized = language?.trim()?.lowercase()?.ifBlank { null } ?: "en"
+    require(SupertonicLanguages.isValid(normalized)) {
+        "Invalid Supertonic language: $normalized. Available: ${SupertonicLanguages.available.joinToString()}"
+    }
+    return normalized
+}
+
 internal fun loadConfig(modelDir: File): SupertonicConfig {
     val root = JsonParser.parseReader(FileReader(File(modelDir, "tts.json"))).asJsonObject
     val ae = root.getAsJsonObject("ae")

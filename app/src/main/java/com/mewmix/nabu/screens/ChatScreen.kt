@@ -53,7 +53,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import coil.compose.AsyncImage
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.MessageBubble
 import com.mewmix.nabu.tools.Tool

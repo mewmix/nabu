@@ -47,6 +47,14 @@
     "gated": false,
     "type": "TTS"
   },
+  "supertonic-3-onnx": {
+    "name": "Supertonic 3 TTS",
+    "description": "Supertonic 3 multilingual text-to-speech model with 31 languages and expression tags",
+    "repo": "Supertone/supertonic-3",
+    "downloadUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/main/onnx/",
+    "gated": false,
+    "type": "TTS"
+  },
   "soprano-80m-onnx": {
     "name": "Soprano 80M TTS",
     "description": "Ultra-lightweight autoregressive TTS model",

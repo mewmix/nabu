@@ -10,6 +10,7 @@ import com.mewmix.nabu.chat.ChatMessage
 import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.LlamaCppBackend
 import com.mewmix.nabu.chat.LlmBackendFactory
+import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import com.mewmix.nabu.chat.MediaPipeBackend
 import com.mewmix.nabu.chat.LlmMessage
@@ -59,6 +60,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.io.File
 import java.util.LinkedHashSet
 import java.util.Locale
 

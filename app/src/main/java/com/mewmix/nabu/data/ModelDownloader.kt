@@ -433,7 +433,7 @@ class ModelDownloader(
             "unicode_indexer.json"
         )
         val voiceStyles = when (model.id) {
-            "supertonic-2-onnx" -> listOf(
+            "supertonic-2-onnx", "supertonic-3-onnx" -> listOf(
                 "F1.json", "F2.json", "F3.json", "F4.json", "F5.json",
                 "M1.json", "M2.json", "M3.json", "M4.json", "M5.json"
             )

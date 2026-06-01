@@ -15,6 +15,7 @@ import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.kokoro.KokoroEngine
 import com.mewmix.nabu.soprano.SopranoEngine
 import com.mewmix.nabu.supertonic.DebugSupertonicEngine
+import com.mewmix.nabu.supertonic.normalizeSupertonicLanguage
 import com.mewmix.nabu.tts.BenchmarkingTTSEngine
 import com.mewmix.nabu.tts.TTSManager
 import com.mewmix.nabu.tts.TTSEngine
@@ -821,6 +822,10 @@ class ApiServer(
                 .ifBlank { body.optString("style") }
                 .trim()
                 .ifBlank { null }
+            val language = body.optString("language")
+                .ifBlank { body.optString("lang") }
+                .trim()
+                .ifBlank { null }
             val requestedEngine = body.optString("engine").trim().lowercase().ifBlank { null }
             val requestedModel = body.optString("model").trim().ifBlank { null }
             val supertonicModel = body.optString("supertonic_model").trim().ifBlank { null }
@@ -835,6 +840,7 @@ class ApiServer(
                     input = input,
                     speed = speed,
                     voice = voice,
+                    language = language,
                     target = target
                 )
             )
@@ -1022,6 +1028,7 @@ class ApiServer(
                 )
                 "litertlm" -> LiteRtLmBackend(
                     context = context,
+                    modelId = targetModel.id,
                     modelPath = artifact.file.absolutePath
                 )
                 else -> MediaPipeBackend(
@@ -1344,7 +1351,8 @@ class ApiServer(
                     }
                     is DebugSupertonicEngine -> {
                         request.voice?.let { rawEngine.setStyle(it) }
-                        val result = rawEngine.synthesize(request.input, request.speed)
+                        val language = normalizeSupertonicLanguage(request.language ?: SettingsManager.getSupertonicLanguage(context))
+                        val result = rawEngine.synthesize(request.input, request.speed, language)
                         val modelId = request.target.supertonicModelId
                             ?: SettingsManager.getSupertonicModelId(context)
                             ?: "supertonic"
@@ -1398,6 +1406,7 @@ class ApiServer(
             return ReplyTtsRequest(
                 speed = 1.0f,
                 voice = null,
+                language = null,
                 target = resolveTtsTarget(
                     requestedEngine = null,
                     requestedModel = null,
@@ -1431,6 +1440,10 @@ class ApiServer(
             .ifBlank { ttsBody.optString("style") }
             .trim()
             .ifBlank { null }
+        val language = ttsBody.optString("language")
+            .ifBlank { ttsBody.optString("lang") }
+            .trim()
+            .ifBlank { null }
 
         val requestedEngine = ttsBody.optString("engine").trim().lowercase().ifBlank { null }
         val requestedModel = ttsBody.optString("model").trim().ifBlank { null }
@@ -1444,6 +1457,7 @@ class ApiServer(
         return ReplyTtsRequest(
             speed = speed,
             voice = voice,
+            language = language,
             target = target,
             responseFormat = responseFormat
         )
@@ -1462,6 +1476,7 @@ class ApiServer(
                 input = normalizedText,
                 speed = request.speed,
                 voice = request.voice,
+                language = request.language,
                 target = request.target
             )
         )
@@ -1497,7 +1512,7 @@ class ApiServer(
                 }
                 modelInferredEngine = "soprano"
             }
-            "supertonic-2-onnx" -> {
+            "supertonic-2-onnx", "supertonic-3-onnx" -> {
                 if (requestedModel !in downloadedTts) {
                     throw IllegalArgumentException("Requested TTS model is not downloaded: $requestedModel")
                 }
@@ -1777,6 +1792,7 @@ class ApiServer(
         val input: String,
         val speed: Float,
         val voice: String?,
+        val language: String?,
         val target: TtsRequestTarget
     )
 
@@ -1790,6 +1806,7 @@ class ApiServer(
     private data class ReplyTtsRequest(
         val speed: Float,
         val voice: String?,
+        val language: String?,
         val target: TtsRequestTarget,
         val responseFormat: String
     )

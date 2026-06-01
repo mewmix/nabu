@@ -15,6 +15,7 @@ object SettingsManager {
     private const val KEY_INIT_COMPLETE = "init_complete"
     private const val KEY_KOKORO_AUTO_DOWNLOAD = "kokoro_auto_download"
     private const val KEY_SUPERTONIC_MODEL_ID = "supertonic_model_id"
+    private const val KEY_SUPERTONIC_LANGUAGE = "supertonic_language"
     private const val KEY_LAST_BOOK_URI = "last_book_uri"
     private const val KEY_LLM_THREADS_AUTO = "llm_threads_auto"
     private const val KEY_LLM_THREADS = "llm_threads"
@@ -593,7 +594,14 @@ object SettingsManager {
         DatabaseManager.setSetting(context, KEY_SUPERTONIC_TOTAL_STEP, value.toString())
     }
 
-    fun getSupertonicTotalStep(context: Context, default: Int = 5): Int {
+    fun setSupertonicLanguage(context: Context, language: String) {
+        DatabaseManager.setSetting(context, KEY_SUPERTONIC_LANGUAGE, language)
+    }
+
+    fun getSupertonicLanguage(context: Context, default: String = "en"): String =
+        DatabaseManager.getSetting(context, KEY_SUPERTONIC_LANGUAGE)?.ifBlank { null } ?: default
+
+    fun getSupertonicTotalStep(context: Context, default: Int = 8): Int {
         val parsed = DatabaseManager.getSetting(context, KEY_SUPERTONIC_TOTAL_STEP)?.toIntOrNull() ?: default
         return clampInt(parsed, 1, 12)
     }

@@ -51,6 +51,7 @@ import android.net.Uri
 import androidx.compose.material3.HorizontalDivider
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
+import com.mewmix.nabu.supertonic.SupertonicLanguages
 import java.text.DateFormat
 import java.util.Date
 
@@ -78,6 +79,8 @@ fun SettingsScreen(
     val ttsEngineOptions = listOf("kokoro", "supertonic", "soprano")
     var supertonicExpanded by remember { mutableStateOf(false) }
     var supertonicModelId by remember { mutableStateOf(SettingsManager.getSupertonicModelId(context)) }
+    var supertonicLanguageExpanded by remember { mutableStateOf(false) }
+    var supertonicLanguage by remember { mutableStateOf(SettingsManager.getSupertonicLanguage(context)) }
     val runtimeOptions = if (ttsEngine == "supertonic" || ttsEngine == "soprano") listOf(RunEp.CPU) else RunEp.values().toList()
     val allowRuntimeSelection = runtimeOptions.size > 1
     val displayRuntime = if (ttsEngine == "supertonic" || ttsEngine == "soprano") RunEp.CPU else runtime
@@ -344,6 +347,36 @@ fun SettingsScreen(
                                     SettingsManager.setSupertonicModelId(context, model.id)
                                     onRuntimeSettingsChanged()
                                     supertonicExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                ExposedDropdownMenuBox(
+                    expanded = supertonicLanguageExpanded,
+                    onExpandedChange = { supertonicLanguageExpanded = it }
+                ) {
+                    TextField(
+                        value = supertonicLanguage,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Supertonic Language") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = supertonicLanguageExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    DropdownMenu(
+                        expanded = supertonicLanguageExpanded,
+                        onDismissRequest = { supertonicLanguageExpanded = false }
+                    ) {
+                        SupertonicLanguages.available.forEach { language ->
+                            DropdownMenuItem(
+                                text = { Text(language) },
+                                onClick = {
+                                    supertonicLanguage = language
+                                    SettingsManager.setSupertonicLanguage(context, language)
+                                    onRuntimeSettingsChanged()
+                                    supertonicLanguageExpanded = false
                                 }
                             )
                         }

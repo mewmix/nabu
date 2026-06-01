@@ -5,6 +5,7 @@ import java.io.File
 object TtsModelValidator {
     private const val SOPRANO_MODEL_ID = "soprano-80m-onnx"
     private const val SUPERTONIC2_MODEL_ID = "supertonic-2-onnx"
+    private const val SUPERTONIC3_MODEL_ID = "supertonic-3-onnx"
 
     private val supertonicBaseFiles = listOf(
         "duration_predictor.onnx",
@@ -30,7 +31,7 @@ object TtsModelValidator {
                 "soprano_decoder.onnx.data",
                 "tokenizer.json"
             )
-            SUPERTONIC2_MODEL_ID -> supertonicBaseFiles + listOf(
+            SUPERTONIC2_MODEL_ID, SUPERTONIC3_MODEL_ID -> supertonicBaseFiles + listOf(
                 "voice_styles/F1.json",
                 "voice_styles/F2.json",
                 "voice_styles/F3.json",
@@ -81,7 +82,7 @@ object TtsModelValidator {
 
         val minBytes = when (modelId) {
             SOPRANO_MODEL_ID -> sopranoMinBytes[localPath]
-            SUPERTONIC2_MODEL_ID -> when {
+            SUPERTONIC2_MODEL_ID, SUPERTONIC3_MODEL_ID -> when {
                 localPath in supertonicBaseFiles -> 1_000L
                 localPath.startsWith("voice_styles/") -> 100L
                 else -> null
