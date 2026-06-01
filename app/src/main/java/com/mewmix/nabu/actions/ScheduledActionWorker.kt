@@ -3,6 +3,8 @@ package com.mewmix.nabu.actions
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.Worker
@@ -68,18 +70,7 @@ class ScheduledActionWorker(
             ScheduledActionStore.complete(applicationContext, action.id, finalRun)
         }
 
-        ensureChannel()
-        NotificationManagerCompat.from(applicationContext).notify(
-            action.id.hashCode().absoluteValue,
-            NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_chat_24)
-                .setContentTitle(action.title.ifBlank { "Scheduled action" })
-                .setContentText(notificationText(action.instruction, executionRun))
-                .setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody(action.instruction, executionRun)))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setAutoCancel(true)
-                .build()
-        )
+        notifyActionComplete(action, executionRun)
 
         return Result.success()
     }
@@ -111,6 +102,33 @@ class ScheduledActionWorker(
             NotificationManager.IMPORTANCE_DEFAULT
         )
         manager.createNotificationChannel(channel)
+    }
+
+    private fun notifyActionComplete(action: ScheduledAction, executionRun: ActionRun?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            applicationContext.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        ensureChannel()
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_chat_24)
+            .setContentTitle(action.title.ifBlank { "Scheduled action" })
+            .setContentText(notificationText(action.instruction, executionRun))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody(action.instruction, executionRun)))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(applicationContext).notify(
+                action.id.hashCode().absoluteValue,
+                notification
+            )
+        } catch (_: SecurityException) {
+            // Notification permission can be revoked between the explicit check and notify().
+        }
     }
 
     companion object {
