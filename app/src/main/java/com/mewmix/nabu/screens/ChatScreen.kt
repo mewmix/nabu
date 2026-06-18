@@ -49,6 +49,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -56,6 +57,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import android.widget.Toast
+import android.net.Uri
+import android.provider.OpenableColumns
+import com.mewmix.nabu.chat.LlmAudioInput
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.MessageBubble
 import com.mewmix.nabu.tools.Tool
@@ -90,6 +94,7 @@ fun ChatScreen(
     val chatContextMode by viewModel.chatContextMode.collectAsState()
     val availableTools by ToolRegistry.tools.collectAsState()
     val pendingImage by viewModel.pendingImage.collectAsState()
+    val pendingAudio by viewModel.pendingAudioInput.collectAsState()
     val clipboardManager = LocalClipboardManager.current
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -106,6 +111,21 @@ fun ChatScreen(
                 }
             }
             viewModel.setPendingImage(LlmImageInput(bitmap))
+        }
+    }
+    val audioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            val bytes = context.contentResolver.openInputStream(it)?.use { stream -> stream.readBytes() }
+            if (bytes != null) {
+                viewModel.setPendingAudio(
+                    LlmAudioInput(
+                        bytes = bytes,
+                        displayName = displayNameForUri(context, it) ?: "audio"
+                    )
+                )
+            }
         }
     }
 
@@ -630,6 +650,38 @@ fun ChatScreen(
                 }
             }
 
+            if (pendingAudio != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .border(1.dp, Brutal.amber, RoundedCornerShape(8.dp))
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AttachFile,
+                        contentDescription = null,
+                        tint = Brutal.amber
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = pendingAudio?.displayName ?: "Audio attachment",
+                        modifier = Modifier.weight(1f),
+                        color = Brutal.textBright,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Clear audio",
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .clickable { viewModel.setPendingAudio(null) },
+                        tint = Brutal.red
+                    )
+                }
+            }
+
             if (isLoading) {
                 Box(
                     modifier = Modifier
@@ -655,12 +707,21 @@ fun ChatScreen(
                         .border(1.dp, Brutal.hairline, RoundedCornerShape(24.dp)),
                     placeholder = { Text("Message", color = Brutal.textDim) },
                     leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.AddPhotoAlternate,
-                            contentDescription = "Add image",
-                            modifier = Modifier.clickable { imagePicker.launch("image/*") },
-                            tint = Brutal.textDim
-                        )
+                        Row {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = "Add image",
+                                modifier = Modifier.clickable { imagePicker.launch("image/*") },
+                                tint = Brutal.textDim
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.AttachFile,
+                                contentDescription = "Add audio",
+                                modifier = Modifier.clickable { audioPicker.launch("audio/*") },
+                                tint = Brutal.textDim
+                            )
+                        }
                     },
                     shape = RoundedCornerShape(24.dp),
                     colors = TextFieldDefaults.colors(
@@ -692,8 +753,10 @@ fun ChatScreen(
                                 message = ""
                             }
                         },
-                        enabled = message.isNotBlank() && !isSynthesizing && playerState == PlayerState.IDLE
-                    ) {
+                    enabled = (message.isNotBlank() || pendingImage != null || pendingAudio != null) &&
+                        !isSynthesizing &&
+                        playerState == PlayerState.IDLE
+                ) {
                         Icon(Icons.Default.Send, contentDescription = "Send", tint = Brutal.textBright)
                     }
                 }
@@ -859,6 +922,16 @@ fun ChatScreen(
             dismissButton = {}
         )
     }
+}
+
+private fun displayNameForUri(context: android.content.Context, uri: Uri): String? {
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0) return cursor.getString(index)
+        }
+    }
+    return uri.lastPathSegment
 }
 
 private fun buildToolPrefill(tool: Tool): String {

@@ -38,12 +38,13 @@ class LiteRtLmBackend(
             initializationError.set(null)
             val baseBackend = selectBackendForModel(modelPath)
             val isVisionSupported = VisionModelSupport.supportsImageInput(modelId)
+            val isAudioSupported = VisionModelSupport.supportsAudioInput(modelId)
             
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
                 backend = baseBackend,
                 visionBackend = if (isVisionSupported) baseBackend else null,
-                audioBackend = null, // placeholder for future audio support
+                audioBackend = if (isAudioSupported) baseBackend else null,
                 maxNumTokens = null,
                 maxNumImages = if (isVisionSupported) 1 else null,
                 cacheDir = context.cacheDir.absolutePath
@@ -52,7 +53,7 @@ class LiteRtLmBackend(
                 engine = Engine(engineConfig)
                 engine?.initialize()
                 initialized.set(true)
-                DebugLogger.log("LiteRtLmBackend initialized modelId=$modelId backend=${engineConfig.backend} vision=${engineConfig.visionBackend != null}")
+                DebugLogger.log("LiteRtLmBackend initialized modelId=$modelId backend=${engineConfig.backend} vision=${engineConfig.visionBackend != null} audio=${engineConfig.audioBackend != null}")
             } catch (t: Throwable) {
                 engine = null
                 initialized.set(false)
@@ -64,6 +65,8 @@ class LiteRtLmBackend(
     }
 
     override fun supportsImageInput(): Boolean = VisionModelSupport.supportsImageInput(modelId)
+
+    override fun supportsAudioInput(): Boolean = VisionModelSupport.supportsAudioInput(modelId)
 
     override fun sendMessage(
         conversation: List<LlmMessage>,
@@ -116,6 +119,7 @@ class LiteRtLmBackend(
                     conversation = liteConversation,
                     prompt = prepared.prompt,
                     image = prepared.image,
+                    audio = prepared.audio,
                     resultListener = resultListener
                 )
             }
@@ -185,14 +189,16 @@ class LiteRtLmBackend(
         conversation: Conversation,
         prompt: String,
         image: LlmImageInput? = null,
+        audio: LlmAudioInput? = null,
         resultListener: (partialResult: String, done: Boolean) -> Unit
     ) {
         var emittedText = ""
         runBlocking {
-            val flow = if (image != null) {
+            val flow = if (image != null || audio != null) {
                 val contents = mutableListOf<Content>()
                 if (prompt.isNotBlank()) contents.add(Content.Text(prompt))
-                contents.add(Content.ImageBytes(image.toPngBytes()))
+                if (image != null) contents.add(Content.ImageBytes(image.toPngBytes()))
+                if (audio != null) contents.add(Content.AudioBytes(audio.bytes))
                 conversation.sendMessageAsync(Contents.of(contents))
             } else {
                 conversation.sendMessageAsync(prompt)
@@ -218,7 +224,9 @@ class LiteRtLmBackend(
         val systemPrompt = conversation.firstOrNull { it.role == "system" }?.content?.trim().orEmpty()
         val nonSystemMessages = conversation.filterNot { it.role == "system" }
         val latestUserMessage = nonSystemMessages.lastOrNull { it.role == "user" }
-        if (latestUserMessage == null || (latestUserMessage.content.isBlank() && latestUserMessage.images.isEmpty())) return null
+        if (latestUserMessage == null ||
+            (latestUserMessage.content.isBlank() && latestUserMessage.images.isEmpty() && latestUserMessage.audios.isEmpty())
+        ) return null
 
         val latestUserIndex = nonSystemMessages.indexOfLast { it.role == "user" }
         val initialMessages = nonSystemMessages
@@ -239,24 +247,27 @@ class LiteRtLmBackend(
         return PreparedConversationInput(
             config = config,
             prompt = latestUserMessage.content,
-            image = latestUserMessage.images.firstOrNull()
+            image = latestUserMessage.images.firstOrNull(),
+            audio = latestUserMessage.audios.firstOrNull()
         )
     }
 
     private fun toLiteRtLmMessage(message: LlmMessage): Message? {
         val content = message.content.trim()
         val images = message.images
-        if (content.isBlank() && images.isEmpty()) return null
+        val audios = message.audios
+        if (content.isBlank() && images.isEmpty() && audios.isEmpty()) return null
 
         return when (message.role) {
             "model" -> Message.Companion.model(content)
             "user" -> {
-                if (images.isEmpty()) {
+                if (images.isEmpty() && audios.isEmpty()) {
                     Message.Companion.user(content)
                 } else {
                     val contents = mutableListOf<Content>()
                     if (content.isNotBlank()) contents.add(Content.Text(content))
                     images.forEach { contents.add(Content.ImageBytes(it.toPngBytes())) }
+                    audios.forEach { contents.add(Content.AudioBytes(it.bytes)) }
                     Message.Companion.user(Contents.of(contents))
                 }
             }
@@ -283,7 +294,8 @@ class LiteRtLmBackend(
     private data class PreparedConversationInput(
         val config: ConversationConfig,
         val prompt: String,
-        val image: LlmImageInput? = null
+        val image: LlmImageInput? = null,
+        val audio: LlmAudioInput? = null
     )
 
     private fun LlmImageInput.toPngBytes(): ByteArray {

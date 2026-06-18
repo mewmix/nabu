@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.mewmix.nabu.agent.AgentTurnRunner
 import com.mewmix.nabu.chat.ChatMessage
 import com.mewmix.nabu.chat.LlmBackend
+import com.mewmix.nabu.chat.LlmAudioInput
 import com.mewmix.nabu.chat.LlamaCppBackend
 import com.mewmix.nabu.chat.LlmBackendFactory
 import com.mewmix.nabu.chat.LlmImageInput
@@ -84,8 +85,15 @@ class ChatViewModel(
     private val _pendingImage = MutableStateFlow<LlmImageInput?>(null)
     val pendingImage = _pendingImage.asStateFlow()
 
+    private val _pendingAudioInput = MutableStateFlow<LlmAudioInput?>(null)
+    val pendingAudioInput = _pendingAudioInput.asStateFlow()
+
     fun setPendingImage(image: LlmImageInput?) {
         _pendingImage.value = image
+    }
+
+    fun setPendingAudio(audio: LlmAudioInput?) {
+        _pendingAudioInput.value = audio
     }
 
     private fun saveImageToInternalStorage(bitmap: android.graphics.Bitmap): String {
@@ -103,6 +111,28 @@ class ChatViewModel(
             android.graphics.BitmapFactory.decodeFile(path)
         } catch (e: Exception) {
             DebugLogger.log("Error loading bitmap from $path: ${e.message}")
+            null
+        }
+    }
+
+    private fun saveAudioToInternalStorage(audio: LlmAudioInput): String {
+        val safeName = audio.displayName
+            ?.replace(Regex("""[^a-zA-Z0-9._-]"""), "_")
+            ?.takeIf { it.isNotBlank() }
+            ?: "audio_${System.currentTimeMillis()}.bin"
+        val file = File(context.filesDir, "chat_audio").apply { if (!exists()) mkdirs() }
+        val audioFile = File(file, "${System.currentTimeMillis()}_$safeName")
+        audioFile.writeBytes(audio.bytes)
+        return audioFile.absolutePath
+    }
+
+    private fun loadAudioFromPath(path: String, displayName: String? = null): LlmAudioInput? {
+        return try {
+            val file = File(path)
+            if (!file.exists()) return null
+            LlmAudioInput(file.readBytes(), displayName ?: file.name)
+        } catch (e: Exception) {
+            DebugLogger.log("Error loading audio from $path: ${e.message}")
             null
         }
     }
@@ -407,7 +437,7 @@ class ChatViewModel(
     private data class QueuedAudio(val index: Int, val audio: FloatArray, val sampleRate: Int)
 
     private val audioQueue = Channel<QueuedAudio>(Channel.UNLIMITED)
-    private val pendingAudio = mutableMapOf<Int, QueuedAudio>()
+    private val pendingPlaybackAudio = mutableMapOf<Int, QueuedAudio>()
     private var nextPlaybackIndex = 0
     private var dropQueuedAudio = false
     private var lineIndex = 0
@@ -434,9 +464,9 @@ class ChatViewModel(
         // Launch a coroutine to play queued audio in the order they were generated
         viewModelScope.launch {
             for (item in audioQueue) {
-                pendingAudio[item.index] = item
-                while (pendingAudio.containsKey(nextPlaybackIndex)) {
-                    val queued = pendingAudio.remove(nextPlaybackIndex)!!
+                pendingPlaybackAudio[item.index] = item
+                while (pendingPlaybackAudio.containsKey(nextPlaybackIndex)) {
+                    val queued = pendingPlaybackAudio.remove(nextPlaybackIndex)!!
                     if (!_ttsEnabled.value || dropQueuedAudio) {
                         nextPlaybackIndex++
                         continue
@@ -502,7 +532,7 @@ class ChatViewModel(
 
     fun stopPlayback() {
         dropQueuedAudio = true
-        pendingAudio.clear()
+        pendingPlaybackAudio.clear()
         drainAudioQueue()
         audioPlayer.stop()
         _playerState.value = PlayerState.IDLE
@@ -558,7 +588,8 @@ class ChatViewModel(
     fun sendMessage(message: String) {
         val trimmed = message.trim()
         val image = _pendingImage.value
-        if (trimmed.isEmpty() && image == null) return
+        val audio = _pendingAudioInput.value
+        if (trimmed.isEmpty() && image == null && audio == null) return
         val conversationId = _activeConversationId.value ?: run {
             DebugLogger.log("No active conversation; ignoring message")
             return
@@ -566,13 +597,15 @@ class ChatViewModel(
         val directToolCall = ToolCallProtocol.parseDirectUserToolCommand(trimmed)
 
         dropQueuedAudio = false
-        DebugLogger.log("ChatViewModel sendMessage: $trimmed (hasImage=${image != null})")
-        _chatMessages.value += ChatMessage(trimmed, true, image)
+        DebugLogger.log("ChatViewModel sendMessage: $trimmed (hasImage=${image != null}, hasAudio=${audio != null})")
+        _chatMessages.value += ChatMessage(trimmed, true, image, audio)
         
         val imagePath = image?.let { saveImageToInternalStorage(it.bitmap) }
-        conversationHistory.add(ConversationTurn(ConversationRole.USER, trimmed, imagePath))
+        val audioPath = audio?.let { saveAudioToInternalStorage(it) }
+        conversationHistory.add(ConversationTurn(ConversationRole.USER, trimmed, imagePath, audioPath, audio?.displayName))
         
         _pendingImage.value = null
+        _pendingAudioInput.value = null
         persistConversationMessages()
         _isLoading.value = true
 
@@ -803,7 +836,10 @@ class ChatViewModel(
                 val image = if (!turn.imagePath.isNullOrBlank()) {
                     loadBitmapFromPath(turn.imagePath)?.let { LlmImageInput(it) }
                 } else null
-                ChatMessage(turn.content, turn.role == ConversationRole.USER, image)
+                val audio = if (!turn.audioPath.isNullOrBlank()) {
+                    loadAudioFromPath(turn.audioPath, turn.audioName)
+                } else null
+                ChatMessage(turn.content, turn.role == ConversationRole.USER, image, audio)
             }
         } else {
             _chatMessages.value = emptyList()
@@ -814,7 +850,7 @@ class ChatViewModel(
     private fun clearPendingAudio() {
         lineIndex = 0
         nextPlaybackIndex = 0
-        pendingAudio.clear()
+        pendingPlaybackAudio.clear()
         dropQueuedAudio = false
         drainAudioQueue()
         audioPlayer.stop()
@@ -949,11 +985,13 @@ class ChatViewModel(
         if (userIndex < 0) return
         val userTurn = conversationHistory[userIndex]
         val image = userTurn.imagePath?.let { path -> loadBitmapFromPath(path)?.let { LlmImageInput(it) } }
+        val audio = userTurn.audioPath?.let { path -> loadAudioFromPath(path, userTurn.audioName) }
         while (conversationHistory.size > userIndex) {
             conversationHistory.removeAt(conversationHistory.lastIndex)
         }
         _chatMessages.value = _chatMessages.value.take(userIndex)
         _pendingImage.value = image
+        _pendingAudioInput.value = audio
         persistConversationMessages()
         sendMessage(userTurn.content)
     }
@@ -1021,7 +1059,12 @@ class ChatViewModel(
             } else {
                 emptyList()
             }
-            LlmMessage(role = role, content = turn.content, images = images)
+            val audios = if (!turn.audioPath.isNullOrBlank()) {
+                loadAudioFromPath(turn.audioPath, turn.audioName)?.let { listOf(it) } ?: emptyList()
+            } else {
+                emptyList()
+            }
+            LlmMessage(role = role, content = turn.content, images = images, audios = audios)
         })
         return messages
     }

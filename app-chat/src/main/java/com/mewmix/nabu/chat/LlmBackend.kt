@@ -15,6 +15,8 @@ interface LlmBackend {
 
     fun supportsImageInput(): Boolean = false
 
+    fun supportsAudioInput(): Boolean = false
+
     fun sendMessage(
         conversation: List<LlmMessage>,
         image: LlmImageInput,

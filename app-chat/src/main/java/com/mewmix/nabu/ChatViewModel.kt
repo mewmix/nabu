@@ -13,7 +13,8 @@ import java.lang.StringBuilder
 data class ChatMessage(
     val message: String,
     val isFromUser: Boolean,
-    val image: LlmImageInput? = null
+    val image: LlmImageInput? = null,
+    val audio: LlmAudioInput? = null
 )
 
 class ChatViewModel(private val llmBackend: LlmBackend) : ViewModel() {
