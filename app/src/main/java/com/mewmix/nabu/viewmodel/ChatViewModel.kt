@@ -143,6 +143,29 @@ class ChatViewModel(
         private const val TOOL_EXECUTION_TIMEOUT_MS = 30_000L
         private const val DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
         private val TOKEN_REGEX = Regex("\\S+")
+        private val DIRECT_RESULT_TOOL_NAMES = setOf(
+            "send_sms",
+            "place_call",
+            "open_url",
+            "open_app",
+            "launch_package",
+            "set_alarm",
+            "set_timer",
+            "set_brightness",
+            "toggle_flashlight",
+            "set_volume",
+            "mute",
+            "play_media",
+            "pause_media",
+            "next_track",
+            "create_calendar_event",
+            "navigate_to",
+            "take_photo",
+            "record_video",
+            "toggle_wifi",
+            "toggle_bluetooth",
+            "share_text"
+        )
 
         internal fun inferToolCallFromModelFailure(
             userMessage: String,
@@ -174,7 +197,7 @@ class ChatViewModel(
             }
 
             if ("open_url" in availableToolNames) {
-                Regex("""(?is)^\s*open\s+url\s+(\S+)\s*$""").find(normalized)?.groupValues?.getOrNull(1)?.trim()
+                Regex("""(?is)^\s*(?:open\s+url|open\s+link|open)\s+((?:https?://|www\.)\S+)\s*$""").find(normalized)?.groupValues?.getOrNull(1)?.trim()
                     ?.takeIf { it.isNotBlank() }
                     ?.let { url ->
                         return ToolCall("open_url", mapOf("url" to url))
@@ -196,6 +219,106 @@ class ChatViewModel(
 
             if ("place_call" in availableToolNames) {
                 parseCallFallback(normalized)?.let { return it }
+            }
+
+            if ("navigate_to" in availableToolNames) {
+                Regex("""(?is)^\s*(?:navigate\s+to|directions\s+to|route\s+to)\s+(.+?)\s*$""")
+                    .find(normalized)?.groupValues?.getOrNull(1)?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { return ToolCall("navigate_to", mapOf("destination" to it)) }
+            }
+
+            if ("take_photo" in availableToolNames &&
+                Regex("""(?is)^\s*(?:take\s+a\s+photo|take\s+photo|open\s+camera|camera)\s*$""").containsMatchIn(normalized)
+            ) {
+                return ToolCall("take_photo", emptyMap())
+            }
+
+            if ("record_video" in availableToolNames &&
+                Regex("""(?is)^\s*(?:record\s+a\s+video|record\s+video|take\s+a\s+video|take\s+video)\s*$""").containsMatchIn(normalized)
+            ) {
+                return ToolCall("record_video", emptyMap())
+            }
+
+            if ("toggle_wifi" in availableToolNames) {
+                Regex("""(?is)^\s*(?:turn\s+)?(?:wifi|wi-fi)(?:\s+(on|off))?\s*$""")
+                    .find(normalized)?.let { match ->
+                        return ToolCall(
+                            "toggle_wifi",
+                            match.groupValues.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+                                ?.let { mapOf("enabled" to (it.equals("on", ignoreCase = true))) }
+                                ?: emptyMap()
+                        )
+                    }
+            }
+
+            if ("toggle_bluetooth" in availableToolNames) {
+                Regex("""(?is)^\s*(?:turn\s+)?bluetooth(?:\s+(on|off))?\s*$""")
+                    .find(normalized)?.let { match ->
+                        return ToolCall(
+                            "toggle_bluetooth",
+                            match.groupValues.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+                                ?.let { mapOf("enabled" to (it.equals("on", ignoreCase = true))) }
+                                ?: emptyMap()
+                        )
+                    }
+            }
+
+            if ("share_text" in availableToolNames) {
+                Regex("""(?is)^\s*(?:share\s+text|share)\s+(.+?)\s*$""")
+                    .find(normalized)?.groupValues?.getOrNull(1)?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { return ToolCall("share_text", mapOf("text" to it)) }
+            }
+
+            if ("set_volume" in availableToolNames) {
+                Regex("""(?is)^\s*(?:set\s+)?(?:media\s+)?volume(?:\s+to)?\s+(\d{1,3})(?:\s*%)?(?:\s+(music|media|ring|ringer|alarm|notification|notifications))?\s*$""")
+                    .find(normalized)?.let { match ->
+                        val level = match.groupValues[1].toIntOrNull()?.coerceIn(0, 100) ?: return@let
+                        val stream = match.groupValues.getOrNull(2)?.trim().orEmpty()
+                        return ToolCall(
+                            "set_volume",
+                            buildMap {
+                                put("level", level)
+                                if (stream.isNotBlank()) put("stream", stream)
+                            }
+                        )
+                    }
+            }
+
+            if ("mute" in availableToolNames) {
+                Regex("""(?is)^\s*(mute|unmute)(?:\s+(?:media|volume))?\s*$""")
+                    .find(normalized)?.let { match ->
+                        return ToolCall("mute", mapOf("enabled" to match.groupValues[1].equals("mute", ignoreCase = true)))
+                    }
+            }
+
+            if ("play_media" in availableToolNames && Regex("""(?is)^\s*(?:play|resume)(?:\s+media|\s+playback)?\s*$""").containsMatchIn(normalized)) {
+                return ToolCall("play_media", emptyMap())
+            }
+
+            if ("pause_media" in availableToolNames && Regex("""(?is)^\s*pause(?:\s+media|\s+playback)?\s*$""").containsMatchIn(normalized)) {
+                return ToolCall("pause_media", emptyMap())
+            }
+
+            if ("next_track" in availableToolNames && Regex("""(?is)^\s*(?:next\s+track|skip\s+track|skip\s+song)\s*$""").containsMatchIn(normalized)) {
+                return ToolCall("next_track", emptyMap())
+            }
+
+            if ("set_brightness" in availableToolNames) {
+                Regex("""(?is)^\s*(?:set\s+)?brightness(?:\s+to)?\s+(\d{1,3})(?:\s*%)?\s*$""")
+                    .find(normalized)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    ?.let { return ToolCall("set_brightness", mapOf("level" to it.coerceIn(0, 100))) }
+            }
+
+            if ("toggle_flashlight" in availableToolNames) {
+                Regex("""(?is)^\s*(?:turn\s+)?(?:flashlight|torch)(?:\s+(on|off))?\s*$""")
+                    .find(normalized)?.let { match ->
+                        val enabled = match.groupValues.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+                            ?.equals("on", ignoreCase = true)
+                            ?: true
+                        return ToolCall("toggle_flashlight", mapOf("enabled" to enabled))
+                    }
             }
 
             if ("schedule_action" in availableToolNames) {
@@ -674,6 +797,9 @@ class ChatViewModel(
                     conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
                     persistConversationMessages()
                     if (speakOutput) {
+                        if (sentenceBuilder.isBlank()) {
+                            sentenceBuilder.append(finalResponse)
+                        }
                         processSentences(sentenceBuilder, true)
                     } else {
                         sentenceBuilder.clear()
@@ -701,6 +827,9 @@ class ChatViewModel(
                         forceSingleTurn = true,
                         recoveryMode = true
                     )
+                },
+                shouldCompleteAfterToolResult = { call, _ ->
+                    call.toolName in DIRECT_RESULT_TOOL_NAMES
                 },
                 logger = { DebugLogger.log(it) }
             ).run(

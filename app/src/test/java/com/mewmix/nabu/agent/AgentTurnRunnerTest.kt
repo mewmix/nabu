@@ -170,6 +170,113 @@ class AgentTurnRunnerTest {
         assertEquals("Done.", finalResult?.finalResponse)
     }
 
+    @Test
+    fun run_infersToolWhenModelAnswersWithProseForParseableRequest() = runTest {
+        val backend = FakeBackend(listOf("Sure, I can do that.", "Done."))
+        val toolCalls = mutableListOf<ToolCall>()
+        var finalResult: AgentTurnRunner.Result? = null
+
+        AgentTurnRunner(
+            backend = backend,
+            scope = this,
+            toolExecutor = { call ->
+                toolCalls += call
+                ToolResult(call.toolName, "Opened SMS composer.")
+            },
+            inferToolCallFromModelFailure = { _, availableTools ->
+                if ("send_sms" in availableTools) {
+                    ToolCall("send_sms", mapOf("phone_number" to "1234567890", "message" to "hello"))
+                } else {
+                    null
+                }
+            },
+            recoveryConversationProvider = { emptyList() },
+            inferenceDispatcher = StandardTestDispatcher(testScheduler)
+        ).run(
+            initialConversation = listOf(LlmMessage("user", "send sms to 1234567890 saying hello")),
+            latestUserMessage = "send sms to 1234567890 saying hello",
+            availableToolNames = setOf("send_sms"),
+            maxToolCalls = 4,
+            onPartialText = {},
+            onSpeakablePartial = { _, _ -> },
+            onSuppressSpeakablePartials = {},
+            onToolStart = {},
+            onComplete = { finalResult = it }
+        )
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf("send_sms"), toolCalls.map { it.toolName })
+        assertEquals("Done.", finalResult?.finalResponse)
+    }
+
+    @Test
+    fun run_doesNotSuppressSpeechForNormalChatWhenToolsAreAvailable() = runTest {
+        val backend = FakeBackend(listOf("Normal answer."))
+        val speakablePartials = mutableListOf<String>()
+        var finalResult: AgentTurnRunner.Result? = null
+
+        AgentTurnRunner(
+            backend = backend,
+            scope = this,
+            toolExecutor = { call -> ToolResult(call.toolName, "unused") },
+            inferToolCallFromModelFailure = { _, _ -> null },
+            recoveryConversationProvider = { emptyList() },
+            inferenceDispatcher = StandardTestDispatcher(testScheduler)
+        ).run(
+            initialConversation = listOf(LlmMessage("user", "how are you?")),
+            latestUserMessage = "how are you?",
+            availableToolNames = setOf("send_sms", "place_call"),
+            maxToolCalls = 4,
+            onPartialText = {},
+            onSpeakablePartial = { partial, _ -> speakablePartials += partial },
+            onSuppressSpeakablePartials = {},
+            onToolStart = {},
+            onComplete = { finalResult = it }
+        )
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf("Normal answer."), speakablePartials)
+        assertEquals("Normal answer.", finalResult?.finalResponse)
+    }
+
+    @Test
+    fun run_completesDirectResultToolWithoutModelFollowUp() = runTest {
+        val backend = FakeBackend(listOf("""<tool_call>{"name":"send_sms","arguments":{"phone_number":"1234567890","message":"hello"}}</tool_call>"""))
+        val toolCalls = mutableListOf<ToolCall>()
+        var finalResult: AgentTurnRunner.Result? = null
+
+        AgentTurnRunner(
+            backend = backend,
+            scope = this,
+            toolExecutor = { call ->
+                toolCalls += call
+                ToolResult(call.toolName, "Opened SMS composer for 1234567890 with draft message.")
+            },
+            inferToolCallFromModelFailure = { _, _ -> null },
+            recoveryConversationProvider = { emptyList() },
+            shouldCompleteAfterToolResult = { call, _ -> call.toolName == "send_sms" },
+            inferenceDispatcher = StandardTestDispatcher(testScheduler)
+        ).run(
+            initialConversation = listOf(LlmMessage("user", "send sms to 1234567890 saying hello")),
+            latestUserMessage = "send sms to 1234567890 saying hello",
+            availableToolNames = setOf("send_sms"),
+            maxToolCalls = 4,
+            onPartialText = {},
+            onSpeakablePartial = { _, _ -> },
+            onSuppressSpeakablePartials = {},
+            onToolStart = {},
+            onComplete = { finalResult = it }
+        )
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf("send_sms"), toolCalls.map { it.toolName })
+        assertEquals(1, backend.conversations.size)
+        assertEquals("Opened SMS composer for 1234567890 with draft message.", finalResult?.finalResponse)
+    }
+
     private class FakeBackend(
         responses: List<String>
     ) : LlmBackend {

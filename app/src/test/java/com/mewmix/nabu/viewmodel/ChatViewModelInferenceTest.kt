@@ -72,6 +72,45 @@ class ChatViewModelInferenceTest {
     }
 
     @Test
+    fun inferToolCallFromModelFailure_parsesDeviceActionFallbacks() {
+        assertEquals(
+            ToolCall("navigate_to", mapOf("destination" to "1600 Amphitheatre Parkway")),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "navigate to 1600 Amphitheatre Parkway",
+                availableToolNames = setOf("navigate_to")
+            )
+        )
+        assertEquals(
+            ToolCall("toggle_bluetooth", mapOf("enabled" to false)),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "turn bluetooth off",
+                availableToolNames = setOf("toggle_bluetooth")
+            )
+        )
+        assertEquals(
+            ToolCall("share_text", mapOf("text" to "hello from nabu")),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "share text hello from nabu",
+                availableToolNames = setOf("share_text")
+            )
+        )
+        assertEquals(
+            ToolCall("set_volume", mapOf("level" to 35, "stream" to "media")),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "set volume to 35 media",
+                availableToolNames = setOf("set_volume")
+            )
+        )
+        assertEquals(
+            ToolCall("take_photo", emptyMap()),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "take a photo",
+                availableToolNames = setOf("take_photo")
+            )
+        )
+    }
+
+    @Test
     fun inferToolCallFromModelFailure_rejectsUnmatchedAlarmText() {
         val toolCall = ChatViewModel.inferToolCallFromModelFailure(
             userMessage = "set an alarm sometime tomorrow morning",

@@ -41,6 +41,7 @@ object ToolCallProtocol {
         lines += "Never return an empty response."
         lines += "If no tool is needed, answer with at least one short plain-text sentence."
         lines += "After TOOL_RESULT, reply to the user with a normal sentence."
+        lines += "Do not invent or upgrade tool results. If a tool says it opened a composer, dialer, app, settings panel, camera, browser, or share sheet, say only that it opened; do not say the action was completed."
         lines += "The name must exactly match one of these tools:"
 
         tools

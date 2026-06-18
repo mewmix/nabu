@@ -16,6 +16,7 @@ class AgentTurnRunner(
     private val toolExecutor: suspend (ToolCall) -> ToolResult,
     private val inferToolCallFromModelFailure: (String, Set<String>) -> ToolCall?,
     private val recoveryConversationProvider: () -> List<LlmMessage>,
+    private val shouldCompleteAfterToolResult: (ToolCall, ToolResult) -> Boolean = { _, _ -> false },
     private val inferenceDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val logger: (String) -> Unit = {}
 ) {
@@ -45,6 +46,8 @@ class AgentTurnRunner(
         onComplete: (Result) -> Unit
     ) {
         val transcript = mutableListOf<ToolExchange>()
+        val inferredDirectToolCall = inferToolCallFromModelFailure(latestUserMessage, availableToolNames)
+        val mayCallTool = inferredDirectToolCall != null
 
         fun runInference(
             conversation: List<LlmMessage>,
@@ -62,7 +65,7 @@ class AgentTurnRunner(
                     if (partial.contains("<tool_call>", ignoreCase = true)) {
                         suppressSpeechForThisPass = true
                         onSuppressSpeakablePartials()
-                    } else {
+                    } else if (!mayCallTool || lastToolResult != null) {
                         onSpeakablePartial(partial, false)
                     }
                     onPartialText(responseBuilder.toString())
@@ -74,7 +77,7 @@ class AgentTurnRunner(
                     if (partial.contains("<tool_call>", ignoreCase = true)) {
                         suppressSpeechForThisPass = true
                         onSuppressSpeakablePartials()
-                    } else {
+                    } else if (!mayCallTool || lastToolResult != null) {
                         onSpeakablePartial(partial, true)
                     }
                 }
@@ -89,9 +92,14 @@ class AgentTurnRunner(
                         finalResponse.contains("inference failed", ignoreCase = true)
                 val inferredToolCall =
                     if (toolCall == null && lastToolResult == null &&
-                        (finalResponse.isBlank() || looksLikeMalformedToolAttempt || looksLikeBackendFailure)
+                        (
+                            finalResponse.isBlank() ||
+                                looksLikeMalformedToolAttempt ||
+                                looksLikeBackendFailure ||
+                                inferredDirectToolCall != null
+                            )
                     ) {
-                        inferToolCallFromModelFailure(latestUserMessage, availableToolNames)
+                        inferredDirectToolCall
                     } else {
                         null
                     }
@@ -124,6 +132,17 @@ class AgentTurnRunner(
                             result = result,
                             inferred = toolCall == null
                         )
+                        if (shouldCompleteAfterToolResult(effectiveToolCall, result)) {
+                            val response = summarizeDirectToolResultMessage(result)
+                            onComplete(
+                                Result(
+                                    finalResponse = response,
+                                    speakOutput = true,
+                                    transcript = transcript.toList()
+                                )
+                            )
+                            return@launch
+                        }
                         val modelToolCallMessage = if (toolCall != null) {
                             finalResponse
                         } else {
@@ -209,6 +228,16 @@ class AgentTurnRunner(
                 "Tool ${result.toolName} failed: ${if (clipped.isNotEmpty()) clipped else "no error details"}"
             } else {
                 "Tool ${result.toolName} result:\n$clipped"
+            }
+        }
+
+        fun summarizeDirectToolResultMessage(result: ToolResult): String {
+            val cleaned = result.output.trim()
+            val clipped = if (cleaned.length > 700) "${cleaned.take(700)}..." else cleaned
+            return if (result.isError) {
+                "Tool ${result.toolName} failed: ${if (clipped.isNotEmpty()) clipped else "no error details"}"
+            } else {
+                clipped.ifBlank { "Done." }
             }
         }
 
