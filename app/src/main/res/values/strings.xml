@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">Nabu</string>
+    <string name="shortcut_voice_short">Voice</string>
+    <string name="shortcut_voice_long">Nabu Voice Assistant</string>
+    <string name="widget_voice_label">Nabu Voice</string>
 </resources>

@@ -59,6 +59,7 @@ fun OptionalPermissionsSection(
     val notificationPermission = optionalNotificationPermission()
     val contactsPermission = optionalContactsPermission()
     val mediaPermission = optionalMediaPermission()
+    val microphonePermission = optionalMicrophonePermission()
 
     var refreshToken by remember { mutableStateOf(0) }
     val status = remember(refreshToken) {
@@ -66,7 +67,8 @@ fun OptionalPermissionsSection(
             context = context,
             notificationPermission = notificationPermission,
             contactsPermission = contactsPermission,
-            mediaPermission = mediaPermission
+            mediaPermission = mediaPermission,
+            microphonePermission = microphonePermission
         )
     }
 
@@ -81,6 +83,11 @@ fun OptionalPermissionsSection(
         refreshToken++
     }
     val mediaPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        refreshToken++
+    }
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) {
         refreshToken++
@@ -138,6 +145,17 @@ fun OptionalPermissionsSection(
             enabled = mediaPermission != null && !status.mediaGranted,
             onClick = {
                 mediaPermission?.let(mediaPermissionLauncher::launch)
+            }
+        )
+
+        PermissionRow(
+            title = "Microphone",
+            description = "Lets Nabu record long-form voice messages for chat and assistant actions.",
+            statusLabel = status.microphoneStatus,
+            actionLabel = if (status.microphoneGranted || microphonePermission == null) "Granted" else "Grant",
+            enabled = microphonePermission != null && !status.microphoneGranted,
+            onClick = {
+                microphonePermission?.let(microphonePermissionLauncher::launch)
             }
         )
 
@@ -207,16 +225,19 @@ private data class PermissionReviewStatus(
     val notificationsGranted: Boolean,
     val contactsGranted: Boolean,
     val mediaGranted: Boolean,
+    val microphoneGranted: Boolean,
     val notificationStatus: String,
     val contactsStatus: String,
-    val mediaStatus: String
+    val mediaStatus: String,
+    val microphoneStatus: String
 ) {
     companion object {
         fun from(
             context: Context,
             notificationPermission: String?,
             contactsPermission: String?,
-            mediaPermission: String?
+            mediaPermission: String?,
+            microphonePermission: String?
         ): PermissionReviewStatus {
             val notificationsGranted = notificationPermission == null ||
                 ContextCompat.checkSelfPermission(context, notificationPermission) == PackageManager.PERMISSION_GRANTED
@@ -224,11 +245,14 @@ private data class PermissionReviewStatus(
                 ContextCompat.checkSelfPermission(context, contactsPermission) == PackageManager.PERMISSION_GRANTED
             val mediaGranted = mediaPermission == null ||
                 ContextCompat.checkSelfPermission(context, mediaPermission) == PackageManager.PERMISSION_GRANTED
+            val microphoneGranted = microphonePermission == null ||
+                ContextCompat.checkSelfPermission(context, microphonePermission) == PackageManager.PERMISSION_GRANTED
 
             return PermissionReviewStatus(
                 notificationsGranted = notificationsGranted,
                 contactsGranted = contactsGranted,
                 mediaGranted = mediaGranted,
+                microphoneGranted = microphoneGranted,
                 notificationStatus = if (notificationPermission == null) {
                     "Not required on this Android version."
                 } else if (notificationsGranted) {
@@ -246,6 +270,13 @@ private data class PermissionReviewStatus(
                 mediaStatus = if (mediaPermission == null) {
                     "Not required on this Android version."
                 } else if (mediaGranted) {
+                    "Granted."
+                } else {
+                    "Not granted."
+                },
+                microphoneStatus = if (microphonePermission == null) {
+                    "Not required on this Android version."
+                } else if (microphoneGranted) {
                     "Granted."
                 } else {
                     "Not granted."
@@ -274,3 +305,10 @@ private fun optionalMediaPermission(): String? = when {
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> Manifest.permission.READ_EXTERNAL_STORAGE
     else -> null
 }
+
+private fun optionalMicrophonePermission(): String? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        Manifest.permission.RECORD_AUDIO
+    } else {
+        null
+    }

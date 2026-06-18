@@ -1,5 +1,7 @@
 package com.mewmix.nabu.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
@@ -38,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -63,9 +67,11 @@ import androidx.compose.ui.text.AnnotatedString
 import android.widget.Toast
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.core.content.ContextCompat
 import com.mewmix.nabu.chat.LlmAudioInput
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.MessageBubble
+import com.mewmix.nabu.speech.VoiceAttachmentRecorder
 import com.mewmix.nabu.tools.Tool
 import com.mewmix.nabu.tools.ToolRegistry
 import com.mewmix.nabu.ui.components.WaveformVisualizer
@@ -80,11 +86,13 @@ import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.components.RuntimeStatusLine
+import com.mewmix.nabu.utils.TextExtractor
 
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
     initialMessage: String = "",
+    startVoice: Boolean = false,
 ) {
     val context = LocalContext.current
     val chatMessages by viewModel.chatMessages.collectAsState()
@@ -101,6 +109,10 @@ fun ChatScreen(
     val pendingImage by viewModel.pendingImage.collectAsState()
     val pendingAudio by viewModel.pendingAudioInput.collectAsState()
     val clipboardManager = LocalClipboardManager.current
+    val voiceRecorder = remember { VoiceAttachmentRecorder(context.applicationContext) }
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var startVoiceHandled by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf(initialMessage) }
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -133,6 +145,37 @@ fun ChatScreen(
             }
         }
     }
+    val documentPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            runCatching {
+                val (chunks, meta) = TextExtractor.extract(context, it, chunkSize = 2400)
+                val extracted = chunks.take(6).joinToString("\n\n").trim()
+                message = if (extracted.isBlank()) {
+                    "I opened ${meta.displayName}, but no readable text was extracted. Help me inspect or summarize what is available."
+                } else {
+                    "Use this document to start the conversation: ${meta.displayName}\n\n$extracted"
+                }
+            }.onFailure { error ->
+                Toast.makeText(context, "Could not read document: ${error.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            runCatching {
+                voiceRecorder.start()
+                isRecordingVoice = true
+            }.onFailure { error ->
+                Toast.makeText(context, "Could not start recording: ${error.message}", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(context, "Microphone permission is required for voice messages.", Toast.LENGTH_LONG).show()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshStyles()
@@ -142,13 +185,36 @@ fun ChatScreen(
         PcmTap.enabled = playerState == PlayerState.PLAYING
     }
 
+    LaunchedEffect(startVoice) {
+        if (startVoice && !startVoiceHandled) {
+            startVoiceHandled = true
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                runCatching {
+                    voiceRecorder.start()
+                    isRecordingVoice = true
+                }.onFailure { error ->
+                    Toast.makeText(context, "Could not start recording: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (voiceRecorder.isRecording) {
+                voiceRecorder.cancel()
+            }
+        }
+    }
+
     val selectedStyles by viewModel.selectedStyles.collectAsState()
     val weights by viewModel.weights.collectAsState()
     val interpolationMode by viewModel.interpolationMode.collectAsState()
     val speed by viewModel.speed.collectAsState()
     val voiceFavorites by viewModel.voiceFavorites.collectAsState()
 
-    var message by remember { mutableStateOf(initialMessage) }
     val listState = rememberLazyListState()
     var showMixerSettings by remember { mutableStateOf(false) }
     var showConversationSettings by remember { mutableStateOf(false) }
@@ -726,6 +792,46 @@ fun ChatScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(
                                 imageVector = Icons.Default.AttachFile,
+                                contentDescription = "Add document",
+                                modifier = Modifier.clickable { documentPicker.launch("*/*") },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = if (isRecordingVoice) "Stop recording" else "Record voice",
+                                modifier = Modifier.clickable {
+                                    if (isRecordingVoice) {
+                                        val audio = voiceRecorder.stop()
+                                        isRecordingVoice = false
+                                        if (audio != null) {
+                                            viewModel.setPendingAudio(audio)
+                                            if (message.isBlank()) {
+                                                message = "Please process this voice recording."
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "No voice recording captured.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else if (ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.RECORD_AUDIO
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        runCatching {
+                                            voiceRecorder.start()
+                                            isRecordingVoice = true
+                                        }.onFailure { error ->
+                                            Toast.makeText(context, "Could not start recording: ${error.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    } else {
+                                        microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.AttachFile,
                                 contentDescription = "Add audio",
                                 modifier = Modifier.clickable { audioPicker.launch("audio/*") },
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -759,8 +865,14 @@ fun ChatScreen(
                         imageVector = Icons.Default.Send,
                         contentDescription = "Send",
                         onClick = {
-                            if (message.isNotBlank()) {
-                                viewModel.sendMessage(message)
+                            if (message.isNotBlank() || pendingImage != null || pendingAudio != null) {
+                                val outgoing = when {
+                                    message.isNotBlank() -> message
+                                    pendingAudio != null -> "Please process this voice recording."
+                                    pendingImage != null -> "Please inspect this image."
+                                    else -> ""
+                                }
+                                viewModel.sendMessage(outgoing)
                                 message = ""
                             }
                         },

@@ -2,6 +2,7 @@ package com.mewmix.nabu
 
 import NabuTheme
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -34,6 +35,7 @@ import com.mewmix.nabu.screens.ChatScreen
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.SettingsManager
+import com.mewmix.nabu.utils.TextExtractor
 import com.mewmix.nabu.galleryport.PerfHud
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.PanelBox
@@ -46,6 +48,7 @@ import kotlinx.coroutines.withContext
 class ChatActivity : ComponentActivity() {
     companion object {
         const val EXTRA_INITIAL_PROMPT = "extra_initial_prompt"
+        const val EXTRA_START_VOICE = "extra_start_voice"
         const val EXTRA_LLM_THREADS_AUTO = "llm_threads_auto"
         const val EXTRA_LLM_THREADS = "llm_threads"
         const val EXTRA_LLM_THREADS_BATCH = "llm_threads_batch"
@@ -62,7 +65,7 @@ class ChatActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
 
-        val initialPrompt = intent.getStringExtra(EXTRA_INITIAL_PROMPT)
+        val startVoice = intent.getBooleanExtra(EXTRA_START_VOICE, false)
 
         lifecycleScope.launch(Dispatchers.IO) {
             if (SettingsManager.getTtsEngine(applicationContext) == "kokoro") {
@@ -85,6 +88,9 @@ class ChatActivity : ComponentActivity() {
         }
 
         lifecycleScope.launch {
+            val initialPrompt = withContext(Dispatchers.IO) {
+                readInitialPrompt(intent)
+            }
             val modelManager = ModelManager(applicationContext)
             val downloaded = modelManager.models.filter { it.isDownloaded && it.type == ModelType.LLM }
             val remote = OAuthRemoteModels.connectedModels(applicationContext)
@@ -106,26 +112,26 @@ class ChatActivity : ComponentActivity() {
             }
 
             if (available.size == 1) {
-                startChat(available.first(), initialPrompt)
+                startChat(available.first(), initialPrompt, startVoice)
             } else {
-                selectModel(available, initialPrompt)
+                selectModel(available, initialPrompt, startVoice)
             }
         }
     }
 
-    private fun selectModel(models: List<Model>, initialPrompt: String?) {
+    private fun selectModel(models: List<Model>, initialPrompt: String?, startVoice: Boolean) {
         setContent {
             NabuTheme {
                 ChatModelPicker(
                     models = models,
-                    onSelect = { startChat(it, initialPrompt) },
+                    onSelect = { startChat(it, initialPrompt, startVoice) },
                     onCancel = { finish() }
                 )
             }
         }
     }
 
-    private fun startChat(model: Model, initialPrompt: String?) {
+    private fun startChat(model: Model, initialPrompt: String?, startVoice: Boolean) {
         val viewModel: ChatViewModel by viewModels {
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -142,7 +148,8 @@ class ChatActivity : ComponentActivity() {
             NabuTheme {
                 ChatScreen(
                     viewModel = viewModel,
-                    initialMessage = initialPrompt.orEmpty()
+                    initialMessage = initialPrompt.orEmpty(),
+                    startVoice = startVoice
                 )
                 if (SettingsManager.isBenchmark(this@ChatActivity)) {
                     PerfHud.Overlay()
@@ -192,6 +199,47 @@ class ChatActivity : ComponentActivity() {
         )
 
         return if (hasAny) overrides else null
+    }
+
+    private fun readInitialPrompt(source: Intent?): String? {
+        if (source == null) return null
+        source.getStringExtra(EXTRA_INITIAL_PROMPT)?.takeIf { it.isNotBlank() }?.let { return it }
+
+        if (source.action == Intent.ACTION_SEND) {
+            source.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let { return it }
+            val stream = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                source.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                source.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+            stream?.let { return promptFromDocumentUri(it) }
+        }
+
+        if (source.action == Intent.ACTION_VIEW) {
+            source.data?.let { return promptFromDocumentUri(it) }
+        }
+
+        return null
+    }
+
+    private fun promptFromDocumentUri(uri: Uri): String? {
+        runCatching {
+            if (intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0) {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        return runCatching {
+            val (chunks, meta) = TextExtractor.extract(applicationContext, uri, chunkSize = 2400)
+            val extracted = chunks.take(6).joinToString("\n\n").trim()
+            if (extracted.isBlank()) {
+                "I opened ${meta.displayName}, but no readable text was extracted. Help me inspect or summarize what is available."
+            } else {
+                "Use this document to start the conversation: ${meta.displayName}\n\n$extracted"
+            }
+        }.onFailure { error ->
+            DebugLogger.log("ChatActivity: failed to extract shared document $uri: ${error.message}")
+        }.getOrNull()
     }
 }
 
