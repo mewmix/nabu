@@ -84,9 +84,12 @@ class AgentTurnRunner(
                 val looksLikeMalformedToolAttempt =
                     finalResponse.trim().startsWith("```") ||
                         finalResponse.contains("<tool_call", ignoreCase = true)
+                val looksLikeBackendFailure =
+                    finalResponse.contains("generation failed", ignoreCase = true) ||
+                        finalResponse.contains("inference failed", ignoreCase = true)
                 val inferredToolCall =
                     if (toolCall == null && lastToolResult == null &&
-                        (finalResponse.isBlank() || looksLikeMalformedToolAttempt)
+                        (finalResponse.isBlank() || looksLikeMalformedToolAttempt || looksLikeBackendFailure)
                     ) {
                         inferToolCallFromModelFailure(latestUserMessage, availableToolNames)
                     } else {

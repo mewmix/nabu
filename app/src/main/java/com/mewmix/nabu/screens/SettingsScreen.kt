@@ -3,8 +3,10 @@ package com.mewmix.nabu.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,6 +19,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +55,7 @@ import kotlinx.coroutines.withContext
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
+import com.mewmix.nabu.ui.components.ColorPickerField
 import com.mewmix.nabu.BuildConfig
 import android.content.Intent
 import android.net.Uri
@@ -111,6 +118,10 @@ fun SettingsScreen(
     var codexStatus by remember { mutableStateOf<String?>(null) }
     var themeMode by remember { mutableStateOf(ThemeManager.getThemeMode(context)) }
     var themeModeExpanded by remember { mutableStateOf(false) }
+    var savedCustomThemes by remember { mutableStateOf(ThemeManager.getSavedCustomThemes(context)) }
+    var selectedCustomThemeName by remember { mutableStateOf(savedCustomThemes.keys.firstOrNull() ?: "My Theme") }
+    var customThemeName by remember { mutableStateOf(selectedCustomThemeName) }
+    var savedCustomThemesExpanded by remember { mutableStateOf(false) }
     var customThemeDraft by remember { mutableStateOf(ThemeManager.getTheme(context)) }
     var customPrimary by remember { mutableStateOf(formatThemeHex(customThemeDraft.primary)) }
     var customSecondary by remember { mutableStateOf(formatThemeHex(customThemeDraft.secondary)) }
@@ -208,130 +219,217 @@ fun SettingsScreen(
                 }
 
                 if (themeMode == ThemeManager.ThemeMode.CUSTOM) {
-                    Text(
-                        text = "Custom Theme",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                TextField(
-                    value = customPrimary,
-                    onValueChange = { customPrimary = it },
-                    label = { Text("Primary (#RRGGBB or #AARRGGBB)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextField(
-                    value = customSecondary,
-                    onValueChange = { customSecondary = it },
-                    label = { Text("Secondary") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextField(
-                    value = customBackground,
-                    onValueChange = { customBackground = it },
-                    label = { Text("Background") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextField(
-                    value = customSurface,
-                    onValueChange = { customSurface = it },
-                    label = { Text("Surface") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextField(
-                    value = customOnSurface,
-                    onValueChange = { customOnSurface = it },
-                    label = { Text("Text / On Surface") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextField(
-                    value = customSurfaceVariant,
-                    onValueChange = { customSurfaceVariant = it },
-                    label = { Text("Surface Variant") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextField(
-                    value = customOutline,
-                    onValueChange = { customOutline = it },
-                    label = { Text("Outline") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TextField(
-                        value = customPanelRadius,
-                        onValueChange = { customPanelRadius = it },
-                        label = { Text("Panel radius") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextField(
-                        value = customControlRadius,
-                        onValueChange = { customControlRadius = it },
-                        label = { Text("Control radius") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextField(
-                        value = customBorderWidth,
-                        onValueChange = { customBorderWidth = it },
-                        label = { Text("Border") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Button(
-                    onClick = {
-                        val parsedPrimary = parseThemeHex(customPrimary)
-                        val parsedSecondary = parseThemeHex(customSecondary)
-                        val parsedBackground = parseThemeHex(customBackground)
-                        val parsedSurface = parseThemeHex(customSurface)
-                        val parsedOnSurface = parseThemeHex(customOnSurface)
-                        val parsedSurfaceVariant = parseThemeHex(customSurfaceVariant)
-                        val parsedOutline = parseThemeHex(customOutline)
-                        val parsedPanelRadius = parseThemeFloat(customPanelRadius, 0f, 48f)
-                        val parsedControlRadius = parseThemeFloat(customControlRadius, 0f, 36f)
-                        val parsedBorderWidth = parseThemeFloat(customBorderWidth, 0f, 6f)
-                        if (
-                            parsedPrimary == null ||
-                            parsedSecondary == null ||
-                            parsedBackground == null ||
-                            parsedSurface == null ||
-                            parsedOnSurface == null ||
-                            parsedSurfaceVariant == null ||
-                            parsedOutline == null
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        ExposedDropdownMenuBox(
+                            expanded = savedCustomThemesExpanded,
+                            onExpandedChange = { savedCustomThemesExpanded = it },
+                            modifier = Modifier.weight(1f)
                         ) {
-                            customThemeError = "Use #RRGGBB or #AARRGGBB hex colors."
-                        } else if (parsedPanelRadius == null || parsedControlRadius == null || parsedBorderWidth == null) {
-                            customThemeError = "Shape values must be numbers in the allowed range."
-                        } else {
-                            customThemeDraft = customThemeDraft.copy(
-                                primary = parsedPrimary,
-                                secondary = parsedSecondary,
-                                background = parsedBackground,
-                                surface = parsedSurface,
-                                onSurface = parsedOnSurface,
-                                surfaceVariant = parsedSurfaceVariant,
-                                outline = parsedOutline,
-                                panelRadiusDp = parsedPanelRadius,
-                                controlRadiusDp = parsedControlRadius,
-                                borderWidthDp = parsedBorderWidth
+                            TextField(
+                                value = selectedCustomThemeName,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Saved Custom Themes") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = savedCustomThemesExpanded) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth()
                             )
-                            ThemeManager.saveTheme(context, customThemeDraft)
-                            themeMode = ThemeManager.ThemeMode.CUSTOM
-                            customThemeError = null
-                            onThemeChanged()
+                            DropdownMenu(
+                                expanded = savedCustomThemesExpanded,
+                                onDismissRequest = { savedCustomThemesExpanded = false }
+                            ) {
+                                savedCustomThemes.keys.forEach { themeName ->
+                                    DropdownMenuItem(
+                                        text = { Text(themeName) },
+                                        onClick = {
+                                            selectedCustomThemeName = themeName
+                                            customThemeName = themeName
+                                            val loadedTheme = savedCustomThemes[themeName]
+                                            if (loadedTheme != null) {
+                                                customThemeDraft = loadedTheme
+                                                customPrimary = formatThemeHex(loadedTheme.primary)
+                                                customSecondary = formatThemeHex(loadedTheme.secondary)
+                                                customBackground = formatThemeHex(loadedTheme.background)
+                                                customSurface = formatThemeHex(loadedTheme.surface)
+                                                customOnSurface = formatThemeHex(loadedTheme.onSurface)
+                                                customSurfaceVariant = formatThemeHex(loadedTheme.surfaceVariant)
+                                                customOutline = formatThemeHex(loadedTheme.outline)
+                                                customPanelRadius = formatThemeNumber(loadedTheme.panelRadiusDp ?: 24f)
+                                                customControlRadius = formatThemeNumber(loadedTheme.controlRadiusDp ?: 18f)
+                                                customBorderWidth = formatThemeNumber(loadedTheme.borderWidthDp ?: 1f)
+                                                ThemeManager.saveTheme(context, loadedTheme)
+                                                onThemeChanged()
+                                            }
+                                            savedCustomThemesExpanded = false
+                                        }
+                                    )
+                                }
+                            }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Save Custom Theme")
-                }
-                customThemeError?.let { error ->
-                    Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        
+                        IconButton(
+                            onClick = {
+                                ThemeManager.deleteCustomTheme(context, selectedCustomThemeName)
+                                savedCustomThemes = ThemeManager.getSavedCustomThemes(context)
+                                val newFirst = savedCustomThemes.keys.firstOrNull() ?: "My Theme"
+                                selectedCustomThemeName = newFirst
+                                customThemeName = newFirst
+                                if (savedCustomThemes.isEmpty()) {
+                                    customThemeDraft = ThemeManager.DEFAULT_LIGHT
+                                    customPrimary = formatThemeHex(customThemeDraft.primary)
+                                    customSecondary = formatThemeHex(customThemeDraft.secondary)
+                                    customBackground = formatThemeHex(customThemeDraft.background)
+                                    customSurface = formatThemeHex(customThemeDraft.surface)
+                                    customOnSurface = formatThemeHex(customThemeDraft.onSurface)
+                                    customSurfaceVariant = formatThemeHex(customThemeDraft.surfaceVariant)
+                                    customOutline = formatThemeHex(customThemeDraft.outline)
+                                    customPanelRadius = formatThemeNumber(customThemeDraft.panelRadiusDp ?: 24f)
+                                    customControlRadius = formatThemeNumber(customThemeDraft.controlRadiusDp ?: 18f)
+                                    customBorderWidth = formatThemeNumber(customThemeDraft.borderWidthDp ?: 1f)
+                                    ThemeManager.saveTheme(context, customThemeDraft)
+                                    onThemeChanged()
+                                }
+                            },
+                            enabled = savedCustomThemes.isNotEmpty()
+                        ) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete Theme")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    TextField(
+                        value = customThemeName,
+                        onValueChange = { customThemeName = it },
+                        label = { Text("Theme Name") },
+                        modifier = Modifier.fillMaxWidth()
                     )
+                    ColorPickerField(
+                        value = customPrimary,
+                        onValueChange = { customPrimary = it },
+                        label = "Primary (#RRGGBB or #AARRGGBB)",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ColorPickerField(
+                        value = customSecondary,
+                        onValueChange = { customSecondary = it },
+                        label = "Secondary",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ColorPickerField(
+                        value = customBackground,
+                        onValueChange = { customBackground = it },
+                        label = "Background",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ColorPickerField(
+                        value = customSurface,
+                        onValueChange = { customSurface = it },
+                        label = "Surface",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ColorPickerField(
+                        value = customOnSurface,
+                        onValueChange = { customOnSurface = it },
+                        label = "Text / On Surface",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ColorPickerField(
+                        value = customSurfaceVariant,
+                        onValueChange = { customSurfaceVariant = it },
+                        label = "Surface Variant",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ColorPickerField(
+                        value = customOutline,
+                        onValueChange = { customOutline = it },
+                        label = "Outline",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextField(
+                            value = customPanelRadius,
+                            onValueChange = { customPanelRadius = it },
+                            label = { Text("Panel radius") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextField(
+                            value = customControlRadius,
+                            onValueChange = { customControlRadius = it },
+                            label = { Text("Control radius") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextField(
+                            value = customBorderWidth,
+                            onValueChange = { customBorderWidth = it },
+                            label = { Text("Border") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            val parsedPrimary = parseThemeHex(customPrimary)
+                            val parsedSecondary = parseThemeHex(customSecondary)
+                            val parsedBackground = parseThemeHex(customBackground)
+                            val parsedSurface = parseThemeHex(customSurface)
+                            val parsedOnSurface = parseThemeHex(customOnSurface)
+                            val parsedSurfaceVariant = parseThemeHex(customSurfaceVariant)
+                            val parsedOutline = parseThemeHex(customOutline)
+                            val parsedPanelRadius = parseThemeFloat(customPanelRadius, 0f, 48f)
+                            val parsedControlRadius = parseThemeFloat(customControlRadius, 0f, 36f)
+                            val parsedBorderWidth = parseThemeFloat(customBorderWidth, 0f, 6f)
+                            if (customThemeName.isBlank()) {
+                                customThemeError = "Please enter a name for your theme."
+                            } else if (
+                                parsedPrimary == null ||
+                                parsedSecondary == null ||
+                                parsedBackground == null ||
+                                parsedSurface == null ||
+                                parsedOnSurface == null ||
+                                parsedSurfaceVariant == null ||
+                                parsedOutline == null
+                            ) {
+                                customThemeError = "Use #RRGGBB or #AARRGGBB hex colors."
+                            } else if (parsedPanelRadius == null || parsedControlRadius == null || parsedBorderWidth == null) {
+                                customThemeError = "Shape values must be numbers in the allowed range."
+                            } else {
+                                customThemeDraft = customThemeDraft.copy(
+                                    primary = parsedPrimary,
+                                    secondary = parsedSecondary,
+                                    background = parsedBackground,
+                                    surface = parsedSurface,
+                                    onSurface = parsedOnSurface,
+                                    surfaceVariant = parsedSurfaceVariant,
+                                    outline = parsedOutline,
+                                    panelRadiusDp = parsedPanelRadius,
+                                    controlRadiusDp = parsedControlRadius,
+                                    borderWidthDp = parsedBorderWidth
+                                )
+                                ThemeManager.saveCustomThemeWithName(context, customThemeName, customThemeDraft)
+                                savedCustomThemes = ThemeManager.getSavedCustomThemes(context)
+                                selectedCustomThemeName = customThemeName
+                                themeMode = ThemeManager.ThemeMode.CUSTOM
+                                customThemeError = null
+                                onThemeChanged()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Save Custom Theme")
+                    }
+                    customThemeError?.let { error ->
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
-            }
             }
 
             BrutalSection(

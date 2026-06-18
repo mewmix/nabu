@@ -2,6 +2,7 @@ package com.mewmix.nabu.actions
 
 import android.content.Intent
 import android.content.Context
+import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
 import com.mewmix.nabu.tools.ToolCall
 import org.junit.After
@@ -572,6 +573,23 @@ class ActionToolsTest {
         assertFalse(result?.isError ?: true)
         assertTrue(result?.output?.contains("restricts direct Bluetooth toggles") == true)
         assertNotNull(launchedIntent?.action)
+    }
+
+    @Test
+    fun execute_toggleBluetoothFallsBackToSettingsWhenPanelUnavailable() {
+        DeviceAction.canResolveIntent = { _, intent ->
+            intent.action == Settings.ACTION_BLUETOOTH_SETTINGS
+        }
+        var launchedIntent: Intent? = null
+        DeviceAction.activityLauncher = { _, intent -> launchedIntent = intent }
+
+        val result = ActionTools.execute(
+            context,
+            ToolCall("toggle_bluetooth", mapOf("enabled" to false))
+        )
+
+        assertFalse(result?.isError ?: true)
+        assertEquals(Settings.ACTION_BLUETOOTH_SETTINGS, launchedIntent?.action)
     }
 
     @Test

@@ -125,6 +125,51 @@ class AgentTurnRunnerTest {
         assertEquals(true, retried)
     }
 
+    @Test
+    fun run_infersToolWhenBackendReportsGenerationFailure() = runTest {
+        val backend = FakeBackend(listOf("LiteRT-LM generation failed.", "Done."))
+        val toolCalls = mutableListOf<ToolCall>()
+        var finalResult: AgentTurnRunner.Result? = null
+
+        AgentTurnRunner(
+            backend = backend,
+            scope = this,
+            toolExecutor = { call ->
+                toolCalls += call
+                ToolResult(call.toolName, "Opened SMS composer.")
+            },
+            inferToolCallFromModelFailure = { userMessage, availableTools ->
+                if ("send_sms" in availableTools && userMessage.contains("send sms")) {
+                    ToolCall(
+                        "send_sms",
+                        mapOf("phone_number" to "19492358485", "message" to "nabu audit test")
+                    )
+                } else {
+                    null
+                }
+            },
+            recoveryConversationProvider = { emptyList() },
+            inferenceDispatcher = StandardTestDispatcher(testScheduler)
+        ).run(
+            initialConversation = listOf(LlmMessage("user", "send sms to 19492358485 saying nabu audit test")),
+            latestUserMessage = "send sms to 19492358485 saying nabu audit test",
+            availableToolNames = setOf("send_sms"),
+            maxToolCalls = 4,
+            onPartialText = {},
+            onSpeakablePartial = { _, _ -> },
+            onSuppressSpeakablePartials = {},
+            onToolStart = {},
+            onComplete = { finalResult = it }
+        )
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf("send_sms"), toolCalls.map { it.toolName })
+        assertEquals("19492358485", toolCalls.first().arguments["phone_number"])
+        assertEquals("nabu audit test", toolCalls.first().arguments["message"])
+        assertEquals("Done.", finalResult?.finalResponse)
+    }
+
     private class FakeBackend(
         responses: List<String>
     ) : LlmBackend {

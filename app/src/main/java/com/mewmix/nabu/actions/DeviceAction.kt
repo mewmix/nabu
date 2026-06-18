@@ -318,13 +318,16 @@ object DeviceAction {
     }
 
     fun toggleBluetooth(context: Context, enabled: Boolean?): ActionResult {
-        val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            "android.settings.panel.action.BLUETOOTH"
-        } else {
-            Settings.ACTION_BLUETOOTH_SETTINGS
-        }
-        val intent = Intent(action).apply {
+        val panelIntent = Intent("android.settings.panel.action.BLUETOOTH").apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val settingsIntent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && canResolveIntent(context, panelIntent)) {
+            panelIntent
+        } else {
+            settingsIntent
         }
         if (!canResolveIntent(context, intent)) {
             return ActionResult("No Bluetooth settings panel is available on this device.", true)

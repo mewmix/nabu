@@ -11,8 +11,10 @@ import java.io.FileReader
 object ThemeManager {
     private const val PREF_KEY_THEME = "current_theme"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
+    private const val PREF_KEY_CUSTOM_THEMES = "saved_custom_themes"
     private const val EXPORT_DIR_NAME = "Nabu/Themes"
     private val gson = Gson()
+    private val customThemesMapType = object : com.google.gson.reflect.TypeToken<Map<String, AppTheme>>() {}.type
 
     enum class ThemeMode(val storageValue: String, val label: String) {
         MODERN("modern", "Bubble Pop"),
@@ -23,6 +25,34 @@ object ThemeManager {
             fun fromStorage(value: String?): ThemeMode =
                 entries.firstOrNull { it.storageValue == value } ?: MODERN
         }
+    }
+
+    fun getSavedCustomThemes(context: Context): Map<String, AppTheme> {
+        val json = DatabaseManager.getSetting(context, PREF_KEY_CUSTOM_THEMES)
+        return if (json != null) {
+            try {
+                gson.fromJson(json, customThemesMapType)
+            } catch (e: Exception) {
+                emptyMap()
+            }
+        } else {
+            emptyMap()
+        }
+    }
+
+    fun saveCustomThemeWithName(context: Context, name: String, theme: AppTheme) {
+        val currentThemes = getSavedCustomThemes(context).toMutableMap()
+        currentThemes[name] = theme
+        val json = gson.toJson(currentThemes, customThemesMapType)
+        DatabaseManager.setSetting(context, PREF_KEY_CUSTOM_THEMES, json)
+        saveTheme(context, theme) // This also sets the mode to CUSTOM and exports
+    }
+
+    fun deleteCustomTheme(context: Context, name: String) {
+        val currentThemes = getSavedCustomThemes(context).toMutableMap()
+        currentThemes.remove(name)
+        val json = gson.toJson(currentThemes, customThemesMapType)
+        DatabaseManager.setSetting(context, PREF_KEY_CUSTOM_THEMES, json)
     }
 
     // Default modern "bubble pop" themes.

@@ -1107,7 +1107,7 @@ class ChatViewModel(
             addTool("launch_package")
         }
         if (containsAny(normalized, "send sms", "text ", "text me", "message ")) addTool("send_sms")
-        if (containsAny(normalized, "call ", "dial ", "place call")) addTool("place_call")
+        if (looksLikeCallRequest(normalized)) addTool("place_call")
         if (containsAny(normalized, "brightness", "dim", "brighter")) addTool("set_brightness")
         if (containsAny(normalized, "flashlight", "torch", "light")) addTool("toggle_flashlight")
         if (containsAny(normalized, "volume", "louder", "quieter")) addTool("set_volume")
@@ -1169,6 +1169,9 @@ class ChatViewModel(
 
     private fun containsAny(text: String, vararg needles: String): Boolean =
         needles.any { text.contains(it) }
+
+    private fun looksLikeCallRequest(text: String): Boolean =
+        Regex("""(?is)^\s*(?:call|dial|place\s+call)\b""").containsMatchIn(text)
 
     private fun summarizeToolResultMessage(result: ToolResult): String {
         return AgentTurnRunner.summarizeToolResultMessage(result)

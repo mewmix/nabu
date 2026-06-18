@@ -163,7 +163,9 @@ class MainActivity : ComponentActivity() {
         userPreferencesRepository = UserPreferencesRepository(this)
 
         val startScreen = handleStartIntent(intent)
-        requestedScreen.value = startScreen
+        if (savedInstanceState == null) {
+            requestedScreen.value = startScreen
+        }
 
         setContent {
             NabuTheme {

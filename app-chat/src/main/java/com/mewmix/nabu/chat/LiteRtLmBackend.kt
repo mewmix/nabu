@@ -231,7 +231,7 @@ class LiteRtLmBackend(
         val latestUserIndex = nonSystemMessages.indexOfLast { it.role == "user" }
         val initialMessages = nonSystemMessages
             .subList(0, latestUserIndex)
-            .mapNotNull(::toLiteRtLmMessage)
+            .mapNotNull(::toLiteRtLmHistoryMessage)
 
         val config = ConversationConfig(
             systemInstruction = systemPrompt.takeIf { it.isNotBlank() }?.let(Contents.Companion::of),
@@ -271,6 +271,17 @@ class LiteRtLmBackend(
                     Message.Companion.user(Contents.of(contents))
                 }
             }
+            else -> null
+        }
+    }
+
+    private fun toLiteRtLmHistoryMessage(message: LlmMessage): Message? {
+        val content = message.content.trim()
+        if (content.isBlank()) return null
+
+        return when (message.role) {
+            "model" -> Message.Companion.model(content)
+            "user" -> Message.Companion.user(content)
             else -> null
         }
     }
