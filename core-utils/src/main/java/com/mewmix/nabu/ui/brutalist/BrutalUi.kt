@@ -16,6 +16,8 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.mewmix.nabu.ui.design.LocalNabuChrome
+import com.mewmix.nabu.ui.design.LocalNabuUiMode
+import com.mewmix.nabu.ui.design.NabuUiMode
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -67,43 +72,89 @@ fun PanelBox(
     headerTrailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
-        modifier
-            .background(Brutal.panelBg, PanelShape)
-            .border(1.dp, Brutal.panelStroke, PanelShape)
-            .drawBehind {
-                // subtle panel ribs / gridlines:
-                val step = 12f
-                drawRect(
-                    Brush.linearGradient(
-                        listOf(Color.Transparent, Brutal.panelHl.copy(alpha = 0.08f))
+    val mode = LocalNabuUiMode.current
+    val chrome = LocalNabuChrome.current
+    if (mode == NabuUiMode.Modern) {
+        val shape = RoundedCornerShape(chrome.panelRadius)
+        Column(
+            modifier
+                .background(
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.surface,
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                        )
                     ),
-                    blendMode = BlendMode.SrcOver
+                    shape = shape
                 )
-                for (y in 0..(size.height / step).toInt()) {
-                    drawLine(
-                        Brutal.hairline.copy(alpha = 0.15f),
-                        Offset(0f, y * step),
-                        Offset(size.width, y * step),
-                        1f
+                .border(chrome.borderWidth, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), shape)
+                .padding(chrome.panelPadding)
+        ) {
+            if (!title.isNullOrBlank()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .background(MaterialTheme.colorScheme.secondary, RoundedCornerShape(999.dp))
                     )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = title.replaceFirstChar { it.titlecase() },
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (headerTrailing != null) Row(content = headerTrailing)
                 }
             }
-            .padding(inset)
-    ) {
-        if (!title.isNullOrBlank()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                LabelPlate(title)
-                Spacer(Modifier.weight(1f))
-                if (headerTrailing != null) Row(content = headerTrailing)
-            }
+            content()
         }
-        content()
+    } else {
+        Column(
+            modifier
+                .background(Brutal.panelBg, PanelShape)
+                .border(1.dp, Brutal.panelStroke, PanelShape)
+                .drawBehind {
+                    // subtle panel ribs / gridlines:
+                    val step = 12f
+                    drawRect(
+                        Brush.linearGradient(
+                            listOf(Color.Transparent, Brutal.panelHl.copy(alpha = 0.08f))
+                        ),
+                        blendMode = BlendMode.SrcOver
+                    )
+                    for (y in 0..(size.height / step).toInt()) {
+                        drawLine(
+                            Brutal.hairline.copy(alpha = 0.15f),
+                            Offset(0f, y * step),
+                            Offset(size.width, y * step),
+                            1f
+                        )
+                    }
+                }
+                .padding(inset)
+        ) {
+            if (!title.isNullOrBlank()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LabelPlate(title)
+                    Spacer(Modifier.weight(1f))
+                    if (headerTrailing != null) Row(content = headerTrailing)
+                }
+            }
+            content()
+        }
     }
 }
 
@@ -116,12 +167,30 @@ fun BrutalSection(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val mode = LocalNabuUiMode.current
+    val chrome = LocalNabuChrome.current
+    val shape = RoundedCornerShape(if (mode == NabuUiMode.Modern) chrome.controlRadius else 6.dp)
+    val background = if (mode == NabuUiMode.Modern) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
+    } else {
+        Brutal.panelHl
+    }
+    val border = if (mode == NabuUiMode.Modern) {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.36f)
+    } else {
+        Brutal.panelStroke
+    }
+    val textColor = if (mode == NabuUiMode.Modern) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Brutal.textBright
+    }
     Column(
         modifier
             .fillMaxWidth()
-            .background(Brutal.panelHl, RoundedCornerShape(6.dp))
-            .border(1.dp, Brutal.panelStroke, RoundedCornerShape(6.dp))
-            .padding(16.dp)
+            .background(background, shape)
+            .border(chrome.borderWidth, border, shape)
+            .padding(if (mode == NabuUiMode.Modern) 14.dp else 16.dp)
     ) {
         Row(
             modifier = Modifier
@@ -130,19 +199,20 @@ fun BrutalSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                title,
-                color = Brutal.textBright,
+                if (mode == NabuUiMode.Modern) title.replaceFirstChar { it.titlecase() } else title,
+                color = textColor,
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.weight(1f))
             Text(
-                if (expanded) "▲" else "▼",
-                color = Brutal.textBright
+                if (expanded) "UP" else "DOWN",
+                color = if (mode == NabuUiMode.Modern) MaterialTheme.colorScheme.primary else Brutal.textBright,
+                style = MaterialTheme.typography.labelSmall
             )
         }
         if (expanded) {
             Divider(
-                color = Brutal.hairline,
+                color = if (mode == NabuUiMode.Modern) MaterialTheme.colorScheme.outline.copy(alpha = 0.32f) else Brutal.hairline,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
             content()
@@ -157,6 +227,25 @@ fun LabelPlate(
     modifier: Modifier = Modifier,
     tone: Color = Brutal.nameplate
 ) {
+    val mode = LocalNabuUiMode.current
+    val chrome = LocalNabuChrome.current
+    if (mode == NabuUiMode.Modern) {
+        Box(
+            modifier
+                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(chrome.chipRadius))
+                .border(chrome.borderWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f), RoundedCornerShape(chrome.chipRadius))
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = text.replaceFirstChar { it.titlecase() },
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        return
+    }
     Box(
         modifier
             .background(tone, RoundedCornerShape(4.dp))
@@ -181,13 +270,30 @@ fun BrutalButton(
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
+    val mode = LocalNabuUiMode.current
+    val chrome = LocalNabuChrome.current
     val interaction = remember { MutableInteractionSource() }
-    val bg = if (enabled) Brutal.panelHl else Brutal.panelBg
-    val border = if (enabled) Brutal.panelStroke else Brutal.hairline
+    val shape = RoundedCornerShape(if (mode == NabuUiMode.Modern) chrome.controlRadius else 6.dp)
+    val bg = if (mode == NabuUiMode.Modern) {
+        if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+    } else {
+        if (enabled) Brutal.panelHl else Brutal.panelBg
+    }
+    val border = if (mode == NabuUiMode.Modern) {
+        if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.32f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)
+    } else {
+        if (enabled) Brutal.panelStroke else Brutal.hairline
+    }
+    val contentColor = if (mode == NabuUiMode.Modern) {
+        if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        if (enabled) Brutal.textBright else Brutal.textDim
+    }
     Row(
         modifier
-            .background(bg, RoundedCornerShape(6.dp))
-            .border(1.dp, border, RoundedCornerShape(6.dp))
+            .heightIn(min = chrome.buttonHeight)
+            .background(bg, shape)
+            .border(chrome.borderWidth, border, shape)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -195,13 +301,12 @@ fun BrutalButton(
                 role = Role.Button,
                 onClick = onClick
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = if (mode == NabuUiMode.Modern) 16.dp else 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        val contentColor = if (enabled) Brutal.textBright else Brutal.textDim
         CompositionLocalProvider(LocalContentColor provides contentColor) {
-            ProvideTextStyle(MaterialTheme.typography.labelMedium) {
+            ProvideTextStyle(if (mode == NabuUiMode.Modern) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium) {
                 content()
             }
         }
@@ -210,8 +315,9 @@ fun BrutalButton(
 
 @Composable
 fun BrutalButtonText(text: String, modifier: Modifier = Modifier) {
+    val mode = LocalNabuUiMode.current
     Text(
-        text = text,
+        text = if (mode == NabuUiMode.Modern) text.toButtonTitle() else text,
         modifier = modifier.fillMaxWidth(),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -219,6 +325,15 @@ fun BrutalButtonText(text: String, modifier: Modifier = Modifier) {
         textAlign = TextAlign.Center
     )
 }
+
+private fun String.toButtonTitle(): String =
+    split(" ").joinToString(" ") { part ->
+        if (part.all { it == '&' || it == '/' || it == '+' || it == '-' }) {
+            part
+        } else {
+            part.lowercase().replaceFirstChar { it.titlecase() }
+        }
+    }
 
 /* ---------- LED Indicator ---------- */
 @Composable
@@ -253,7 +368,44 @@ fun SwitchToggle(
     modifier: Modifier = Modifier,
     ledColor: Color = Brutal.green
 ) {
+    val mode = LocalNabuUiMode.current
+    val chrome = LocalNabuChrome.current
     val interaction = remember { MutableInteractionSource() }
+    if (mode == NabuUiMode.Modern) {
+        Row(
+            modifier = modifier
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f), RoundedCornerShape(chrome.controlRadius))
+                .border(chrome.borderWidth, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(chrome.controlRadius))
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    role = Role.Switch
+                ) { onToggle(!checked) },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.weight(1f))
+            Box(
+                Modifier
+                    .size(width = 54.dp, height = 30.dp)
+                    .background(
+                        if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                        RoundedCornerShape(999.dp)
+                    )
+                    .drawBehind {
+                        val radius = 11.dp.toPx()
+                        val x = if (checked) size.width - radius - 4.dp.toPx() else radius + 4.dp.toPx()
+                        drawCircle(
+                            color = Color.White,
+                            radius = radius,
+                            center = Offset(x, size.height / 2f)
+                        )
+                    }
+            )
+        }
+        return
+    }
     Row(
         modifier = modifier
             .background(Brutal.panelHl, RoundedCornerShape(6.dp))
@@ -437,16 +589,30 @@ fun PanelRow(
     modifier: Modifier = Modifier,
     right: @Composable RowScope.() -> Unit
 ) {
+    val mode = LocalNabuUiMode.current
+    val chrome = LocalNabuChrome.current
+    val shape = RoundedCornerShape(if (mode == NabuUiMode.Modern) chrome.controlRadius else 4.dp)
     Row(
         modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .background(Brutal.panelHl, RoundedCornerShape(4.dp))
-            .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .background(
+                if (mode == NabuUiMode.Modern) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.56f) else Brutal.panelHl,
+                shape
+            )
+            .border(
+                chrome.borderWidth,
+                if (mode == NabuUiMode.Modern) MaterialTheme.colorScheme.outline.copy(alpha = 0.3f) else Brutal.hairline,
+                shape
+            )
+            .padding(horizontal = if (mode == NabuUiMode.Modern) 12.dp else 8.dp, vertical = if (mode == NabuUiMode.Modern) 10.dp else 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(name.uppercase(), color = Brutal.textDim, style = MaterialTheme.typography.labelSmall)
+        Text(
+            text = if (mode == NabuUiMode.Modern) name.replaceFirstChar { it.titlecase() } else name.uppercase(),
+            color = if (mode == NabuUiMode.Modern) MaterialTheme.colorScheme.onSurfaceVariant else Brutal.textDim,
+            style = MaterialTheme.typography.labelSmall
+        )
         Spacer(Modifier.weight(1f))
         right()
     }
@@ -459,6 +625,21 @@ fun BrutalSlider(
     modifier: Modifier = Modifier,
     range: ClosedFloatingPointRange<Float> = 0f..1f
 ) {
+    val mode = LocalNabuUiMode.current
+    if (mode == NabuUiMode.Modern) {
+        Slider(
+            value = value.coerceIn(range.start, range.endInclusive),
+            onValueChange = onValueChange,
+            valueRange = range,
+            modifier = modifier,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.secondary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        )
+        return
+    }
     val interactionSource = remember { MutableInteractionSource() }
     Canvas(
         modifier = modifier

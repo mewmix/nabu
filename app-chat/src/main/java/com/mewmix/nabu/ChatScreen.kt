@@ -26,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.PanelBox
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,63 +59,70 @@ fun ChatScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     var message by remember { mutableStateOf("") }
 
-    Scaffold { paddingValues ->
-        Column(
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background
+    ) { paddingValues ->
+        PanelBox(
+            title = "Chat",
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
-                reverseLayout = true
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
-                items(chatState.reversed()) { chatMessage ->
-                    MessageBubble(chatMessage)
-                    Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    reverseLayout = true
+                ) {
+                    items(chatState.reversed()) { chatMessage ->
+                        MessageBubble(chatMessage)
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
-            }
 
-            if (isLoading) {
-                Box(
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp),
-                    contentAlignment = Alignment.Center
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CircularProgressIndicator()
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = message,
-                    onValueChange = { message = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 80.dp),
-                    label = { Text("Message") },
-                    shape = RoundedCornerShape(24.dp),
-                    maxLines = 5,
-                    minLines = 3
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                BrutalButton(
-                    onClick = {
-                        if (message.isNotBlank()) {
-                            viewModel.sendMessage(message)
-                            message = ""
-                        }
-                    },
-                    enabled = message.isNotBlank() && !isLoading
-                ) {
-                    Text("Send")
+                    OutlinedTextField(
+                        value = message,
+                        onValueChange = { message = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 80.dp),
+                        label = { Text("Message") },
+                        shape = RoundedCornerShape(24.dp),
+                        maxLines = 5,
+                        minLines = 3
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    BrutalButton(
+                        onClick = {
+                            if (message.isNotBlank()) {
+                                viewModel.sendMessage(message)
+                                message = ""
+                            }
+                        },
+                        enabled = message.isNotBlank() && !isLoading
+                    ) {
+                        Icon(Icons.Filled.Send, contentDescription = "Send")
+                    }
                 }
             }
         }

@@ -31,8 +31,8 @@ fun VersionPlate(
     Row(
         modifier
             .fillMaxWidth()
-            .background(Brutal.panelHl, VersionPlateShape)
-            .border(1.dp, Brutal.hairline, VersionPlateShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant, VersionPlateShape)
+            .border(1.dp, MaterialTheme.colorScheme.outline, VersionPlateShape)
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -41,7 +41,7 @@ fun VersionPlate(
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = version,
-            color = Brutal.textBright,
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodyMedium
         )
     }

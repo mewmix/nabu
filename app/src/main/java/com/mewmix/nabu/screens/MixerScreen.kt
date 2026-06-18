@@ -44,6 +44,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.Icon
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.utils.InterpolationMode
@@ -254,6 +258,7 @@ fun MixerScreen(
     }
 
     PanelBox(
+        title = "Mixer",
         modifier = Modifier
             .padding(16.dp)
             .fillMaxSize()
@@ -283,13 +288,16 @@ fun MixerScreen(
             TextField(
                 value = text,
                 onValueChange = { text = it },
-                minLines = 3,
+                minLines = 5,
                 maxLines = 12,
-                label = { Text("TEXT TO SPEAK") },
+                label = { Text("Text to speak") },
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 BrutalButton(
                     onClick = { generateCurrentAudio(save = false) },
                     modifier = Modifier.weight(1f),
@@ -297,7 +305,11 @@ fun MixerScreen(
                         text.isNotBlank() &&
                         (preferredEngine != "supertonic" || hasSupertonicModels) &&
                         (preferredEngine != "soprano" || isSopranoLoaded)
-                ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY") }
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY")
+                }
 
                 BrutalButton(
                     onClick = { generateCurrentAudio(save = true) },
@@ -306,21 +318,36 @@ fun MixerScreen(
                         text.isNotBlank() &&
                         (preferredEngine != "supertonic" || hasSupertonicModels) &&
                         (preferredEngine != "soprano" || isSopranoLoaded)
-                ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
+                ) {
+                    Icon(Icons.Filled.Save, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    BrutalButtonText(if (isProcessing) "MIXING..." else "SAVE")
+                }
             }
 
             lastGeneratedAudio?.let { (audio, sampleRate) ->
-                Row(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     BrutalButton(
                         onClick = { playAudio(audio, sampleRate, scope) {} },
                         modifier = Modifier.weight(1f),
                         enabled = !isProcessing
-                    ) { BrutalButtonText("REPLAY") }
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        BrutalButtonText("REPLAY")
+                    }
                     BrutalButton(
                         onClick = { saveAudio(audio, context, currentFileName(), sampleRate) },
                         modifier = Modifier.weight(1f),
                         enabled = !isProcessing
-                    ) { BrutalButtonText("SAVE AGAIN") }
+                    ) {
+                        Icon(Icons.Filled.Save, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        BrutalButtonText("SAVE AGAIN")
+                    }
                 }
             }
 
@@ -450,7 +477,7 @@ fun MixerScreen(
         }
 
         if (isSopranoLoaded) {
-            Text("SOPRANO SAMPLING", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+            Text("SOPRANO SAMPLING", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
             PanelRow(name = "Top P") {
                 BrutalSlider(
                     value = sopranoTopP,
@@ -595,7 +622,7 @@ fun StyleSelector(
         Text(
             "SELECTED STYLES:",
             style = MaterialTheme.typography.labelLarge,
-            color = Brutal.textBright
+            color = MaterialTheme.colorScheme.onSurface
         )
 
         FlowRow(
@@ -605,11 +632,11 @@ fun StyleSelector(
             selectedStyles.forEach { style ->
                 SuggestionChip(
                     onClick = { onRemoveStyle(style) },
-                    label = { Text(style.uppercase(), color = Brutal.textBright) },
+                    label = { Text(style.uppercase(), color = MaterialTheme.colorScheme.onSurface) },
                     colors = SuggestionChipDefaults.suggestionChipColors(
-                        containerColor = Brutal.panelBg,
-                        iconContentColor = Brutal.textBright,
-                        labelColor = Brutal.textBright
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        iconContentColor = MaterialTheme.colorScheme.onSurface,
+                        labelColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
             }
@@ -626,42 +653,42 @@ fun StyleSelector(
                 onValueChange = {},
                 readOnly = true,
                 trailingIcon = {
-                    Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
+                    Text(if (expanded) "▲" else "▼", color = MaterialTheme.colorScheme.onSurface)
                 },
-                placeholder = { Text("ADD STYLE...", color = Brutal.textDim) },
+                placeholder = { Text("ADD STYLE...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Brutal.panelBg,
-                    unfocusedContainerColor = Brutal.panelBg,
-                    focusedIndicatorColor = Brutal.hairline,
-                    unfocusedIndicatorColor = Brutal.hairline,
-                    cursorColor = Brutal.amber,
-                    focusedTextColor = Brutal.textBright,
-                    unfocusedTextColor = Brutal.textBright,
-                    focusedPlaceholderColor = Brutal.textDim,
-                    unfocusedPlaceholderColor = Brutal.textDim
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                    cursorColor = MaterialTheme.colorScheme.tertiary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 textStyle = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier
                     .menuAnchor()
                     .fillMaxWidth()
-                    .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
             )
 
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
                 modifier = Modifier
-                    .background(Brutal.panelBg)
-                    .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
             ) {
                 styleNames.filter { it !in selectedStyles }.forEach { style ->
                     DropdownMenuItem(
-                        text = { Text(style.uppercase(), color = Brutal.textBright) },
+                        text = { Text(style.uppercase(), color = MaterialTheme.colorScheme.onSurface) },
                         onClick = {
                             onAddStyle(style)
                             expanded = false
                         },
-                        colors = MenuDefaults.itemColors(textColor = Brutal.textBright)
+                        colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.onSurface)
                     )
                 }
             }
@@ -694,37 +721,37 @@ fun SingleStyleSelector(
             readOnly = true,
             label = { Text("Supertonic Style") },
             trailingIcon = {
-                Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
+                Text(if (expanded) "▲" else "▼", color = MaterialTheme.colorScheme.onSurface)
             },
             colors = TextFieldDefaults.colors(
-                focusedContainerColor = Brutal.panelBg,
-                unfocusedContainerColor = Brutal.panelBg,
-                focusedIndicatorColor = Brutal.hairline,
-                unfocusedIndicatorColor = Brutal.hairline,
-                cursorColor = Brutal.amber,
-                focusedTextColor = Brutal.textBright,
-                unfocusedTextColor = Brutal.textBright
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                focusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                cursorColor = MaterialTheme.colorScheme.tertiary,
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
             ),
             modifier = Modifier
                 .menuAnchor()
                 .fillMaxWidth()
-                .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
         )
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             modifier = Modifier
-                .background(Brutal.panelBg)
-                .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
         ) {
             styleNames.forEach { style ->
                 DropdownMenuItem(
-                    text = { Text(style.uppercase(), color = Brutal.textBright) },
+                    text = { Text(style.uppercase(), color = MaterialTheme.colorScheme.onSurface) },
                     onClick = {
                         onSelected(style)
                         expanded = false
                     },
-                    colors = MenuDefaults.itemColors(textColor = Brutal.textBright)
+                    colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.onSurface)
                 )
             }
         }
@@ -738,7 +765,7 @@ fun WeightSliders(
     onWeightChanged: (String, Float) -> Unit
 ) {
     Column {
-        Text("STYLE WEIGHTS:", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+        Text("STYLE WEIGHTS:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
 
         selectedStyles.forEach { style ->
             PanelRow(name = style) {
@@ -766,12 +793,12 @@ fun WeightSliders(
                         modifier = Modifier.width(88.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Brutal.panelBg,
-                            unfocusedContainerColor = Brutal.panelBg,
-                            focusedIndicatorColor = Brutal.hairline,
-                            unfocusedIndicatorColor = Brutal.hairline,
-                            focusedTextColor = Brutal.textBright,
-                            unfocusedTextColor = Brutal.textBright
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                            focusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -790,7 +817,7 @@ fun VoiceFavoritesSection(
     var favoriteName by remember { mutableStateOf("") }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("FAVORITES:", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+        Text("FAVORITES:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -801,14 +828,14 @@ fun VoiceFavoritesSection(
                 onValueChange = { favoriteName = it },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                placeholder = { Text("Name this mix", color = Brutal.textDim) },
+                placeholder = { Text("Name this mix", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Brutal.panelBg,
-                    unfocusedContainerColor = Brutal.panelBg,
-                    focusedIndicatorColor = Brutal.hairline,
-                    unfocusedIndicatorColor = Brutal.hairline,
-                    focusedTextColor = Brutal.textBright,
-                    unfocusedTextColor = Brutal.textBright
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                 )
             )
             BrutalButton(
@@ -821,7 +848,7 @@ fun VoiceFavoritesSection(
                 },
                 enabled = favoriteName.isNotBlank()
             ) {
-                Text("Save", color = Brutal.textBright)
+                Text("Save", color = MaterialTheme.colorScheme.onSurface)
             }
         }
 
@@ -829,29 +856,29 @@ fun VoiceFavoritesSection(
             Text(
                 text = "No saved mixes yet.",
                 style = MaterialTheme.typography.bodySmall,
-                color = Brutal.textDim
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
             favorites.forEach { favorite ->
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, Brutal.hairline, RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(favorite.name, color = Brutal.textBright, style = MaterialTheme.typography.titleSmall)
+                    Text(favorite.name, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall)
                     Text(
                         text = "${favorite.styles.joinToString(" + ")} • ${favorite.interpolationMode.displayName}",
-                        color = Brutal.textDim,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         BrutalButton(onClick = { onApplyFavorite(favorite) }) {
-                            Text("Load", color = Brutal.textBright)
+                            Text("Load", color = MaterialTheme.colorScheme.onSurface)
                         }
                         BrutalButton(onClick = { onDeleteFavorite(favorite.name) }) {
-                            Text("Delete", color = Brutal.red)
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -866,7 +893,7 @@ fun InterpolationModeSelector(
     onModeSelected: (InterpolationMode) -> Unit
 ) {
     Column {
-        Text("INTERPOLATION MODE:", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+        Text("INTERPOLATION MODE:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
 
         Row(horizontalArrangement = Arrangement.SpaceEvenly) {
             InterpolationMode.entries.forEach { mode ->

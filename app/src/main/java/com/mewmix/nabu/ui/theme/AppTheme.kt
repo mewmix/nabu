@@ -17,5 +17,8 @@ data class AppTheme(
     val onSurface: Long = 0xFF2D2518,
     val surfaceVariant: Long = 0xFFF0E8DC,
     val onSurfaceVariant: Long = 0xFF5B5147,
-    val outline: Long = 0xFFD4C8B8
+    val outline: Long = 0xFFD4C8B8,
+    val panelRadiusDp: Float? = null,
+    val controlRadiusDp: Float? = null,
+    val borderWidthDp: Float? = null
 )

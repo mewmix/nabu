@@ -144,7 +144,7 @@ fun OptionalPermissionsSection(
         Text(
             text = "Missing permissions do not block startup. They only limit the related features.",
             style = MaterialTheme.typography.bodySmall,
-            color = Brutal.textDim
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         if (showContinue && onContinue != null) {
@@ -192,7 +192,7 @@ private fun PermissionRow(
         Text(
             text = statusLabel,
             style = MaterialTheme.typography.bodySmall,
-            color = Brutal.textBright
+            color = MaterialTheme.colorScheme.onSurface
         )
         BrutalButton(
             onClick = onClick,

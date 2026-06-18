@@ -2,6 +2,7 @@ package com.mewmix.nabu.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -115,6 +116,12 @@ fun SettingsScreen(
     var customSecondary by remember { mutableStateOf(formatThemeHex(customThemeDraft.secondary)) }
     var customBackground by remember { mutableStateOf(formatThemeHex(customThemeDraft.background)) }
     var customSurface by remember { mutableStateOf(formatThemeHex(customThemeDraft.surface)) }
+    var customOnSurface by remember { mutableStateOf(formatThemeHex(customThemeDraft.onSurface)) }
+    var customSurfaceVariant by remember { mutableStateOf(formatThemeHex(customThemeDraft.surfaceVariant)) }
+    var customOutline by remember { mutableStateOf(formatThemeHex(customThemeDraft.outline)) }
+    var customPanelRadius by remember { mutableStateOf(formatThemeNumber(customThemeDraft.panelRadiusDp ?: 24f)) }
+    var customControlRadius by remember { mutableStateOf(formatThemeNumber(customThemeDraft.controlRadiusDp ?: 18f)) }
+    var customBorderWidth by remember { mutableStateOf(formatThemeNumber(customThemeDraft.borderWidthDp ?: 1f)) }
     var customThemeError by remember { mutableStateOf<String?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -193,70 +200,135 @@ fun SettingsScreen(
             }
 
             Text(
-                text = "Modern uses the warmer Spotter-inspired palette; Brutal restores the current high-contrast control-room look. Custom uses the saved theme JSON.",
+                text = "Bubble Pop uses the warm Iris studio spacing with softer cards and icon-led controls. Brutal restores the high-contrast control-room look. Custom applies saved color and shape tokens across the same components.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            Text(
-                text = "Custom Theme",
-                style = MaterialTheme.typography.titleSmall
-            )
-            TextField(
-                value = customPrimary,
-                onValueChange = { customPrimary = it },
-                label = { Text("Primary (#RRGGBB or #AARRGGBB)") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            TextField(
-                value = customSecondary,
-                onValueChange = { customSecondary = it },
-                label = { Text("Secondary") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            TextField(
-                value = customBackground,
-                onValueChange = { customBackground = it },
-                label = { Text("Background") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            TextField(
-                value = customSurface,
-                onValueChange = { customSurface = it },
-                label = { Text("Surface") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Button(
-                onClick = {
-                    val parsedPrimary = parseThemeHex(customPrimary)
-                    val parsedSecondary = parseThemeHex(customSecondary)
-                    val parsedBackground = parseThemeHex(customBackground)
-                    val parsedSurface = parseThemeHex(customSurface)
-                    if (parsedPrimary == null || parsedSecondary == null || parsedBackground == null || parsedSurface == null) {
-                        customThemeError = "Use #RRGGBB or #AARRGGBB hex colors."
-                    } else {
-                        customThemeDraft = customThemeDraft.copy(
-                            primary = parsedPrimary,
-                            secondary = parsedSecondary,
-                            background = parsedBackground,
-                            surface = parsedSurface
-                        )
-                        ThemeManager.saveTheme(context, customThemeDraft)
-                        themeMode = ThemeManager.ThemeMode.CUSTOM
-                        customThemeError = null
-                        onThemeChanged()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Save Custom Theme")
-            }
-            customThemeError?.let { error ->
+            if (themeMode == ThemeManager.ThemeMode.CUSTOM) {
                 Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
+                    text = "Custom Theme",
+                    style = MaterialTheme.typography.titleSmall
                 )
+                TextField(
+                    value = customPrimary,
+                    onValueChange = { customPrimary = it },
+                    label = { Text("Primary (#RRGGBB or #AARRGGBB)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextField(
+                    value = customSecondary,
+                    onValueChange = { customSecondary = it },
+                    label = { Text("Secondary") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextField(
+                    value = customBackground,
+                    onValueChange = { customBackground = it },
+                    label = { Text("Background") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextField(
+                    value = customSurface,
+                    onValueChange = { customSurface = it },
+                    label = { Text("Surface") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextField(
+                    value = customOnSurface,
+                    onValueChange = { customOnSurface = it },
+                    label = { Text("Text / On Surface") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextField(
+                    value = customSurfaceVariant,
+                    onValueChange = { customSurfaceVariant = it },
+                    label = { Text("Surface Variant") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextField(
+                    value = customOutline,
+                    onValueChange = { customOutline = it },
+                    label = { Text("Outline") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextField(
+                        value = customPanelRadius,
+                        onValueChange = { customPanelRadius = it },
+                        label = { Text("Panel radius") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextField(
+                        value = customControlRadius,
+                        onValueChange = { customControlRadius = it },
+                        label = { Text("Control radius") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextField(
+                        value = customBorderWidth,
+                        onValueChange = { customBorderWidth = it },
+                        label = { Text("Border") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Button(
+                    onClick = {
+                        val parsedPrimary = parseThemeHex(customPrimary)
+                        val parsedSecondary = parseThemeHex(customSecondary)
+                        val parsedBackground = parseThemeHex(customBackground)
+                        val parsedSurface = parseThemeHex(customSurface)
+                        val parsedOnSurface = parseThemeHex(customOnSurface)
+                        val parsedSurfaceVariant = parseThemeHex(customSurfaceVariant)
+                        val parsedOutline = parseThemeHex(customOutline)
+                        val parsedPanelRadius = parseThemeFloat(customPanelRadius, 0f, 48f)
+                        val parsedControlRadius = parseThemeFloat(customControlRadius, 0f, 36f)
+                        val parsedBorderWidth = parseThemeFloat(customBorderWidth, 0f, 6f)
+                        if (
+                            parsedPrimary == null ||
+                            parsedSecondary == null ||
+                            parsedBackground == null ||
+                            parsedSurface == null ||
+                            parsedOnSurface == null ||
+                            parsedSurfaceVariant == null ||
+                            parsedOutline == null
+                        ) {
+                            customThemeError = "Use #RRGGBB or #AARRGGBB hex colors."
+                        } else if (parsedPanelRadius == null || parsedControlRadius == null || parsedBorderWidth == null) {
+                            customThemeError = "Shape values must be numbers in the allowed range."
+                        } else {
+                            customThemeDraft = customThemeDraft.copy(
+                                primary = parsedPrimary,
+                                secondary = parsedSecondary,
+                                background = parsedBackground,
+                                surface = parsedSurface,
+                                onSurface = parsedOnSurface,
+                                surfaceVariant = parsedSurfaceVariant,
+                                outline = parsedOutline,
+                                panelRadiusDp = parsedPanelRadius,
+                                controlRadiusDp = parsedControlRadius,
+                                borderWidthDp = parsedBorderWidth
+                            )
+                            ThemeManager.saveTheme(context, customThemeDraft)
+                            themeMode = ThemeManager.ThemeMode.CUSTOM
+                            customThemeError = null
+                            onThemeChanged()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Save Custom Theme")
+                }
+                customThemeError?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
 
             HorizontalDivider()
@@ -855,6 +927,9 @@ fun SettingsScreen(
 private fun formatThemeHex(value: Long): String =
     "#%08X".format(value)
 
+private fun formatThemeNumber(value: Float): String =
+    if (value % 1f == 0f) value.toInt().toString() else "%.1f".format(value)
+
 private fun parseThemeHex(input: String): Long? {
     val cleaned = input.trim().removePrefix("#")
     val withAlpha = when (cleaned.length) {
@@ -864,6 +939,9 @@ private fun parseThemeHex(input: String): Long? {
     }
     return withAlpha.toLongOrNull(16)?.let { 0x00000000FFFFFFFFL and it }
 }
+
+private fun parseThemeFloat(input: String, min: Float, max: Float): Float? =
+    input.trim().toFloatOrNull()?.takeIf { it in min..max }
 
 @Suppress("unused")
 private fun AppTheme.withCoreColors(primary: Long, secondary: Long, background: Long, surface: Long): AppTheme =

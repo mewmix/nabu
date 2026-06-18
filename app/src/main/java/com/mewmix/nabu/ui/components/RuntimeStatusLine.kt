@@ -54,7 +54,7 @@ fun RuntimeStatusLine(
     Text(
         text = "RUNTIME: $runtimeLabel",
         style = MaterialTheme.typography.labelLarge,
-        color = Brutal.textDim,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
     )
 }

@@ -15,7 +15,7 @@ object ThemeManager {
     private val gson = Gson()
 
     enum class ThemeMode(val storageValue: String, val label: String) {
-        MODERN("modern", "Modern"),
+        MODERN("modern", "Bubble Pop"),
         BRUTAL("brutal", "Brutal"),
         CUSTOM("custom", "Custom");
 
@@ -25,44 +25,50 @@ object ThemeManager {
         }
     }
 
-    // Default themes
+    // Default modern "bubble pop" themes.
     val DEFAULT_LIGHT = AppTheme(
         primary = 0xFFE86F51,
         onPrimary = 0xFFFFFFFF,
         primaryContainer = 0xFFFFDED4,
         onPrimaryContainer = 0xFF3D160D,
-        secondary = 0xFF3E8D72,
+        secondary = 0xFF5B8C5A,
         onSecondary = 0xFFFFFFFF,
-        secondaryContainer = 0xFFC9F0DF,
-        onSecondaryContainer = 0xFF0D2D22,
-        tertiary = 0xFF4E6FAE,
-        onTertiary = 0xFFFFFFFF,
+        secondaryContainer = 0xFFE2F0DB,
+        onSecondaryContainer = 0xFF173117,
+        tertiary = 0xFFD59A21,
+        onTertiary = 0xFF2F2100,
         background = 0xFFFAF6F0,
         onBackground = 0xFF2D2518,
         surface = 0xFFFFFFFF,
         onSurface = 0xFF2D2518,
         surfaceVariant = 0xFFF0E8DC,
         onSurfaceVariant = 0xFF5B5147,
-        outline = 0xFFD4C8B8
+        outline = 0xFFD4C8B8,
+        panelRadiusDp = 24f,
+        controlRadiusDp = 18f,
+        borderWidthDp = 1f
     )
     val DEFAULT_DARK = AppTheme(
         primary = 0xFFFF9B7F,
         onPrimary = 0xFF3D160D,
         primaryContainer = 0xFF663225,
         onPrimaryContainer = 0xFFFFDED4,
-        secondary = 0xFF7EDDB9,
-        onSecondary = 0xFF0D2D22,
-        secondaryContainer = 0xFF265A49,
-        onSecondaryContainer = 0xFFC9F0DF,
-        tertiary = 0xFF9DB9F7,
-        onTertiary = 0xFF13264F,
-        background = 0xFF201A14,
+        secondary = 0xFFA7D6A0,
+        onSecondary = 0xFF173117,
+        secondaryContainer = 0xFF345A34,
+        onSecondaryContainer = 0xFFE2F0DB,
+        tertiary = 0xFFFFCF72,
+        onTertiary = 0xFF3A2700,
+        background = 0xFF2D2518,
         onBackground = 0xFFFAF6F0,
-        surface = 0xFF2D2518,
+        surface = 0xFF3D3629,
         onSurface = 0xFFFAF6F0,
-        surfaceVariant = 0xFF3D3629,
-        onSurfaceVariant = 0xFFE0D8CC,
-        outline = 0xFF6B5E4E
+        surfaceVariant = 0xFF4A3F32,
+        onSurfaceVariant = 0xFFE8DED0,
+        outline = 0xFF6B5E4E,
+        panelRadiusDp = 24f,
+        controlRadiusDp = 18f,
+        borderWidthDp = 1f
     )
 
     val BRUTAL_LIGHT = AppTheme(
@@ -82,7 +88,10 @@ object ThemeManager {
         onSurface = 0xFFEDEDED,
         surfaceVariant = 0xFF24272B,
         onSurfaceVariant = 0xFFB8B8B8,
-        outline = 0xFF555A62
+        outline = 0xFF555A62,
+        panelRadiusDp = 8f,
+        controlRadiusDp = 6f,
+        borderWidthDp = 1f
     )
 
     val BRUTAL_DARK = BRUTAL_LIGHT.copy(

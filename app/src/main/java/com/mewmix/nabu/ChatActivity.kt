@@ -5,8 +5,24 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -19,6 +35,8 @@ import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.galleryport.PerfHud
+import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.viewmodel.ChatViewModel
 import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import kotlinx.coroutines.Dispatchers
@@ -96,14 +114,15 @@ class ChatActivity : ComponentActivity() {
     }
 
     private fun selectModel(models: List<Model>, initialPrompt: String?) {
-        val names = models.map { it.name }.toTypedArray()
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Select Chat Model")
-            .setItems(names) { _, which ->
-                startChat(models[which], initialPrompt)
+        setContent {
+            NabuTheme {
+                ChatModelPicker(
+                    models = models,
+                    onSelect = { startChat(it, initialPrompt) },
+                    onCancel = { finish() }
+                )
             }
-            .setOnCancelListener { finish() }
-            .show()
+        }
     }
 
     private fun startChat(model: Model, initialPrompt: String?) {
@@ -173,5 +192,77 @@ class ChatActivity : ComponentActivity() {
         )
 
         return if (hasAny) overrides else null
+    }
+}
+
+@Composable
+private fun ChatModelPicker(
+    models: List<Model>,
+    onSelect: (Model) -> Unit,
+    onCancel: () -> Unit
+) {
+    BackHandler(onBack = onCancel)
+    PanelBox(
+        title = "Select Chat Model",
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "Choose the local or connected model for this conversation.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(models) { model ->
+                    BrutalButton(
+                        onClick = { onSelect(model) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                    RoundedCornerShape(18.dp)
+                                )
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                    RoundedCornerShape(18.dp)
+                                )
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = model.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (model.description.isNotBlank()) {
+                                Text(
+                                    text = model.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            BrutalButton(
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Cancel")
+            }
+        }
     }
 }

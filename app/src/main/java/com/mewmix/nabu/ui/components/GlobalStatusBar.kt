@@ -41,7 +41,7 @@ fun GlobalStatusBar(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(color = Brutal.panelHl)
+                .background(color = MaterialTheme.colorScheme.surfaceVariant)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             // Loading / Error State
@@ -54,12 +54,12 @@ fun GlobalStatusBar(
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
-                            color = Brutal.textBright
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (downloadProgress != null) "Downloading models..." else "Loading runtime...",
-                            color = Brutal.textBright,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp
                         )
                     } else if (isError) {
@@ -78,12 +78,12 @@ fun GlobalStatusBar(
                     LinearProgressIndicator(
                         progress = { ratio.coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth().height(4.dp),
-                        color = Brutal.textBright,
-                        trackColor = Brutal.panelBg
+                        color = MaterialTheme.colorScheme.onSurface,
+                        trackColor = MaterialTheme.colorScheme.surface
                     )
                     Text(
                         "${formatBytes(downloadProgress.downloadedBytes)} / ${formatBytes(downloadProgress.totalBytes)}",
-                        color = Brutal.textDim,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 10.sp,
                         modifier = Modifier.align(Alignment.End)
                     )
@@ -94,7 +94,7 @@ fun GlobalStatusBar(
             if (isBenchmarking && benchmarkStats.isNotEmpty()) {
                 if (isLoading || isError) Spacer(modifier = Modifier.height(8.dp))
                 
-                Text("BENCHMARK", color = Brutal.textDim, fontSize = 10.sp)
+                Text("BENCHMARK", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -102,7 +102,7 @@ fun GlobalStatusBar(
                     benchmarkStats.forEach { (label, value) ->
                         Text(
                             "$label: ${"%.1f".format(value)}ms",
-                            color = Brutal.textBright,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp
                         )
                     }

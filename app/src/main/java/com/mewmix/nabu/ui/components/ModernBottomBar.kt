@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,7 +49,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.mewmix.nabu.R
-import com.mewmix.nabu.ui.brutalist.Brutal
+import com.mewmix.nabu.ui.design.LocalNabuChrome
+import com.mewmix.nabu.ui.design.LocalNabuUiMode
+import com.mewmix.nabu.ui.design.NabuUiMode
 
 @Composable
 fun ModernBottomBar(
@@ -59,12 +62,12 @@ fun ModernBottomBar(
     val screens = listOf(
         BottomNavItem(
             screen = com.mewmix.nabu.Screen.Basic,
-            iconRes = R.drawable.ic_music_note_24,
+            iconRes = R.drawable.ic_audio_24,
             label = "Audio"
         ),
         BottomNavItem(
             screen = com.mewmix.nabu.Screen.Mixer,
-            iconRes = R.drawable.ic_audio_24,
+            iconRes = R.drawable.instant_mix_24,
             label = "Mixer"
         ),
         BottomNavItem(
@@ -85,13 +88,31 @@ fun ModernBottomBar(
     )
 
     val currentFeature = currentScreen.asFeature()
+    val mode = LocalNabuUiMode.current
+    val chrome = LocalNabuChrome.current
+    val isModern = mode == NabuUiMode.Modern
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .then(
+                if (isModern) {
+                    Modifier
+                        .clip(RoundedCornerShape(32.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                            RoundedCornerShape(32.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                } else {
+                    Modifier
+                }
+            ),
+        horizontalArrangement = Arrangement.spacedBy(if (isModern) 6.dp else 8.dp)
     ) {
         screens.forEach { item ->
             val isActive = (item.screen == currentScreen) || (item.screen == currentFeature)
@@ -99,7 +120,8 @@ fun ModernBottomBar(
                 item = item,
                 isActive = isActive,
                 onClick = { onNavigate(item.screen) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                iconOnly = chrome.navIconOnly
             )
         }
     }
@@ -110,9 +132,13 @@ private fun BottomNavItem(
     item: BottomNavItem,
     isActive: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    iconOnly: Boolean = false
 ) {
     val context = LocalContext.current
+    val mode = LocalNabuUiMode.current
+    val chrome = LocalNabuChrome.current
+    val isModern = mode == NabuUiMode.Modern
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     
@@ -143,31 +169,51 @@ private fun BottomNavItem(
         label = "scale"
     )
 
-    val iconColor = if (isActive) Color.White else Color(0xFF888888)
-    val textColor = if (isActive) Color.White else Color(0xFF777777)
+    val iconColor = when {
+        isModern && isActive -> MaterialTheme.colorScheme.onPrimary
+        isModern -> MaterialTheme.colorScheme.onSurfaceVariant
+        isActive -> Color.White
+        else -> Color(0xFF888888)
+    }
+    val textColor = when {
+        isModern && isActive -> MaterialTheme.colorScheme.primary
+        isModern -> MaterialTheme.colorScheme.onSurfaceVariant
+        isActive -> Color.White
+        else -> Color(0xFF777777)
+    }
+    val shape = RoundedCornerShape(chrome.navItemRadius)
 
     Box(
         modifier = modifier
             .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
+            .height(if (isModern) 58.dp else 78.dp)
+            .clip(shape)
             .then(
                 if (isActive) {
-                    Modifier.background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xFF1A1A1A),
-                                Color(0xFF141414)
+                    if (isModern) {
+                        Modifier.background(MaterialTheme.colorScheme.primary)
+                    } else {
+                        Modifier.background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xFF1A1A1A),
+                                    Color(0xFF141414)
+                                )
                             )
                         )
-                    )
+                    }
                 } else {
-                    Modifier.background(color = Color.Transparent)
+                    Modifier.background(color = if (isModern) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f) else Color.Transparent)
                 }
             )
             .border(
                 width = 1.dp,
-                color = if (isActive) Color(0xFF3A3A3A) else Color(0xFF2A2A2A),
-                shape = RoundedCornerShape(18.dp)
+                color = if (isModern) {
+                    if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+                } else {
+                    if (isActive) Color(0xFF3A3A3A) else Color(0xFF2A2A2A)
+                },
+                shape = shape
             )
             .clickable(
                 interactionSource = interactionSource,
@@ -175,14 +221,14 @@ private fun BottomNavItem(
                 role = Role.Button,
                 onClick = onClick
             )
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = if (isModern) 8.dp else 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            if (isActive) {
+            if (isActive && !isModern) {
                 Box(
                     modifier = Modifier
                         .width(20.dp)
@@ -200,19 +246,21 @@ private fun BottomNavItem(
             Icon(
                 imageVector = ImageVector.vectorResource(item.iconRes),
                 contentDescription = item.label,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(if (isModern) 26.dp else 24.dp),
                 tint = iconColor
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            if (!iconOnly) {
+                Spacer(modifier = Modifier.height(4.dp))
 
-            Text(
-                text = item.label,
-                color = textColor,
-                fontSize = 11.sp,
-                fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1
-            )
+                Text(
+                    text = item.label,
+                    color = textColor,
+                    fontSize = 11.sp,
+                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

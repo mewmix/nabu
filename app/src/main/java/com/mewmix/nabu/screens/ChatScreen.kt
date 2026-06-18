@@ -18,6 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeOff
@@ -146,7 +149,7 @@ fun ChatScreen(
     var message by remember { mutableStateOf(initialMessage) }
     val listState = rememberLazyListState()
     var showMixerSettings by remember { mutableStateOf(false) }
-    var showConversationSettings by remember { mutableStateOf(true) }
+    var showConversationSettings by remember { mutableStateOf(false) }
     var conversationMenuExpanded by remember { mutableStateOf(false) }
     var modelMenuExpanded by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Long?>(null) }
@@ -181,8 +184,11 @@ fun ChatScreen(
         }
     }
 
-    Scaffold { paddingValues ->
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background
+    ) { paddingValues ->
         PanelBox(
+            title = "Chat",
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -205,7 +211,7 @@ fun ChatScreen(
                     Text(
                         text = "Conversation",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Brutal.textBright
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -216,7 +222,7 @@ fun ChatScreen(
                         ) {
                             Text(
                                 text = activeConversation?.title ?: "No conversations",
-                                color = Brutal.textBright
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         DropdownMenu(
@@ -248,7 +254,7 @@ fun ChatScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         BrutalButton(onClick = { viewModel.createConversation() }) {
-                            Text("New", color = Brutal.textBright)
+                            Text("New", color = MaterialTheme.colorScheme.onSurface)
                         }
                         BrutalButton(
                             onClick = {
@@ -259,7 +265,7 @@ fun ChatScreen(
                             },
                             enabled = activeConversationId != null
                         ) {
-                            Text("Rename", color = Brutal.textBright)
+                            Text("Rename", color = MaterialTheme.colorScheme.onSurface)
                         }
                         BrutalButton(
                             onClick = {
@@ -269,10 +275,10 @@ fun ChatScreen(
                             },
                             enabled = activeConversationId != null
                         ) {
-                            Text("Delete", color = Brutal.red)
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
                         }
                         BrutalButton(onClick = { showToolPicker = true }) {
-                            Text("Tools", color = Brutal.textBright)
+                            Text("Tools", color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -281,7 +287,7 @@ fun ChatScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val voiceColor = if (ttsEnabled) Brutal.textBright else Brutal.textDim
+                        val voiceColor = if (ttsEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                         BrutalButton(
                             onClick = { viewModel.toggleTtsEnabled() },
                             modifier = Modifier.weight(1f)
@@ -304,17 +310,17 @@ fun ChatScreen(
                             Icon(
                                 imageVector = Icons.Filled.Stop,
                                 contentDescription = "Stop voice playback",
-                                tint = Brutal.red
+                                tint = MaterialTheme.colorScheme.error
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Stop", color = Brutal.red)
+                            Text("Stop", color = MaterialTheme.colorScheme.error)
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "Model",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Brutal.textBright
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -325,7 +331,7 @@ fun ChatScreen(
                         ) {
                             Text(
                                 text = activeModel?.name ?: "Select model",
-                                color = Brutal.textBright
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         DropdownMenu(
@@ -383,17 +389,17 @@ fun ChatScreen(
                     Text(
                         text = "System Prompt",
                         style = MaterialTheme.typography.labelMedium,
-                        color = Brutal.textBright
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     TextField(
                         value = systemPrompt,
                         onValueChange = { viewModel.updateSystemPrompt(it) },
                         modifier = Modifier.fillMaxWidth(),
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Brutal.panelBg,
-                            unfocusedContainerColor = Brutal.panelBg,
-                            focusedTextColor = Brutal.textBright,
-                            unfocusedTextColor = Brutal.textBright
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         ),
                         minLines = 2,
                         maxLines = 5
@@ -408,7 +414,7 @@ fun ChatScreen(
                             modifier = Modifier.weight(1f),
                             enabled = systemPrompt.isNotBlank()
                         ) {
-                            Text("Save Prompt", color = Brutal.textBright)
+                            Text("Save Prompt", color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                     if (systemPromptFavorites.isNotEmpty()) {
@@ -416,7 +422,7 @@ fun ChatScreen(
                         Text(
                             text = "Prompt Favorites",
                             style = MaterialTheme.typography.labelMedium,
-                            color = Brutal.textBright
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         systemPromptFavorites.forEach { prompt ->
                             Row(
@@ -428,13 +434,13 @@ fun ChatScreen(
                                     text = prompt.lineSequence().firstOrNull().orEmpty().take(42),
                                     modifier = Modifier.weight(1f),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Brutal.textDim
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 BrutalButton(onClick = { viewModel.applySystemPromptFavorite(prompt) }) {
-                                    Text("Load", color = Brutal.textBright)
+                                    Text("Load", color = MaterialTheme.colorScheme.onSurface)
                                 }
                                 BrutalButton(onClick = { viewModel.deleteSystemPromptFavorite(prompt) }) {
-                                    Text("Delete", color = Brutal.red)
+                                    Text("Delete", color = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -445,7 +451,7 @@ fun ChatScreen(
                     Text(
                         text = "Context Mode",
                         style = MaterialTheme.typography.labelMedium,
-                        color = Brutal.textBright
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = if (chatContextMode == ChatContextMode.LONG_CONTEXT) {
@@ -454,7 +460,7 @@ fun ChatScreen(
                             "Single Turn only sends the latest user message."
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = Brutal.textDim
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
@@ -471,7 +477,7 @@ fun ChatScreen(
                                 } else {
                                     "Long Context"
                                 },
-                                color = Brutal.textBright
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         BrutalButton(
@@ -484,7 +490,7 @@ fun ChatScreen(
                                 } else {
                                     "Single Turn"
                                 },
-                                color = Brutal.textBright
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -494,25 +500,25 @@ fun ChatScreen(
                     Text(
                         text = "Context Usage",
                         style = MaterialTheme.typography.labelMedium,
-                        color = Brutal.textBright
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     val (current, max) = tokenUsage
                     val usagePercent = if (max > 0) current.toFloat() / max else 0f
                     LinearProgressIndicator(
                         progress = { usagePercent },
                         modifier = Modifier.fillMaxWidth().height(8.dp),
-                        color = if (usagePercent > 0.9f) Brutal.red else Brutal.amber,
-                        trackColor = Brutal.panelStroke,
+                        color = if (usagePercent > 0.9f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                        trackColor = MaterialTheme.colorScheme.outline,
                     )
                     Text(
                         text = "$current / $max tokens",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Brutal.textDim,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.End)
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Voice Settings", style = MaterialTheme.typography.labelLarge, color = Brutal.textBright)
+                    Text("Voice Settings", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
 
                     VoiceFavoritesSection(
                         favorites = voiceFavorites,
@@ -539,7 +545,7 @@ fun ChatScreen(
                         onModeSelected = viewModel::updateInterpolationMode,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
+                    Text("Speed: ${"%.2f".format(speed)}", color = MaterialTheme.colorScheme.onSurface)
                     BrutalSlider(
                         value = speed,
                         onValueChange = { viewModel.updateSpeed(it) },
@@ -564,14 +570,14 @@ fun ChatScreen(
                     Text(
                         text = statusText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Brutal.textBright
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     if (isLoading || isSynthesizing) {
                         LinearProgressIndicator(
                             modifier = Modifier.fillMaxWidth(),
-                            color = Brutal.amber,
-                            trackColor = Brutal.panelStroke
+                            color = MaterialTheme.colorScheme.tertiary,
+                            trackColor = MaterialTheme.colorScheme.outline
                         )
                     }
                 }
@@ -603,7 +609,11 @@ fun ChatScreen(
                                 Toast.makeText(context, "Copied message", Toast.LENGTH_SHORT).show()
                             }
                         ) {
-                            Text("Copy", color = Brutal.textBright)
+                            Icon(
+                                imageVector = Icons.Filled.ContentCopy,
+                                contentDescription = "Copy message",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                         BrutalButton(
                             onClick = {
@@ -612,13 +622,21 @@ fun ChatScreen(
                             },
                             enabled = !isLoading
                         ) {
-                            Text("Edit", color = Brutal.textBright)
+                            Icon(
+                                imageVector = Icons.Filled.Edit,
+                                contentDescription = "Edit message",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                         BrutalButton(
                             onClick = { viewModel.regenerateFrom(index) },
                             enabled = !isLoading && !isSynthesizing
                         ) {
-                            Text("Regenerate", color = Brutal.textBright)
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Regenerate response",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -630,7 +648,7 @@ fun ChatScreen(
                     modifier = Modifier
                         .padding(8.dp)
                         .size(100.dp)
-                        .border(1.dp, Brutal.amber, RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.tertiary, RoundedCornerShape(8.dp))
                 ) {
                     Image(
                         bitmap = pendingImage!!.bitmap.asImageBitmap(),
@@ -645,7 +663,7 @@ fun ChatScreen(
                             .align(Alignment.TopEnd)
                             .padding(4.dp)
                             .clickable { viewModel.setPendingImage(null) },
-                        tint = Brutal.red
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -655,20 +673,20 @@ fun ChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .border(1.dp, Brutal.amber, RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.tertiary, RoundedCornerShape(8.dp))
                         .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.AttachFile,
                         contentDescription = null,
-                        tint = Brutal.amber
+                        tint = MaterialTheme.colorScheme.tertiary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = pendingAudio?.displayName ?: "Audio attachment",
                         modifier = Modifier.weight(1f),
-                        color = Brutal.textBright,
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodySmall
                     )
                     Icon(
@@ -677,7 +695,7 @@ fun ChatScreen(
                         modifier = Modifier
                             .padding(4.dp)
                             .clickable { viewModel.setPendingAudio(null) },
-                        tint = Brutal.red
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -689,7 +707,7 @@ fun ChatScreen(
                         .padding(8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = Brutal.amber)
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.tertiary)
                 }
             }
 
@@ -704,36 +722,36 @@ fun ChatScreen(
                     onValueChange = { message = it },
                     modifier = Modifier
                         .weight(1f)
-                        .border(1.dp, Brutal.hairline, RoundedCornerShape(24.dp)),
-                    placeholder = { Text("Message", color = Brutal.textDim) },
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(24.dp)),
+                    placeholder = { Text("Message", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     leadingIcon = {
                         Row {
                             Icon(
                                 imageVector = Icons.Default.AddPhotoAlternate,
                                 contentDescription = "Add image",
                                 modifier = Modifier.clickable { imagePicker.launch("image/*") },
-                                tint = Brutal.textDim
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(
                                 imageVector = Icons.Default.AttachFile,
                                 contentDescription = "Add audio",
                                 modifier = Modifier.clickable { audioPicker.launch("audio/*") },
-                                tint = Brutal.textDim
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     },
                     shape = RoundedCornerShape(24.dp),
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Brutal.panelBg,
-                        unfocusedContainerColor = Brutal.panelBg,
-                        focusedIndicatorColor = Brutal.hairline,
-                        unfocusedIndicatorColor = Brutal.hairline,
-                        cursorColor = Brutal.amber,
-                        focusedTextColor = Brutal.textBright,
-                        unfocusedTextColor = Brutal.textBright,
-                        focusedPlaceholderColor = Brutal.textDim,
-                        unfocusedPlaceholderColor = Brutal.textDim
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                        unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                        cursorColor = MaterialTheme.colorScheme.tertiary,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     textStyle = MaterialTheme.typography.bodyLarge
                 )
@@ -743,7 +761,7 @@ fun ChatScreen(
                         onClick = { viewModel.cancelGeneration() },
                         enabled = true
                     ) {
-                        Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Brutal.textBright)
+                        Icon(Icons.Default.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 } else {
                     BrutalButton(
@@ -757,7 +775,7 @@ fun ChatScreen(
                         !isSynthesizing &&
                         playerState == PlayerState.IDLE
                 ) {
-                        Icon(Icons.Default.Send, contentDescription = "Send", tint = Brutal.textBright)
+                        Icon(Icons.Default.Send, contentDescription = "Send", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }
@@ -783,12 +801,12 @@ fun ChatScreen(
                     },
                     enabled = renameText.isNotBlank()
                 ) {
-                    Text("Save", color = Brutal.textBright)
+                    Text("Save", color = MaterialTheme.colorScheme.onSurface)
                 }
             },
             dismissButton = {
                 BrutalButton(onClick = { renameTarget = null }) {
-                    Text("Cancel", color = Brutal.textBright)
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
                 }
             }
         )
@@ -805,12 +823,12 @@ fun ChatScreen(
                     deleteTarget?.let { viewModel.deleteConversation(it) }
                     deleteTarget = null
                 }) {
-                    Text("Delete", color = Brutal.red)
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 BrutalButton(onClick = { deleteTarget = null }) {
-                    Text("Cancel", color = Brutal.textBright)
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
                 }
             }
         )
@@ -837,12 +855,12 @@ fun ChatScreen(
                     },
                     enabled = editMessageText.isNotBlank()
                 ) {
-                    Text("Save", color = Brutal.textBright)
+                    Text("Save", color = MaterialTheme.colorScheme.onSurface)
                 }
             },
             dismissButton = {
                 BrutalButton(onClick = { editMessageIndex = null }) {
-                    Text("Cancel", color = Brutal.textBright)
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
                 }
             }
         )
@@ -856,7 +874,7 @@ fun ChatScreen(
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text(
                         text = "Pick a context mode, then choose a tool to prefill a direct call.",
-                        color = Brutal.textDim
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
@@ -873,7 +891,7 @@ fun ChatScreen(
                                 } else {
                                     "Single Turn"
                                 },
-                                color = Brutal.textBright
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         BrutalButton(
@@ -886,7 +904,7 @@ fun ChatScreen(
                                 } else {
                                     "Long Context"
                                 },
-                                color = Brutal.textBright
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -904,9 +922,9 @@ fun ChatScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth()) {
-                                    Text(tool.name, color = Brutal.textBright)
+                                    Text(tool.name, color = MaterialTheme.colorScheme.onSurface)
                                     if (tool.description.isNotBlank()) {
-                                        Text(tool.description, color = Brutal.textDim)
+                                        Text(tool.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -916,7 +934,7 @@ fun ChatScreen(
             },
             confirmButton = {
                 BrutalButton(onClick = { showToolPicker = false }) {
-                    Text("Close", color = Brutal.textBright)
+                    Text("Close", color = MaterialTheme.colorScheme.onSurface)
                 }
             },
             dismissButton = {}

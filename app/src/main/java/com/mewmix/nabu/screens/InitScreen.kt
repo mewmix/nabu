@@ -205,7 +205,7 @@ fun InitScreen(
                             Text(
                                 "${detail.currentFile}: $bytesLabel",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Brutal.textBright
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     } else {
@@ -247,7 +247,7 @@ fun InitScreen(
                             Text(
                                 "${(modelProgress * 100).toInt()}%",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Brutal.textBright
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             modelDetail?.let { detail ->
                                 val bytesLabel = if (detail.totalBytes > 0L) {
@@ -258,7 +258,7 @@ fun InitScreen(
                                 Text(
                                     "${detail.currentFile}: $bytesLabel",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Brutal.textBright
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         } else {

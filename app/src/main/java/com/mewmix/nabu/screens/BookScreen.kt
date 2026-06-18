@@ -360,7 +360,7 @@ fun BookScreen(
                 Text(
                     "Speed: ${ "%.2f".format(speed)}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Brutal.textBright
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 BrutalSlider(
                     value = speed,
@@ -390,7 +390,7 @@ fun BookScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
                 ) {
-                    Text("Use Pregenerated", color = Brutal.textBright)
+                    Text("Use Pregenerated", color = MaterialTheme.colorScheme.onSurface)
                     Spacer(modifier = Modifier.weight(1f))
                     Switch(checked = usePregenerated, onCheckedChange = { usePregenerated = it })
                 }
@@ -430,7 +430,7 @@ fun BookScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(p.name, modifier = Modifier.weight(1f), color = Brutal.textBright)
+                                Text(p.name, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
                                 BrutalButton(onClick = {
                                     val uri = Uri.parse(p.uri)
                                     bookViewModel.openDocument(uri)
@@ -471,7 +471,7 @@ fun BookScreen(
                         } else {
                             "Tap a line below to load it into the editor"
                         },
-                        color = Brutal.textBright,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
                     )
                     if (editingLineIndex != null) {
@@ -533,7 +533,7 @@ fun BookScreen(
                 saveMessage?.let { message ->
                     Text(
                         text = message,
-                        color = if (saveSuccessful) Brutal.textBright else MaterialTheme.colorScheme.error,
+                        color = if (saveSuccessful) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
                     )
                 }
@@ -974,13 +974,13 @@ private fun ImmersiveReaderOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brutal.panelBg.copy(alpha = 0.96f))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
     ) {
         RadialWaveformVisualizer(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(48.dp),
-            lineColor = Brutal.green.copy(alpha = 0.4f),
+            lineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
             visible = playerState != PlayerState.IDLE
         )
         Box(
@@ -989,8 +989,8 @@ private fun ImmersiveReaderOverlay(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Brutal.panelBg.copy(alpha = 0.94f),
-                            Brutal.panelBg.copy(alpha = 0.78f)
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
                         )
                     )
                 )
@@ -1018,7 +1018,7 @@ private fun ImmersiveReaderOverlay(
                         .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Load a book to enter focus mode.", color = Brutal.textDim)
+                    Text("Load a book to enter focus mode.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(
@@ -1052,13 +1052,13 @@ private fun ImmersiveReaderOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Brutal.panelHl.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
                     .padding(vertical = 18.dp, horizontal = 12.dp)
             ) {
                 WaveformVisualizer(
                     modifier = Modifier.fillMaxWidth(),
                     visible = playerState != PlayerState.IDLE,
-                    lineColor = Brutal.green
+                    lineColor = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -1090,12 +1090,12 @@ private fun defaultReaderLineVisuals(): ReaderLineVisuals {
 @Composable
 private fun immersiveReaderLineVisuals(): ReaderLineVisuals {
     return ReaderLineVisuals(
-        selectedBackground = Brutal.panelHl.copy(alpha = 0.9f),
-        currentBackground = Brutal.panelHl.copy(alpha = 0.75f),
-        defaultBackground = Brutal.panelBg.copy(alpha = 0.6f),
-        selectedText = Brutal.green,
-        currentText = Brutal.textBright,
-        defaultText = Brutal.textDim
+        selectedBackground = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+        currentBackground = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        defaultBackground = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+        selectedText = MaterialTheme.colorScheme.primary,
+        currentText = MaterialTheme.colorScheme.onSurface,
+        defaultText = MaterialTheme.colorScheme.onSurfaceVariant
     )
 }
 

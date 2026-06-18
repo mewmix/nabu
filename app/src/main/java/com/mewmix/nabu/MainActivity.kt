@@ -26,6 +26,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +37,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -160,9 +165,6 @@ class MainActivity : ComponentActivity() {
         requestedScreen.value = startScreen
 
         setContent {
-            var themeRevision by remember { mutableStateOf(0) }
-            @Suppress("UNUSED_VARIABLE")
-            val appliedThemeRevision = themeRevision
             NabuTheme {
                 LaunchedEffect(Unit) {
                     WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -213,7 +215,7 @@ class MainActivity : ComponentActivity() {
                         initialScreen = startScreen,
                         requestedScreen = requestedScreen.value,
                         onRequestedScreenHandled = { requestedScreen.value = null },
-                        onThemeChanged = { themeRevision++ }
+                        onThemeChanged = { recreate() }
                     )
                 }
             }
@@ -452,6 +454,7 @@ fun MainScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             ModernBottomBar(
                 currentScreen = currentScreen,
@@ -465,7 +468,12 @@ fun MainScreen(
             )
         }
     ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding)) {
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             // Global Status Bar (Shows Loading / Errors / Benchmarks)
             GlobalStatusBar(
                 modelState = modelState,
@@ -579,6 +587,7 @@ fun BasicScreen(
     }
 
     PanelBox(
+        title = "Audio",
         modifier = Modifier
             .padding(16.dp)
             .fillMaxSize()
@@ -599,10 +608,10 @@ fun BasicScreen(
 
             TextField(
                 value = text,
-                minLines = 3,
-                maxLines = 12,
+                minLines = 6,
+                maxLines = 14,
                 onValueChange = { text = it },
-                label = { Text("TEXT TO SPEAK") },
+                label = { Text("Text to speak") },
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions.Default.copy(
                     keyboardType = KeyboardType.Text
@@ -618,13 +627,13 @@ fun BasicScreen(
                     TextField(
                         value = style,
                         onValueChange = {},
-                        label = { Text("STYLE") },
+                        label = { Text("Voice") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor(),
                         readOnly = true,
                         trailingIcon = {
-                            Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
+                            Text(if (expanded) "UP" else "DOWN", color = MaterialTheme.colorScheme.onSurface)
                         }
                     )
 
@@ -645,7 +654,7 @@ fun BasicScreen(
                 }
             }
 
-            PanelRow(name = "SPEED") {
+            PanelRow(name = "Speed") {
                 BrutalSlider(
                     value = speed,
                     onValueChange = {
@@ -681,6 +690,8 @@ fun BasicScreen(
                         .weight(1f),
                     enabled = playEnabled
                 ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
                     BrutalButtonText(if (isProcessing) "PROCESSING..." else "PLAY")
                 }
 
@@ -699,7 +710,9 @@ fun BasicScreen(
                         .weight(1f),
                     enabled = playEnabled
                 ) {
-                    BrutalButtonText(if (isProcessing) "PROCESSING..." else "PLAY & SAVE")
+                    Icon(Icons.Filled.Save, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    BrutalButtonText(if (isProcessing) "PROCESSING..." else "SAVE")
                 }
             }
         }
