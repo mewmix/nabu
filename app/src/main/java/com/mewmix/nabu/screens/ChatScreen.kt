@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +53,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import android.widget.Toast
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.MessageBubble
 import com.mewmix.nabu.tools.Tool
@@ -87,6 +90,7 @@ fun ChatScreen(
     val chatContextMode by viewModel.chatContextMode.collectAsState()
     val availableTools by ToolRegistry.tools.collectAsState()
     val pendingImage by viewModel.pendingImage.collectAsState()
+    val clipboardManager = LocalClipboardManager.current
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -130,6 +134,8 @@ fun ChatScreen(
     var deleteTarget by remember { mutableStateOf<Long?>(null) }
     var showToolPicker by remember { mutableStateOf(false) }
     var toolPrefillMode by remember { mutableStateOf(chatContextMode) }
+    var editMessageIndex by remember { mutableStateOf<Int?>(null) }
+    var editMessageText by remember { mutableStateOf("") }
     val activeConversation = conversationSummaries.firstOrNull { it.id == activeConversationId }
 
     LaunchedEffect(chatContextMode) {
@@ -349,6 +355,7 @@ fun ChatScreen(
                     .padding(8.dp)
             ) {
                 val systemPrompt by viewModel.systemPrompt.collectAsState()
+                val systemPromptFavorites by viewModel.systemPromptFavorites.collectAsState()
                 val tokenUsage by viewModel.tokenUsage.collectAsState()
                 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -371,6 +378,47 @@ fun ChatScreen(
                         minLines = 2,
                         maxLines = 5
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        BrutalButton(
+                            onClick = { viewModel.saveCurrentSystemPromptFavorite() },
+                            modifier = Modifier.weight(1f),
+                            enabled = systemPrompt.isNotBlank()
+                        ) {
+                            Text("Save Prompt", color = Brutal.textBright)
+                        }
+                    }
+                    if (systemPromptFavorites.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Prompt Favorites",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Brutal.textBright
+                        )
+                        systemPromptFavorites.forEach { prompt ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = prompt.lineSequence().firstOrNull().orEmpty().take(42),
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Brutal.textDim
+                                )
+                                BrutalButton(onClick = { viewModel.applySystemPromptFavorite(prompt) }) {
+                                    Text("Load", color = Brutal.textBright)
+                                }
+                                BrutalButton(onClick = { viewModel.deleteSystemPromptFavorite(prompt) }) {
+                                    Text("Delete", color = Brutal.red)
+                                }
+                            }
+                        }
+                    }
                     
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -522,8 +570,37 @@ fun ChatScreen(
                     .weight(1f)
                     .padding(horizontal = 8.dp),
             ) {
-                items(chatMessages) { chatMessage ->
+                itemsIndexed(chatMessages) { index, chatMessage ->
                     MessageBubble(chatMessage)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (chatMessage.isFromUser) Arrangement.End else Arrangement.Start
+                    ) {
+                        BrutalButton(
+                            onClick = {
+                                val formatted = chatMessage.message.replace("\\n", "\n").replace("/n", "\n")
+                                clipboardManager.setText(AnnotatedString(formatted))
+                                Toast.makeText(context, "Copied message", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text("Copy", color = Brutal.textBright)
+                        }
+                        BrutalButton(
+                            onClick = {
+                                editMessageIndex = index
+                                editMessageText = chatMessage.message.replace("\\n", "\n").replace("/n", "\n")
+                            },
+                            enabled = !isLoading
+                        ) {
+                            Text("Edit", color = Brutal.textBright)
+                        }
+                        BrutalButton(
+                            onClick = { viewModel.regenerateFrom(index) },
+                            enabled = !isLoading && !isSynthesizing
+                        ) {
+                            Text("Regenerate", color = Brutal.textBright)
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
@@ -670,6 +747,38 @@ fun ChatScreen(
             },
             dismissButton = {
                 BrutalButton(onClick = { deleteTarget = null }) {
+                    Text("Cancel", color = Brutal.textBright)
+                }
+            }
+        )
+    }
+
+    if (editMessageIndex != null) {
+        AlertDialog(
+            onDismissRequest = { editMessageIndex = null },
+            title = { Text("Edit Message") },
+            text = {
+                TextField(
+                    value = editMessageText,
+                    onValueChange = { editMessageText = it },
+                    minLines = 3,
+                    maxLines = 10,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                BrutalButton(
+                    onClick = {
+                        editMessageIndex?.let { viewModel.editMessage(it, editMessageText) }
+                        editMessageIndex = null
+                    },
+                    enabled = editMessageText.isNotBlank()
+                ) {
+                    Text("Save", color = Brutal.textBright)
+                }
+            },
+            dismissButton = {
+                BrutalButton(onClick = { editMessageIndex = null }) {
                     Text("Cancel", color = Brutal.textBright)
                 }
             }

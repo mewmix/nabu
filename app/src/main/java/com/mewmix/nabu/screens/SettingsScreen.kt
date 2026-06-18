@@ -35,7 +35,9 @@ import com.mewmix.nabu.components.VersionPlate
 import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.UpdateChecker
+import com.mewmix.nabu.utils.ThemeManager
 import com.mewmix.nabu.utils.getAppVersion
+import com.mewmix.nabu.ui.theme.AppTheme
 import com.mewmix.nabu.api.ApiServerManager
 import com.mewmix.nabu.api.ApiServerRuntime
 import com.mewmix.nabu.auth.CodexAuthenticator
@@ -58,7 +60,8 @@ import java.util.Date
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onRuntimeSettingsChanged: () -> Unit = {}
+    onRuntimeSettingsChanged: () -> Unit = {},
+    onThemeChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -105,6 +108,14 @@ fun SettingsScreen(
     var codexConnected by remember { mutableStateOf(codexAuth.hasStoredSession(context)) }
     var testingCodex by remember { mutableStateOf(false) }
     var codexStatus by remember { mutableStateOf<String?>(null) }
+    var themeMode by remember { mutableStateOf(ThemeManager.getThemeMode(context)) }
+    var themeModeExpanded by remember { mutableStateOf(false) }
+    var customThemeDraft by remember { mutableStateOf(ThemeManager.getTheme(context)) }
+    var customPrimary by remember { mutableStateOf(formatThemeHex(customThemeDraft.primary)) }
+    var customSecondary by remember { mutableStateOf(formatThemeHex(customThemeDraft.secondary)) }
+    var customBackground by remember { mutableStateOf(formatThemeHex(customThemeDraft.background)) }
+    var customSurface by remember { mutableStateOf(formatThemeHex(customThemeDraft.surface)) }
+    var customThemeError by remember { mutableStateOf<String?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(runtime, ttsEngine) {
@@ -146,6 +157,110 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Text(
+                text = "Appearance",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            ExposedDropdownMenuBox(
+                expanded = themeModeExpanded,
+                onExpandedChange = { themeModeExpanded = it }
+            ) {
+                TextField(
+                    value = themeMode.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Theme Mode") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = themeModeExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = themeModeExpanded,
+                    onDismissRequest = { themeModeExpanded = false }
+                ) {
+                    ThemeManager.ThemeMode.entries.forEach { mode ->
+                        DropdownMenuItem(
+                            text = { Text(mode.label) },
+                            onClick = {
+                                themeMode = mode
+                                ThemeManager.setThemeMode(context, mode)
+                                onThemeChanged()
+                                themeModeExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = "Modern uses the warmer Spotter-inspired palette; Brutal restores the current high-contrast control-room look. Custom uses the saved theme JSON.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Text(
+                text = "Custom Theme",
+                style = MaterialTheme.typography.titleSmall
+            )
+            TextField(
+                value = customPrimary,
+                onValueChange = { customPrimary = it },
+                label = { Text("Primary (#RRGGBB or #AARRGGBB)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            TextField(
+                value = customSecondary,
+                onValueChange = { customSecondary = it },
+                label = { Text("Secondary") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            TextField(
+                value = customBackground,
+                onValueChange = { customBackground = it },
+                label = { Text("Background") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            TextField(
+                value = customSurface,
+                onValueChange = { customSurface = it },
+                label = { Text("Surface") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = {
+                    val parsedPrimary = parseThemeHex(customPrimary)
+                    val parsedSecondary = parseThemeHex(customSecondary)
+                    val parsedBackground = parseThemeHex(customBackground)
+                    val parsedSurface = parseThemeHex(customSurface)
+                    if (parsedPrimary == null || parsedSecondary == null || parsedBackground == null || parsedSurface == null) {
+                        customThemeError = "Use #RRGGBB or #AARRGGBB hex colors."
+                    } else {
+                        customThemeDraft = customThemeDraft.copy(
+                            primary = parsedPrimary,
+                            secondary = parsedSecondary,
+                            background = parsedBackground,
+                            surface = parsedSurface
+                        )
+                        ThemeManager.saveTheme(context, customThemeDraft)
+                        themeMode = ThemeManager.ThemeMode.CUSTOM
+                        customThemeError = null
+                        onThemeChanged()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Save Custom Theme")
+            }
+            customThemeError?.let { error ->
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            HorizontalDivider()
+
             SwitchToggle(
                 checked = debug,
                 onToggle = {
@@ -736,3 +851,20 @@ fun SettingsScreen(
         }
     }
 }
+
+private fun formatThemeHex(value: Long): String =
+    "#%08X".format(value)
+
+private fun parseThemeHex(input: String): Long? {
+    val cleaned = input.trim().removePrefix("#")
+    val withAlpha = when (cleaned.length) {
+        6 -> "FF$cleaned"
+        8 -> cleaned
+        else -> return null
+    }
+    return withAlpha.toLongOrNull(16)?.let { 0x00000000FFFFFFFFL and it }
+}
+
+@Suppress("unused")
+private fun AppTheme.withCoreColors(primary: Long, secondary: Long, background: Long, surface: Long): AppTheme =
+    copy(primary = primary, secondary = secondary, background = background, surface = surface)

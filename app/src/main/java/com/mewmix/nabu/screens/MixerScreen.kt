@@ -126,10 +126,11 @@ fun MixerScreen(
         }
     }
 
-    var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
+    var text by remember { mutableStateOf(SettingsManager.getMixerText(context)) }
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
+    var lastGeneratedAudio by remember { mutableStateOf<Pair<FloatArray, Int>?>(null) }
 
     val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sky"
     val initial = remember(defaultVoice) {
@@ -149,6 +150,11 @@ fun MixerScreen(
             kotlinx.coroutines.delay(300)
             SettingsManager.setSpeed(context, speed)
         }
+    }
+
+    LaunchedEffect(text) {
+        kotlinx.coroutines.delay(300)
+        SettingsManager.setMixerText(context, text)
     }
 
     // Debounced persistence for Voice Mix Config
@@ -176,6 +182,43 @@ fun MixerScreen(
     fun persistFavorites(updated: List<VoiceMixFavorite>) {
         favorites = updated
         SettingsManager.setVoiceMixFavorites(context, updated)
+    }
+
+    fun currentFileName(): String =
+        if (isSupertonicLoaded) {
+            val modelId = SettingsManager.getSupertonicModelId(context)
+            val modelName = modelManager.models.find { it.id == modelId }?.name ?: "supertonic"
+            "${modelName}_${System.currentTimeMillis()}"
+        } else {
+            buildStyleFileName(selectedStyles, weights, interpolationMode)
+        }
+
+    fun generateCurrentAudio(save: Boolean) {
+        shouldSaveFile = save
+        isProcessing = true
+        scope.launch {
+            val engine = com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
+            val rawEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+            val mixed = if (rawEngine is com.mewmix.nabu.kokoro.KokoroEngine) {
+                mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
+            } else {
+                emptyArray()
+            }
+            generateAudio(
+                text,
+                mixed,
+                speed,
+                save,
+                if (save) currentFileName() else null,
+                phonemeConverter,
+                scope,
+                context,
+                selectedStyles.firstOrNull(),
+                onGenerated = { audio, sampleRate -> lastGeneratedAudio = audio to sampleRate }
+            ) {
+                isProcessing = false
+            }
+        }
     }
 
     LaunchedEffect(styleLoader.names) {
@@ -238,13 +281,48 @@ fun MixerScreen(
             }
 
             TextField(
-            value = text,
-            onValueChange = { text = it },
-            minLines = 3,
-            maxLines = 12,
-            label = { Text("TEXT TO SPEAK") },
-            modifier = Modifier.fillMaxWidth()
+                value = text,
+                onValueChange = { text = it },
+                minLines = 3,
+                maxLines = 12,
+                label = { Text("TEXT TO SPEAK") },
+                modifier = Modifier.fillMaxWidth()
             )
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                BrutalButton(
+                    onClick = { generateCurrentAudio(save = false) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isProcessing &&
+                        text.isNotBlank() &&
+                        (preferredEngine != "supertonic" || hasSupertonicModels) &&
+                        (preferredEngine != "soprano" || isSopranoLoaded)
+                ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY") }
+
+                BrutalButton(
+                    onClick = { generateCurrentAudio(save = true) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isProcessing &&
+                        text.isNotBlank() &&
+                        (preferredEngine != "supertonic" || hasSupertonicModels) &&
+                        (preferredEngine != "soprano" || isSopranoLoaded)
+                ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
+            }
+
+            lastGeneratedAudio?.let { (audio, sampleRate) ->
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    BrutalButton(
+                        onClick = { playAudio(audio, sampleRate, scope) {} },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isProcessing
+                    ) { BrutalButtonText("REPLAY") }
+                    BrutalButton(
+                        onClick = { saveAudio(audio, context, currentFileName(), sampleRate) },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isProcessing
+                    ) { BrutalButtonText("SAVE AGAIN") }
+                }
+            }
 
         PanelRow(name = "Speed") {
             BrutalSlider(
@@ -424,83 +502,6 @@ fun MixerScreen(
             }
         }
 
-        Row(modifier = Modifier.fillMaxWidth()) {
-            BrutalButton(
-                onClick = {
-                    shouldSaveFile = false
-                    isProcessing = true
-                    scope.launch {
-                        // Decide style mixing based on actual engine resolved at runtime
-                        val engine = com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
-                        val rawEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
-                        val mixed = if (rawEngine is com.mewmix.nabu.kokoro.KokoroEngine) {
-                            mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
-                        } else {
-                            emptyArray()
-                        }
-                        generateAudio(
-                            text,
-                            mixed,
-                            speed,
-                            shouldSaveFile,
-                            null,
-                            phonemeConverter,
-                            scope,
-                            context,
-                            selectedStyles.firstOrNull()
-                        ) {
-                            isProcessing = false
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = !isProcessing &&
-                    (preferredEngine != "supertonic" || hasSupertonicModels) &&
-                    (preferredEngine != "soprano" || isSopranoLoaded)
-            ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY") }
-
-            BrutalButton(
-                onClick = {
-                    shouldSaveFile = true
-                    isProcessing = true
-                    scope.launch {
-                        // Decide style mixing based on actual engine resolved at runtime
-                        val engine = com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
-                        val rawEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
-                        val mixed = if (rawEngine is com.mewmix.nabu.kokoro.KokoroEngine) {
-                            mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
-                        } else {
-                            emptyArray()
-                        }
-                        val fileName = if (isSupertonicLoaded) {
-                             val modelId = SettingsManager.getSupertonicModelId(context)
-                             val modelName = modelManager.models.find { it.id == modelId }?.name ?: "supertonic"
-                             "${modelName}_${System.currentTimeMillis()}"
-                        } else {
-                             buildStyleFileName(selectedStyles, weights, interpolationMode)
-                        }
-                        generateAudio(
-                            text,
-                            mixed,
-                            speed,
-                            shouldSaveFile,
-                            fileName,
-                            phonemeConverter,
-                            scope,
-                            context,
-                            selectedStyles.firstOrNull()
-                        ) {
-                            isProcessing = false
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = !isProcessing &&
-                    (preferredEngine != "supertonic" || hasSupertonicModels) &&
-                    (preferredEngine != "soprano" || isSopranoLoaded)
-            ) { BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY & SAVE") }
-        }
-
         // Debug logs moved to dedicated screen
     }
 }
@@ -517,6 +518,7 @@ private fun generateAudio(
     context: android.content.Context,
     // Add selectedStyleName for Supertonic fallback/usage since we can't mix
     selectedStyleName: String? = null,
+    onGenerated: (FloatArray, Int) -> Unit = { _, _ -> },
     onComplete: () -> Unit
 ) {
     val modelManager = com.mewmix.nabu.data.ModelManager(context)
@@ -566,6 +568,9 @@ private fun generateAudio(
 
             if (shouldSaveFile && fileName != null) {
                 saveAudio(audio, context, fileName, sampleRate)
+            }
+            withContext(Dispatchers.Main) {
+                onGenerated(audio, sampleRate)
             }
             playAudio(audio, sampleRate, scope) {}
         } catch (e: Exception) {

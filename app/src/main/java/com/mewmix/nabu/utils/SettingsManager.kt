@@ -48,7 +48,10 @@ object SettingsManager {
     private const val KEY_VOICE_MIX_FAVORITES = "voice_mix_favorites"
     private const val KEY_VOICE_MIX_FAVORITES_MIGRATED = "voice_mix_favorites_migrated"
     private const val KEY_CHAT_SYSTEM_PROMPT = "chat_system_prompt"
+    private const val KEY_CHAT_SYSTEM_PROMPT_FAVORITES = "chat_system_prompt_favorites"
     private const val KEY_CHAT_CONTEXT_MODE = "chat_context_mode"
+    private const val KEY_BASIC_TTS_TEXT = "basic_tts_text"
+    private const val KEY_MIXER_TEXT = "mixer_text"
     private const val KEY_OPTIONAL_PERMISSIONS_REVIEWED = "optional_permissions_reviewed"
     private const val LEGACY_MIXER_PREFS = "mixer_config"
     private const val LEGACY_MIXER_STYLES = "styles"
@@ -57,6 +60,8 @@ object SettingsManager {
     private val gson = Gson()
     private val voiceMixFavoritesType =
         TypeToken.getParameterized(List::class.java, VoiceMixFavorite::class.java).type
+    private val stringListType =
+        TypeToken.getParameterized(List::class.java, String::class.java).type
 
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
@@ -241,6 +246,45 @@ object SettingsManager {
     ): String {
         return DatabaseManager.getSetting(context, KEY_CHAT_SYSTEM_PROMPT) ?: default
     }
+
+    fun setChatSystemPromptFavorites(context: Context, prompts: List<String>) {
+        val normalized = prompts
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase() }
+        DatabaseManager.setSetting(context, KEY_CHAT_SYSTEM_PROMPT_FAVORITES, gson.toJson(normalized, stringListType))
+    }
+
+    fun getChatSystemPromptFavorites(context: Context): List<String> {
+        val saved = DatabaseManager.getSetting(context, KEY_CHAT_SYSTEM_PROMPT_FAVORITES).orEmpty()
+        if (saved.isBlank()) return emptyList()
+        return runCatching {
+            gson.fromJson<List<String>>(saved, stringListType).orEmpty()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinctBy { it.lowercase() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun setMixerText(context: Context, text: String) {
+        DatabaseManager.setSetting(context, KEY_MIXER_TEXT, text)
+    }
+
+    fun getMixerText(
+        context: Context,
+        default: String = "Made with love and brought to you from outer space."
+    ): String =
+        DatabaseManager.getSetting(context, KEY_MIXER_TEXT) ?: default
+
+    fun setBasicTtsText(context: Context, text: String) {
+        DatabaseManager.setSetting(context, KEY_BASIC_TTS_TEXT, text)
+    }
+
+    fun getBasicTtsText(
+        context: Context,
+        default: String = "Made with love and brought to you from outer space."
+    ): String =
+        DatabaseManager.getSetting(context, KEY_BASIC_TTS_TEXT) ?: default
 
     fun setChatContextMode(context: Context, mode: String) {
         DatabaseManager.setSetting(context, KEY_CHAT_CONTEXT_MODE, mode.trim())

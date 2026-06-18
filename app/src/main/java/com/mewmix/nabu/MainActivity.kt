@@ -160,6 +160,9 @@ class MainActivity : ComponentActivity() {
         requestedScreen.value = startScreen
 
         setContent {
+            var themeRevision by remember { mutableStateOf(0) }
+            @Suppress("UNUSED_VARIABLE")
+            val appliedThemeRevision = themeRevision
             NabuTheme {
                 LaunchedEffect(Unit) {
                     WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -209,7 +212,8 @@ class MainActivity : ComponentActivity() {
                         userPreferencesRepository = userPreferencesRepository,
                         initialScreen = startScreen,
                         requestedScreen = requestedScreen.value,
-                        onRequestedScreenHandled = { requestedScreen.value = null }
+                        onRequestedScreenHandled = { requestedScreen.value = null },
+                        onThemeChanged = { themeRevision++ }
                     )
                 }
             }
@@ -396,7 +400,8 @@ fun MainScreen(
     userPreferencesRepository: UserPreferencesRepository,
     initialScreen: Screen = Screen.Basic,
     requestedScreen: Screen? = null,
-    onRequestedScreenHandled: () -> Unit = {}
+    onRequestedScreenHandled: () -> Unit = {},
+    onThemeChanged: () -> Unit = {}
 ) {
     val screenStack = rememberSaveable(
         saver = listSaver(
@@ -500,7 +505,8 @@ fun MainScreen(
                     }
                     Screen.Creations -> CreationsScreen()
                     Screen.Settings -> SettingsScreen(
-                        onRuntimeSettingsChanged = { viewModel.retryInitialization() }
+                        onRuntimeSettingsChanged = { viewModel.retryInitialization() },
+                        onThemeChanged = onThemeChanged
                     )
                     Screen.Models -> ModelsScreen(
                         userPreferencesRepository = userPreferencesRepository,
@@ -524,7 +530,7 @@ fun BasicScreen(
     val styleLoader = remember { StyleLoader(context) }
     val names = styleLoader.names.sorted()
 
-    var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
+    var text by remember { mutableStateOf(SettingsManager.getBasicTtsText(context)) }
     var style by remember {
         mutableStateOf(
             SettingsManager.getStyle(context).takeIf { it in names }
@@ -565,6 +571,11 @@ fun BasicScreen(
         if (style.isNotEmpty()) {
             SettingsManager.setStyle(context, style)
         }
+    }
+
+    LaunchedEffect(text) {
+        kotlinx.coroutines.delay(300)
+        SettingsManager.setBasicTtsText(context, text)
     }
 
     PanelBox(

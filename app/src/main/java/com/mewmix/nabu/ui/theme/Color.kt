@@ -13,6 +13,15 @@ fun createLightColorScheme(theme: AppTheme) = lightColorScheme(
     onSecondary = Color(theme.onSecondary),
     secondaryContainer = Color(theme.secondaryContainer),
     onSecondaryContainer = Color(theme.onSecondaryContainer),
+    tertiary = Color(theme.tertiary),
+    onTertiary = Color(theme.onTertiary),
+    background = Color(theme.background),
+    onBackground = Color(theme.onBackground),
+    surface = Color(theme.surface),
+    onSurface = Color(theme.onSurface),
+    surfaceVariant = Color(theme.surfaceVariant),
+    onSurfaceVariant = Color(theme.onSurfaceVariant),
+    outline = Color(theme.outline),
 )
 
 fun createDarkColorScheme(theme: AppTheme) = darkColorScheme(
@@ -24,6 +33,15 @@ fun createDarkColorScheme(theme: AppTheme) = darkColorScheme(
     onSecondary = Color(theme.onSecondary),
     secondaryContainer = Color(theme.secondaryContainer),
     onSecondaryContainer = Color(theme.onSecondaryContainer),
+    tertiary = Color(theme.tertiary),
+    onTertiary = Color(theme.onTertiary),
+    background = Color(theme.background),
+    onBackground = Color(theme.onBackground),
+    surface = Color(theme.surface),
+    onSurface = Color(theme.onSurface),
+    surfaceVariant = Color(theme.surfaceVariant),
+    onSurfaceVariant = Color(theme.onSurfaceVariant),
+    outline = Color(theme.outline),
 )
 
 val LinkColorLight = Color(0xFF3F51B5)

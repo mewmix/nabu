@@ -400,6 +400,10 @@ class ChatViewModel(
     private val _voiceFavorites = MutableStateFlow(SettingsManager.getVoiceMixFavorites(context))
     val voiceFavorites = _voiceFavorites.asStateFlow()
 
+    private val _systemPromptFavorites =
+        MutableStateFlow(SettingsManager.getChatSystemPromptFavorites(context))
+    val systemPromptFavorites = _systemPromptFavorites.asStateFlow()
+
     private data class QueuedAudio(val index: Int, val audio: FloatArray, val sampleRate: Int)
 
     private val audioQueue = Channel<QueuedAudio>(Channel.UNLIMITED)
@@ -901,6 +905,57 @@ class ChatViewModel(
     fun updateSystemPrompt(newPrompt: String) {
         _systemPrompt.value = newPrompt
         SettingsManager.setChatSystemPrompt(context, newPrompt)
+    }
+
+    fun saveCurrentSystemPromptFavorite() {
+        val prompt = _systemPrompt.value.trim()
+        if (prompt.isEmpty()) return
+        val updated = (_systemPromptFavorites.value.filterNot { it.equals(prompt, ignoreCase = true) } + prompt)
+        _systemPromptFavorites.value = updated
+        SettingsManager.setChatSystemPromptFavorites(context, updated)
+    }
+
+    fun applySystemPromptFavorite(prompt: String) {
+        updateSystemPrompt(prompt)
+    }
+
+    fun deleteSystemPromptFavorite(prompt: String) {
+        val updated = _systemPromptFavorites.value.filterNot { it.equals(prompt, ignoreCase = true) }
+        _systemPromptFavorites.value = updated
+        SettingsManager.setChatSystemPromptFavorites(context, updated)
+    }
+
+    fun editMessage(index: Int, content: String) {
+        if (index !in conversationHistory.indices) return
+        val updated = content.trim()
+        if (updated.isEmpty()) return
+        val turn = conversationHistory[index]
+        conversationHistory[index] = turn.copy(content = updated)
+        _chatMessages.value = _chatMessages.value.mapIndexed { messageIndex, message ->
+            if (messageIndex == index) message.copy(message = updated) else message
+        }
+        persistConversationMessages()
+    }
+
+    fun regenerateFrom(index: Int) {
+        if (conversationHistory.isEmpty()) return
+        val userIndex = when {
+            index in conversationHistory.indices && conversationHistory[index].role == ConversationRole.USER -> index
+            index in conversationHistory.indices -> conversationHistory
+                .subList(0, index + 1)
+                .indexOfLast { it.role == ConversationRole.USER }
+            else -> conversationHistory.indexOfLast { it.role == ConversationRole.USER }
+        }
+        if (userIndex < 0) return
+        val userTurn = conversationHistory[userIndex]
+        val image = userTurn.imagePath?.let { path -> loadBitmapFromPath(path)?.let { LlmImageInput(it) } }
+        while (conversationHistory.size > userIndex) {
+            conversationHistory.removeAt(conversationHistory.lastIndex)
+        }
+        _chatMessages.value = _chatMessages.value.take(userIndex)
+        _pendingImage.value = image
+        persistConversationMessages()
+        sendMessage(userTurn.content)
     }
 
     fun updateChatContextMode(mode: ChatContextMode) {
