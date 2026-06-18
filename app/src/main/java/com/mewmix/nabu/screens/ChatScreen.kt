@@ -59,6 +59,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -791,7 +792,7 @@ fun ChatScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(
-                                imageVector = Icons.Default.AttachFile,
+                                imageVector = Icons.Default.Description,
                                 contentDescription = "Add document",
                                 modifier = Modifier.clickable { documentPicker.launch("*/*") },
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
