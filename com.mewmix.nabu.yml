@@ -32,14 +32,14 @@ RepoType: git
 Repo: https://github.com/mewmix/nabu.git
 
 Builds:
-  - versionName: 0.5.4
-    versionCode: 10
-    commit: af9958117ab3c2149c5e1b4855d2f0e2885d4f33
+  - versionName: 0.5.15
+    versionCode: 21
+    commit: fc479566fccce10ce5551319a3fbad97cb63bb1e
     subdir: app
     gradle:
       - yes
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.5.4
-CurrentVersionCode: 10
+CurrentVersion: 0.5.15
+CurrentVersionCode: 21

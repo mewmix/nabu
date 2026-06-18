@@ -1,7 +1,7 @@
 # Nabu
 
 Nabu is an on-device test bench for TTS and chat:
-- ONNX Runtime (`NNAPI`/CPU) TTS with [Kokoro-82M v1.0](https://huggingface.co/hexgrad/Kokoro-82M), [Supertonic v2](https://huggingface.co/Supertone/supertonic-2), and [Soprano 1.1 (80M)](https://huggingface.co/ekwek/Soprano-1.1-80M) via [soprano-onnx](https://huggingface.co/KevinAHM/soprano-onnx)
+- ONNX Runtime (`NNAPI`/CPU) TTS with [Kokoro-82M v1.0](https://huggingface.co/hexgrad/Kokoro-82M), [Supertonic v3](https://huggingface.co/Supertone/supertonic-3), [Supertonic v2](https://huggingface.co/Supertone/supertonic-2), and [Soprano 1.1 (80M)](https://huggingface.co/ekwek/Soprano-1.1-80M) via [soprano-onnx](https://huggingface.co/KevinAHM/soprano-onnx)
 - On-device LLM chat with LiteRT `.task` models (MediaPipe runtime) and experimental `.gguf` support via `llama.cpp`
 - E-reader and long-form playback workflows
 
@@ -35,11 +35,12 @@ Nabu is an on-device test bench for TTS and chat:
   - ONNX conversion/runtime reference: https://github.com/thewh1teagle/kokoro-onnx
   - Original Android Kokoro app base: https://github.com/puff-dayo/Kokoro-82M-Android
 
-### Supertonic (v2 ONNX)
+### Supertonic (v2/v3 ONNX)
 - Runtime: ONNX Runtime (CPU)
-- Integrated model ids in app: `supertonic-2-onnx`
+- Integrated model ids in app: `supertonic-3-onnx`, `supertonic-2-onnx`
 - Credits chain:
   - Original Supertonic project: https://github.com/supertonic-tts/supertonic
+  - Supertonic v3 ONNX packaging/distribution: https://huggingface.co/Supertone/supertonic-3
   - Supertonic v2 ONNX packaging/distribution: https://huggingface.co/Supertone/supertonic-2
 
 ### Soprano (80M ONNX)
@@ -61,6 +62,7 @@ Source manifests used by the app:
 | Model | ID |  Source |
 |---|---|---|
 | Kokoro v1.0 (FP16/INT8) | `kokoro_fp16`, `kokoro_int8` | [ONNX fp16](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX), [INT8 release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0) |
+| Supertonic v3 | `supertonic-3-onnx` | [Hugging Face](https://huggingface.co/Supertone/supertonic-3) |
 | Supertonic v2 | `supertonic-2-onnx` | [Hugging Face](https://huggingface.co/Supertone/supertonic-2) |
 | Soprano 1.1 (ONNX pkg) | `soprano-80m-onnx` | [Original model](https://huggingface.co/ekwek/Soprano-1.1-80M), [ONNX packaging](https://huggingface.co/KevinAHM/soprano-onnx) |
 
@@ -209,7 +211,7 @@ Streaming `/v1/chat/completions` follows OpenAI-style SSE chunk events yielding 
 Request fields:
 - `input` or `text` (required)
 - `engine` optional: `kokoro`, `supertonic`, `soprano`
-- `model` optional: e.g. `soprano-80m-onnx`, `supertonic-2-onnx`
+- `model` optional: e.g. `soprano-80m-onnx`, `supertonic-3-onnx`
 - `voice`/`style` optional
 - `speed` optional (default `1.0`)
 - `response_format` optional: `wav` (default) or `json`
@@ -326,7 +328,8 @@ Unit tests:
 - Original Android base app: https://github.com/puff-dayo/Kokoro-82M-Android
 - Kokoro model: https://huggingface.co/hexgrad/Kokoro-82M
 - Kokoro ONNX conversion/runtime references: https://github.com/thewh1teagle/kokoro-onnx
-- Supertonic models: https://huggingface.co/Supertone/supertonic-2
+- Supertonic v3 model: https://huggingface.co/Supertone/supertonic-3
+- Supertonic v2 model: https://huggingface.co/Supertone/supertonic-2
 - Soprano original model/repo: https://github.com/ekwek1/soprano
 - Soprano ONNX web reference: https://github.com/KevinAHM/soprano-web-onnx
 - Soprano ONNX model packaging: https://huggingface.co/KevinAHM/soprano-onnx
