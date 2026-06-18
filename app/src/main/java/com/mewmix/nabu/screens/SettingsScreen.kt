@@ -46,12 +46,12 @@ import com.mewmix.nabu.auth.CodexApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import com.mewmix.nabu.BuildConfig
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.material3.HorizontalDivider
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.supertonic.SupertonicLanguages
@@ -123,6 +123,14 @@ fun SettingsScreen(
     var customControlRadius by remember { mutableStateOf(formatThemeNumber(customThemeDraft.controlRadiusDp ?: 18f)) }
     var customBorderWidth by remember { mutableStateOf(formatThemeNumber(customThemeDraft.borderWidthDp ?: 1f)) }
     var customThemeError by remember { mutableStateOf<String?>(null) }
+    var appearanceExpanded by remember { mutableStateOf(false) }
+    var diagnosticsExpanded by remember { mutableStateOf(false) }
+    var speechRuntimeExpanded by remember { mutableStateOf(false) }
+    var llamaExpanded by remember { mutableStateOf(false) }
+    var mediaPipeExpanded by remember { mutableStateOf(false) }
+    var permissionsExpanded by remember { mutableStateOf(false) }
+    var integrationsExpanded by remember { mutableStateOf(false) }
+    var updatesExpanded by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(runtime, ttsEngine) {
@@ -164,52 +172,46 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "Appearance",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            ExposedDropdownMenuBox(
-                expanded = themeModeExpanded,
-                onExpandedChange = { themeModeExpanded = it }
+            BrutalSection(
+                title = "Appearance",
+                expanded = appearanceExpanded,
+                onToggle = { appearanceExpanded = !appearanceExpanded }
             ) {
-                TextField(
-                    value = themeMode.label,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Theme Mode") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = themeModeExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                DropdownMenu(
+                ExposedDropdownMenuBox(
                     expanded = themeModeExpanded,
-                    onDismissRequest = { themeModeExpanded = false }
+                    onExpandedChange = { themeModeExpanded = it }
                 ) {
-                    ThemeManager.ThemeMode.entries.forEach { mode ->
-                        DropdownMenuItem(
-                            text = { Text(mode.label) },
-                            onClick = {
-                                themeMode = mode
-                                ThemeManager.setThemeMode(context, mode)
-                                onThemeChanged()
-                                themeModeExpanded = false
-                            }
-                        )
+                    TextField(
+                        value = themeMode.label,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Theme Mode") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = themeModeExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    DropdownMenu(
+                        expanded = themeModeExpanded,
+                        onDismissRequest = { themeModeExpanded = false }
+                    ) {
+                        ThemeManager.ThemeMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text(mode.label) },
+                                onClick = {
+                                    themeMode = mode
+                                    ThemeManager.setThemeMode(context, mode)
+                                    onThemeChanged()
+                                    themeModeExpanded = false
+                                }
+                            )
+                        }
                     }
                 }
-            }
 
-            Text(
-                text = "Bubble Pop uses the warm Iris studio spacing with softer cards and icon-led controls. Brutal restores the high-contrast control-room look. Custom applies saved color and shape tokens across the same components.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            if (themeMode == ThemeManager.ThemeMode.CUSTOM) {
-                Text(
-                    text = "Custom Theme",
-                    style = MaterialTheme.typography.titleSmall
-                )
+                if (themeMode == ThemeManager.ThemeMode.CUSTOM) {
+                    Text(
+                        text = "Custom Theme",
+                        style = MaterialTheme.typography.titleSmall
+                    )
                 TextField(
                     value = customPrimary,
                     onValueChange = { customPrimary = it },
@@ -330,17 +332,21 @@ fun SettingsScreen(
                     )
                 }
             }
+            }
 
-            HorizontalDivider()
-
-            SwitchToggle(
-                checked = debug,
-                onToggle = {
-                    debug = it
-                    SettingsManager.setDebug(context, it)
-                },
-                label = "Debug Mode"
-            )
+            BrutalSection(
+                title = "Diagnostics & API",
+                expanded = diagnosticsExpanded,
+                onToggle = { diagnosticsExpanded = !diagnosticsExpanded }
+            ) {
+                SwitchToggle(
+                    checked = debug,
+                    onToggle = {
+                        debug = it
+                        SettingsManager.setDebug(context, it)
+                    },
+                    label = "Debug Mode"
+                )
 
             SwitchToggle(
                 checked = benchmark,
@@ -436,39 +442,43 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
+            }
 
-            HorizontalDivider()
-
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { if (allowRuntimeSelection) expanded = it }
+            BrutalSection(
+                title = "Speech Runtime",
+                expanded = speechRuntimeExpanded,
+                onToggle = { speechRuntimeExpanded = !speechRuntimeExpanded }
             ) {
-                TextField(
-                    value = "${ttsEngine.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} / ${displayRuntime.name}",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Active Engine / Provider") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    enabled = allowRuntimeSelection,
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                DropdownMenu(
+                ExposedDropdownMenuBox(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false }
+                    onExpandedChange = { if (allowRuntimeSelection) expanded = it }
                 ) {
-                    runtimeOptions.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option.name) },
-                            onClick = {
-                                runtime = option
-                                SettingsManager.setRuntimePreference(context, option)
-                                onRuntimeSettingsChanged()
-                                expanded = false
-                            }
-                        )
+                    TextField(
+                        value = "${ttsEngine.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} / ${displayRuntime.name}",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Active Engine / Provider") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        enabled = allowRuntimeSelection,
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        runtimeOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.name) },
+                                onClick = {
+                                    runtime = option
+                                    SettingsManager.setRuntimePreference(context, option)
+                                    onRuntimeSettingsChanged()
+                                    expanded = false
+                                }
+                            )
+                        }
                     }
                 }
-            }
 
             // TTS Engine Selection
             var ttsEngineExpanded by remember { mutableStateOf(false) }
@@ -575,22 +585,21 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.error
                 )
             }
+            }
 
-            HorizontalDivider()
-
-            Text(
-                text = "LLAMA Settings (.gguf)",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            SwitchToggle(
-                checked = llmThreadsAuto,
-                onToggle = {
-                    llmThreadsAuto = it
-                    SettingsManager.setLlmThreadsAuto(context, it)
-                },
-                label = "Threads: Auto"
-            )
+            BrutalSection(
+                title = "LLAMA Settings (.gguf)",
+                expanded = llamaExpanded,
+                onToggle = { llamaExpanded = !llamaExpanded }
+            ) {
+                SwitchToggle(
+                    checked = llmThreadsAuto,
+                    onToggle = {
+                        llmThreadsAuto = it
+                        SettingsManager.setLlmThreadsAuto(context, it)
+                    },
+                    label = "Threads: Auto"
+                )
 
             if (!llmThreadsAuto) {
                 TextField(
@@ -637,13 +646,13 @@ fun SettingsScreen(
                 label = { Text("Total Timeout (ms)") },
                 modifier = Modifier.fillMaxWidth()
             )
+            }
 
-            HorizontalDivider()
-
-            Text(
-                text = "LiteRT (.task) / MediaPipe Settings",
-                style = MaterialTheme.typography.titleMedium
-            )
+            BrutalSection(
+                title = "LiteRT / MediaPipe",
+                expanded = mediaPipeExpanded,
+                onToggle = { mediaPipeExpanded = !mediaPipeExpanded }
+            ) {
 
             ExposedDropdownMenuBox(
                 expanded = mediaPipeBackendExpanded,
@@ -745,29 +754,28 @@ fun SettingsScreen(
                 label = { Text("Random Seed (-1 = default)") },
                 modifier = Modifier.fillMaxWidth()
             )
-
-            HorizontalDivider()
-
-            Text(
-                text = "Optional Permissions",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            OptionalPermissionsSection(showContinue = false)
-
-            Button(
-                onClick = { SettingsManager.setOptionalPermissionsReviewed(context, false) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Show Permission Review On Next Startup")
             }
 
-            HorizontalDivider()
+            BrutalSection(
+                title = "Optional Permissions",
+                expanded = permissionsExpanded,
+                onToggle = { permissionsExpanded = !permissionsExpanded }
+            ) {
+                OptionalPermissionsSection(showContinue = false)
 
-            Text(
-                text = "Integrations (Experimental)",
-                style = MaterialTheme.typography.titleMedium
-            )
+                Button(
+                    onClick = { SettingsManager.setOptionalPermissionsReviewed(context, false) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Show Permission Review On Next Startup")
+                }
+            }
+
+            BrutalSection(
+                title = "Integrations",
+                expanded = integrationsExpanded,
+                onToggle = { integrationsExpanded = !integrationsExpanded }
+            ) {
 
             Text(
                 text = "Glaive adds external tools that Nabu can call when both apps are installed from matching builds.",
@@ -841,13 +849,13 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
+            }
 
-            HorizontalDivider()
-
-            Text(
-                text = "App Updates (GitHub Releases)",
-                style = MaterialTheme.typography.titleMedium
-            )
+            BrutalSection(
+                title = "App Updates",
+                expanded = updatesExpanded,
+                onToggle = { updatesExpanded = !updatesExpanded }
+            ) {
 
             Text(
                 text = "Current: v$versionName",
@@ -920,6 +928,7 @@ fun SettingsScreen(
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mewmix/nabu/commit/$commitHash"))
                 context.startActivity(intent)
             })
+            }
         }
     }
 }

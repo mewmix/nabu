@@ -24,6 +24,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Send
@@ -33,6 +34,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -134,6 +136,16 @@ fun ChatScreen(
 fun MessageBubble(chatMessage: ChatMessage) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    val bubbleColor = if (chatMessage.isFromUser) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+    }
+    val contentColor = if (chatMessage.isFromUser) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     val formatted = remember(chatMessage.message) {
         chatMessage.message
             .replace("\\n", "\n")
@@ -161,44 +173,48 @@ fun MessageBubble(chatMessage: ChatMessage) {
                 bottomEnd = if (chatMessage.isFromUser) 0.dp else 16.dp
             ),
             colors = CardDefaults.cardColors(
-                containerColor = if (chatMessage.isFromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
+                containerColor = bubbleColor,
+                contentColor = contentColor
             )
         ) {
-            Column {
-                chatMessage.image?.let { img ->
-                    Image(
-                        bitmap = img.bitmap.asImageBitmap(),
-                        contentDescription = "Message image",
-                        modifier = Modifier
-                            .padding(8.dp)
-                            .size(200.dp),
-                        contentScale = ContentScale.Fit
-                    )
-                }
-                chatMessage.audio?.let { audio ->
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AttachFile,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = audio.displayName ?: "Audio attachment",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                Column {
+                    chatMessage.image?.let { img ->
+                        Image(
+                            bitmap = img.bitmap.asImageBitmap(),
+                            contentDescription = "Message image",
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .size(200.dp),
+                            contentScale = ContentScale.Fit
                         )
                     }
-                }
-                if (formatted.isNotBlank()) {
-                    SelectionContainer {
-                        MarkdownText(
-                            markdown = formatted,
-                            modifier = Modifier.padding(12.dp)
-                        )
+                    chatMessage.audio?.let { audio ->
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AttachFile,
+                                contentDescription = null,
+                                tint = contentColor.copy(alpha = 0.78f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = audio.displayName ?: "Audio attachment",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = contentColor.copy(alpha = 0.78f)
+                            )
+                        }
+                    }
+                    if (formatted.isNotBlank()) {
+                        SelectionContainer {
+                            MarkdownText(
+                                markdown = formatted,
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodyLarge.copy(color = contentColor)
+                            )
+                        }
                     }
                 }
             }

@@ -45,6 +45,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Icon
@@ -60,7 +62,7 @@ import com.mewmix.nabu.utils.VoiceMixConfig
 import com.mewmix.nabu.utils.VoiceMixFavorite
 import com.mewmix.nabu.utils.filterToAvailableStyles
 import com.mewmix.nabu.ui.brutalist.BrutalButton
-import com.mewmix.nabu.ui.brutalist.BrutalButtonText
+import com.mewmix.nabu.ui.brutalist.BrutalIconButton
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.mewmix.nabu.utils.playAudio
@@ -264,7 +266,9 @@ fun MixerScreen(
             .fillMaxSize()
     ) {
         Column(
-            modifier = Modifier.verticalScroll(scrollState),
+            modifier = Modifier
+                .verticalScroll(scrollState)
+                .padding(bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             RuntimeStatusLine()
@@ -296,58 +300,46 @@ fun MixerScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
             ) {
-                BrutalButton(
+                BrutalIconButton(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = if (isProcessing) "Mixing audio" else "Play mix",
                     onClick = { generateCurrentAudio(save = false) },
-                    modifier = Modifier.weight(1f),
                     enabled = !isProcessing &&
                         text.isNotBlank() &&
                         (preferredEngine != "supertonic" || hasSupertonicModels) &&
                         (preferredEngine != "soprano" || isSopranoLoaded)
-                ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    BrutalButtonText(if (isProcessing) "MIXING..." else "PLAY")
-                }
+                )
 
-                BrutalButton(
+                BrutalIconButton(
+                    imageVector = Icons.Filled.Save,
+                    contentDescription = if (isProcessing) "Mixing audio" else "Save mix",
                     onClick = { generateCurrentAudio(save = true) },
-                    modifier = Modifier.weight(1f),
                     enabled = !isProcessing &&
                         text.isNotBlank() &&
                         (preferredEngine != "supertonic" || hasSupertonicModels) &&
                         (preferredEngine != "soprano" || isSopranoLoaded)
-                ) {
-                    Icon(Icons.Filled.Save, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    BrutalButtonText(if (isProcessing) "MIXING..." else "SAVE")
-                }
+                )
             }
 
             lastGeneratedAudio?.let { (audio, sampleRate) ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
                 ) {
-                    BrutalButton(
+                    BrutalIconButton(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = "Replay mix",
                         onClick = { playAudio(audio, sampleRate, scope) {} },
-                        modifier = Modifier.weight(1f),
                         enabled = !isProcessing
-                    ) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        BrutalButtonText("REPLAY")
-                    }
-                    BrutalButton(
+                    )
+                    BrutalIconButton(
+                        imageVector = Icons.Filled.Save,
+                        contentDescription = "Save mix again",
                         onClick = { saveAudio(audio, context, currentFileName(), sampleRate) },
-                        modifier = Modifier.weight(1f),
                         enabled = !isProcessing
-                    ) {
-                        Icon(Icons.Filled.Save, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        BrutalButtonText("SAVE AGAIN")
-                    }
+                    )
                 }
             }
 
@@ -653,7 +645,10 @@ fun StyleSelector(
                 onValueChange = {},
                 readOnly = true,
                 trailingIcon = {
-                    Text(if (expanded) "▲" else "▼", color = MaterialTheme.colorScheme.onSurface)
+                    Icon(
+                        imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse styles" else "Expand styles"
+                    )
                 },
                 placeholder = { Text("ADD STYLE...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 colors = TextFieldDefaults.colors(
@@ -721,7 +716,10 @@ fun SingleStyleSelector(
             readOnly = true,
             label = { Text("Supertonic Style") },
             trailingIcon = {
-                Text(if (expanded) "▲" else "▼", color = MaterialTheme.colorScheme.onSurface)
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Collapse Supertonic styles" else "Expand Supertonic styles"
+                )
             },
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surface,

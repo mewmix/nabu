@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Icon
@@ -51,9 +53,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import com.mewmix.nabu.ui.brutalist.BrutalIconButton
 import com.mewmix.nabu.ui.brutalist.PanelBox
-import com.mewmix.nabu.ui.brutalist.BrutalButton
-import com.mewmix.nabu.ui.brutalist.BrutalButtonText
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.mewmix.nabu.ui.brutalist.Brutal
@@ -633,7 +634,10 @@ fun BasicScreen(
                             .menuAnchor(),
                         readOnly = true,
                         trailingIcon = {
-                            Text(if (expanded) "UP" else "DOWN", color = MaterialTheme.colorScheme.onSurface)
+                            Icon(
+                                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                contentDescription = if (expanded) "Collapse voices" else "Expand voices"
+                            )
                         }
                     )
 
@@ -670,14 +674,17 @@ fun BasicScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                .padding(16.dp)
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
             ) {
                 val playEnabled = !isProcessing &&
                     (!styleRequired || style.isNotEmpty()) &&
                     modelState is ModelState.Ready &&
                     (!isSupertonic || hasSupertonicModels)
 
-                BrutalButton(
+                BrutalIconButton(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = if (isProcessing) "Processing audio" else "Play audio",
                     onClick = {
                         shouldSaveFile = false
                         isProcessing = true
@@ -685,19 +692,12 @@ fun BasicScreen(
                             isProcessing = false
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
                     enabled = playEnabled
-                ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    BrutalButtonText(if (isProcessing) "PROCESSING..." else "PLAY")
-                }
+                )
 
-                Spacer(modifier = Modifier.width(12.dp))
-
-                BrutalButton(
+                BrutalIconButton(
+                    imageVector = Icons.Filled.Save,
+                    contentDescription = if (isProcessing) "Processing audio" else "Save audio",
                     onClick = {
                         shouldSaveFile = true
                         isProcessing = true
@@ -705,15 +705,8 @@ fun BasicScreen(
                             isProcessing = false
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
                     enabled = playEnabled
-                ) {
-                    Icon(Icons.Filled.Save, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    BrutalButtonText(if (isProcessing) "PROCESSING..." else "SAVE")
-                }
+                )
             }
         }
     }

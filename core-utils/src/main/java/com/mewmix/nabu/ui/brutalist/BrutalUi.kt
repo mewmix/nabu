@@ -13,9 +13,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -34,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.mewmix.nabu.ui.design.LocalNabuChrome
 import com.mewmix.nabu.ui.design.LocalNabuUiMode
 import com.mewmix.nabu.ui.design.NabuUiMode
@@ -204,10 +209,10 @@ fun BrutalSection(
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.weight(1f))
-            Text(
-                if (expanded) "UP" else "DOWN",
-                color = if (mode == NabuUiMode.Modern) MaterialTheme.colorScheme.primary else Brutal.textBright,
-                style = MaterialTheme.typography.labelSmall
+            Icon(
+                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (expanded) "Collapse $title" else "Expand $title",
+                tint = if (mode == NabuUiMode.Modern) MaterialTheme.colorScheme.primary else Brutal.textBright
             )
         }
         if (expanded) {
@@ -324,6 +329,28 @@ fun BrutalButtonText(text: String, modifier: Modifier = Modifier) {
         softWrap = false,
         textAlign = TextAlign.Center
     )
+}
+
+@Composable
+fun BrutalIconButton(
+    imageVector: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    size: Dp = 56.dp
+) {
+    BrutalButton(
+        onClick = onClick,
+        modifier = modifier.size(size),
+        enabled = enabled
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(26.dp)
+        )
+    }
 }
 
 private fun String.toButtonTitle(): String =

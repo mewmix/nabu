@@ -4,6 +4,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -74,6 +75,7 @@ import com.mewmix.nabu.viewmodel.ChatContextMode
 import com.mewmix.nabu.viewmodel.ChatViewModel
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalIconButton
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelBox
@@ -297,11 +299,6 @@ fun ChatScreen(
                                 contentDescription = if (ttsEnabled) "Disable voice playback" else "Enable voice playback",
                                 tint = voiceColor
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (ttsEnabled) "Voice On" else "Voice Off",
-                                color = voiceColor
-                            )
                         }
                         BrutalButton(
                             onClick = { viewModel.stopPlayback() },
@@ -312,8 +309,6 @@ fun ChatScreen(
                                 contentDescription = "Stop voice playback",
                                 tint = MaterialTheme.colorScheme.error
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Stop", color = MaterialTheme.colorScheme.error)
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -595,49 +590,45 @@ fun ChatScreen(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 8.dp),
+                contentPadding = PaddingValues(bottom = 18.dp)
             ) {
                 itemsIndexed(chatMessages) { index, chatMessage ->
                     MessageBubble(chatMessage)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (chatMessage.isFromUser) Arrangement.End else Arrangement.Start
+                        horizontalArrangement = if (chatMessage.isFromUser) {
+                            Arrangement.spacedBy(8.dp, Alignment.End)
+                        } else {
+                            Arrangement.spacedBy(8.dp, Alignment.Start)
+                        }
                     ) {
-                        BrutalButton(
+                        BrutalIconButton(
+                            imageVector = Icons.Filled.ContentCopy,
+                            contentDescription = "Copy message",
                             onClick = {
                                 val formatted = chatMessage.message.replace("\\n", "\n").replace("/n", "\n")
                                 clipboardManager.setText(AnnotatedString(formatted))
                                 Toast.makeText(context, "Copied message", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ContentCopy,
-                                contentDescription = "Copy message",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        BrutalButton(
+                            },
+                            size = 48.dp
+                        )
+                        BrutalIconButton(
+                            imageVector = Icons.Filled.Edit,
+                            contentDescription = "Edit message",
                             onClick = {
                                 editMessageIndex = index
                                 editMessageText = chatMessage.message.replace("\\n", "\n").replace("/n", "\n")
                             },
-                            enabled = !isLoading
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Edit,
-                                contentDescription = "Edit message",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        BrutalButton(
+                            enabled = !isLoading,
+                            size = 48.dp
+                        )
+                        BrutalIconButton(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = "Regenerate response",
                             onClick = { viewModel.regenerateFrom(index) },
-                            enabled = !isLoading && !isSynthesizing
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Refresh,
-                                contentDescription = "Regenerate response",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                            enabled = !isLoading && !isSynthesizing,
+                            size = 48.dp
+                        )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -757,14 +748,16 @@ fun ChatScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 if (isLoading) {
-                    BrutalButton(
+                    BrutalIconButton(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Stop",
                         onClick = { viewModel.cancelGeneration() },
                         enabled = true
-                    ) {
-                        Icon(Icons.Default.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.onSurface)
-                    }
+                    )
                 } else {
-                    BrutalButton(
+                    BrutalIconButton(
+                        imageVector = Icons.Default.Send,
+                        contentDescription = "Send",
                         onClick = {
                             if (message.isNotBlank()) {
                                 viewModel.sendMessage(message)
@@ -774,9 +767,7 @@ fun ChatScreen(
                     enabled = (message.isNotBlank() || pendingImage != null || pendingAudio != null) &&
                         !isSynthesizing &&
                         playerState == PlayerState.IDLE
-                ) {
-                        Icon(Icons.Default.Send, contentDescription = "Send", tint = MaterialTheme.colorScheme.onSurface)
-                    }
+                    )
                 }
             }
         }

@@ -3,6 +3,7 @@ package com.mewmix.nabu.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mewmix.nabu.utils.Creation
 import com.mewmix.nabu.utils.loadCreations
@@ -52,6 +54,7 @@ fun CreationsScreen() {
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(creations) { creation ->
@@ -65,7 +68,10 @@ fun CreationsScreen() {
                 ) {
                     Text(
                         text = creation.name,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge
                     )
                     val isPlaying = playingUri == creation.uri && mediaPlayer?.isPlaying == true
                     BrutalButton(onClick = {
@@ -83,7 +89,6 @@ fun CreationsScreen() {
                             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play"
                         )
-                        Text(if (isPlaying) "Pause" else "Play")
                     }
                 }
             }
