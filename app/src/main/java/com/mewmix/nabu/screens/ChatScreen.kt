@@ -114,6 +114,7 @@ fun ChatScreen(
     var isRecordingVoice by remember { mutableStateOf(false) }
     var startVoiceHandled by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf(initialMessage) }
+    var attachmentMenuExpanded by remember { mutableStateOf(false) }
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -784,20 +785,50 @@ fun ChatScreen(
                     placeholder = { Text("Message", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     leadingIcon = {
                         Row {
-                            Icon(
-                                imageVector = Icons.Default.AddPhotoAlternate,
-                                contentDescription = "Add image",
-                                modifier = Modifier.clickable { imagePicker.launch("image/*") },
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = Icons.Default.Description,
-                                contentDescription = "Add document",
-                                modifier = Modifier.clickable { documentPicker.launch("*/*") },
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Box {
+                                Icon(
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = "Add attachment",
+                                    modifier = Modifier.clickable { attachmentMenuExpanded = true },
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                DropdownMenu(
+                                    expanded = attachmentMenuExpanded,
+                                    onDismissRequest = { attachmentMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Image") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                                        },
+                                        onClick = {
+                                            attachmentMenuExpanded = false
+                                            imagePicker.launch("image/*")
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Document") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Description, contentDescription = null)
+                                        },
+                                        onClick = {
+                                            attachmentMenuExpanded = false
+                                            documentPicker.launch("*/*")
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Audio file") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.AttachFile, contentDescription = null)
+                                        },
+                                        onClick = {
+                                            attachmentMenuExpanded = false
+                                            audioPicker.launch("audio/*")
+                                        }
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
                             Icon(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = if (isRecordingVoice) "Stop recording" else "Record voice",
@@ -828,13 +859,6 @@ fun ChatScreen(
                                         microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     }
                                 },
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = Icons.Default.AttachFile,
-                                contentDescription = "Add audio",
-                                modifier = Modifier.clickable { audioPicker.launch("audio/*") },
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }

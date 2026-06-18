@@ -756,6 +756,13 @@ class ChatViewModel(
             finalizeDirectToolResponse("No LLM backend available.")
             return
         }
+        if (audio != null && !backend.supportsAudioInput()) {
+            DebugLogger.log("ChatViewModel: selected model does not support audio input")
+            finalizeDirectToolResponse(
+                "The selected model does not support audio input yet. Use an audio-capable model or send text."
+            )
+            return
+        }
 
         val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
         val backendMaxTokens = when (backend) {

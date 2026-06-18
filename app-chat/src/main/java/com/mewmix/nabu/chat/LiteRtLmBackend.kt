@@ -192,6 +192,17 @@ class LiteRtLmBackend(
         audio: LlmAudioInput? = null,
         resultListener: (partialResult: String, done: Boolean) -> Unit
     ) {
+        if (audio != null && !VisionModelSupport.supportsAudioInput(modelId)) {
+            resultListener("LiteRT-LM audio input is not enabled for this model.", true)
+            return
+        }
+        if (audio != null && !audio.bytes.hasWavHeader()) {
+            DebugLogger.log(
+                "LiteRtLmBackend rejecting non-WAV audio input name=${audio.displayName} bytes=${audio.bytes.size}"
+            )
+            resultListener("LiteRT-LM audio input expects WAV audio. Record a new voice message or attach a WAV file.", true)
+            return
+        }
         var emittedText = ""
         runBlocking {
             val flow = if (image != null || audio != null) {
@@ -314,4 +325,15 @@ class LiteRtLmBackend(
         bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
         return output.toByteArray()
     }
+
+    private fun ByteArray.hasWavHeader(): Boolean =
+        size > 44 &&
+            this[0] == 'R'.code.toByte() &&
+            this[1] == 'I'.code.toByte() &&
+            this[2] == 'F'.code.toByte() &&
+            this[3] == 'F'.code.toByte() &&
+            this[8] == 'W'.code.toByte() &&
+            this[9] == 'A'.code.toByte() &&
+            this[10] == 'V'.code.toByte() &&
+            this[11] == 'E'.code.toByte()
 }
