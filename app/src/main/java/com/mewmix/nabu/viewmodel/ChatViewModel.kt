@@ -130,7 +130,11 @@ class ChatViewModel(
         return try {
             val file = File(path)
             if (!file.exists()) return null
-            LlmAudioInput(file.readBytes(), displayName ?: file.name)
+            LlmAudioInput(
+                bytes = file.readBytes(),
+                displayName = displayName ?: file.name,
+                absolutePath = file.absolutePath
+            )
         } catch (e: Exception) {
             DebugLogger.log("Error loading audio from $path: ${e.message}")
             null
@@ -757,9 +761,10 @@ class ChatViewModel(
             return
         }
         if (audio != null && !backend.supportsAudioInput()) {
-            DebugLogger.log("ChatViewModel: selected model does not support audio input")
+            val modelName = _activeModel.value?.name ?: "selected model"
+            DebugLogger.log("ChatViewModel: $modelName does not support audio input")
             finalizeDirectToolResponse(
-                "The selected model does not support audio input yet. Use an audio-capable model or send text."
+                "$modelName does not support audio input. Select Gemma 4 E2B IT or send text instead."
             )
             return
         }

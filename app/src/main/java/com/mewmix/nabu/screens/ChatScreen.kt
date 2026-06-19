@@ -72,6 +72,7 @@ import androidx.core.content.ContextCompat
 import com.mewmix.nabu.chat.LlmAudioInput
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.MessageBubble
+import com.mewmix.nabu.chat.VisionModelSupport
 import com.mewmix.nabu.speech.VoiceAttachmentRecorder
 import com.mewmix.nabu.tools.Tool
 import com.mewmix.nabu.tools.ToolRegistry
@@ -109,6 +110,7 @@ fun ChatScreen(
     val availableTools by ToolRegistry.tools.collectAsState()
     val pendingImage by viewModel.pendingImage.collectAsState()
     val pendingAudio by viewModel.pendingAudioInput.collectAsState()
+    val activeModelSupportsAudio = activeModel?.id?.let(VisionModelSupport::supportsAudioInput) == true
     val clipboardManager = LocalClipboardManager.current
     val voiceRecorder = remember { VoiceAttachmentRecorder(context.applicationContext) }
     var isRecordingVoice by remember { mutableStateOf(false) }
@@ -136,14 +138,18 @@ fun ChatScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let {
-            val bytes = context.contentResolver.openInputStream(it)?.use { stream -> stream.readBytes() }
-            if (bytes != null) {
-                viewModel.setPendingAudio(
-                    LlmAudioInput(
-                        bytes = bytes,
-                        displayName = displayNameForUri(context, it) ?: "audio"
+            if (!activeModelSupportsAudio) {
+                Toast.makeText(context, "Select an audio-capable model before attaching audio.", Toast.LENGTH_LONG).show()
+            } else {
+                val bytes = context.contentResolver.openInputStream(it)?.use { stream -> stream.readBytes() }
+                if (bytes != null) {
+                    viewModel.setPendingAudio(
+                        LlmAudioInput(
+                            bytes = bytes,
+                            displayName = displayNameForUri(context, it) ?: "audio"
+                        )
                     )
-                )
+                }
             }
         }
     }
@@ -190,7 +196,9 @@ fun ChatScreen(
     LaunchedEffect(startVoice) {
         if (startVoice && !startVoiceHandled) {
             startVoiceHandled = true
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            if (!activeModelSupportsAudio) {
+                Toast.makeText(context, "Select an audio-capable model before recording voice.", Toast.LENGTH_LONG).show()
+            } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 runCatching {
                     voiceRecorder.start()
                     isRecordingVoice = true
@@ -200,6 +208,12 @@ fun ChatScreen(
             } else {
                 microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }
+        }
+    }
+
+    LaunchedEffect(activeModel?.id, pendingAudio) {
+        if (pendingAudio != null && !activeModelSupportsAudio) {
+            viewModel.setPendingAudio(null)
         }
     }
 
@@ -816,51 +830,55 @@ fun ChatScreen(
                                             documentPicker.launch("*/*")
                                         }
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("Audio file") },
-                                        leadingIcon = {
-                                            Icon(Icons.Default.AttachFile, contentDescription = null)
-                                        },
-                                        onClick = {
-                                            attachmentMenuExpanded = false
-                                            audioPicker.launch("audio/*")
-                                        }
-                                    )
+                                    if (activeModelSupportsAudio) {
+                                        DropdownMenuItem(
+                                            text = { Text("Audio file") },
+                                            leadingIcon = {
+                                                Icon(Icons.Default.AttachFile, contentDescription = null)
+                                            },
+                                            onClick = {
+                                                attachmentMenuExpanded = false
+                                                audioPicker.launch("audio/*")
+                                            }
+                                        )
+                                    }
                                 }
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = if (isRecordingVoice) "Stop recording" else "Record voice",
-                                modifier = Modifier.clickable {
-                                    if (isRecordingVoice) {
-                                        val audio = voiceRecorder.stop()
-                                        isRecordingVoice = false
-                                        if (audio != null) {
-                                            viewModel.setPendingAudio(audio)
-                                            if (message.isBlank()) {
-                                                message = "Please process this voice recording."
+                            if (activeModelSupportsAudio) {
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = if (isRecordingVoice) "Stop recording" else "Record voice",
+                                    modifier = Modifier.clickable {
+                                        if (isRecordingVoice) {
+                                            val audio = voiceRecorder.stop()
+                                            isRecordingVoice = false
+                                            if (audio != null) {
+                                                viewModel.setPendingAudio(audio)
+                                                if (message.isBlank()) {
+                                                    message = "Please process this voice recording."
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "No voice recording captured.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else if (ContextCompat.checkSelfPermission(
+                                                context,
+                                                Manifest.permission.RECORD_AUDIO
+                                            ) == PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            runCatching {
+                                                voiceRecorder.start()
+                                                isRecordingVoice = true
+                                            }.onFailure { error ->
+                                                Toast.makeText(context, "Could not start recording: ${error.message}", Toast.LENGTH_LONG).show()
                                             }
                                         } else {
-                                            Toast.makeText(context, "No voice recording captured.", Toast.LENGTH_SHORT).show()
+                                            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                         }
-                                    } else if (ContextCompat.checkSelfPermission(
-                                            context,
-                                            Manifest.permission.RECORD_AUDIO
-                                        ) == PackageManager.PERMISSION_GRANTED
-                                    ) {
-                                        runCatching {
-                                            voiceRecorder.start()
-                                            isRecordingVoice = true
-                                        }.onFailure { error ->
-                                            Toast.makeText(context, "Could not start recording: ${error.message}", Toast.LENGTH_LONG).show()
-                                        }
-                                    } else {
-                                        microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    }
-                                },
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                                    },
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     },
                     shape = RoundedCornerShape(24.dp),

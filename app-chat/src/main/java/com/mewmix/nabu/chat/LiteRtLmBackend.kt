@@ -94,7 +94,7 @@ class LiteRtLmBackend(
                 )
             }
         } catch (t: Throwable) {
-            DebugLogger.log("LiteRtLmBackend image generation error: ${t.message}")
+            DebugLogger.logErr("LiteRtLmBackend image generation error", t)
             resultListener("LiteRT-LM image generation failed.", true)
         } finally {
             activeConversation.set(null)
@@ -124,7 +124,7 @@ class LiteRtLmBackend(
                 )
             }
         } catch (t: Throwable) {
-            DebugLogger.log("LiteRtLmBackend generation error: ${t.message}")
+            DebugLogger.logErr("LiteRtLmBackend generation error", t)
             resultListener("LiteRT-LM generation failed.", true)
         } finally {
             activeConversation.set(null)
@@ -146,7 +146,7 @@ class LiteRtLmBackend(
                 )
             }
         } catch (t: Throwable) {
-            DebugLogger.log("LiteRtLmBackend prompt generation error: ${t.message}")
+            DebugLogger.logErr("LiteRtLmBackend prompt generation error", t)
             resultListener("LiteRT-LM generation failed.", true)
         } finally {
             activeConversation.set(null)
@@ -209,7 +209,7 @@ class LiteRtLmBackend(
                 val contents = mutableListOf<Content>()
                 if (prompt.isNotBlank()) contents.add(Content.Text(prompt))
                 if (image != null) contents.add(Content.ImageBytes(image.toPngBytes()))
-                if (audio != null) contents.add(Content.AudioBytes(audio.bytes))
+                if (audio != null) contents.add(audio.toLiteRtLmContent())
                 conversation.sendMessageAsync(Contents.of(contents))
             } else {
                 conversation.sendMessageAsync(prompt)
@@ -278,7 +278,7 @@ class LiteRtLmBackend(
                     val contents = mutableListOf<Content>()
                     if (content.isNotBlank()) contents.add(Content.Text(content))
                     images.forEach { contents.add(Content.ImageBytes(it.toPngBytes())) }
-                    audios.forEach { contents.add(Content.AudioBytes(it.bytes)) }
+                    audios.forEach { contents.add(it.toLiteRtLmContent()) }
                     Message.Companion.user(Contents.of(contents))
                 }
             }
@@ -324,6 +324,17 @@ class LiteRtLmBackend(
         val output = ByteArrayOutputStream()
         bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
         return output.toByteArray()
+    }
+
+    private fun LlmAudioInput.toLiteRtLmContent(): Content {
+        val path = absolutePath
+        return if (!path.isNullOrBlank()) {
+            DebugLogger.log("LiteRtLmBackend using audio file path name=$displayName bytes=${bytes.size} path=$path")
+            Content.AudioFile(path)
+        } else {
+            DebugLogger.log("LiteRtLmBackend using inline audio bytes name=$displayName bytes=${bytes.size}")
+            Content.AudioBytes(bytes)
+        }
     }
 
     private fun ByteArray.hasWavHeader(): Boolean =
