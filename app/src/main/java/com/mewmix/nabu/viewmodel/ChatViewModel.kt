@@ -173,51 +173,136 @@ class ChatViewModel(
             "share_text"
         )
 
-        internal data class ChainedDirectCommand(
+        internal data class DirectActionPlan(
             val toolCalls: List<ToolCall>,
             val response: String
         )
 
-        internal fun parseChainedFlashlightJokeSchedule(
+        internal fun planDirectActionChain(
             userMessage: String,
             availableToolNames: Set<String>
-        ): ChainedDirectCommand? {
-            if ("toggle_flashlight" !in availableToolNames || "schedule_action" !in availableToolNames) {
-                return null
-            }
+        ): DirectActionPlan? {
             val normalized = userMessage.trim()
             if (normalized.isBlank()) return null
-            val lower = normalized.lowercase(Locale.US)
-            if (!lower.contains("joke") || !lower.contains("flashlight")) return null
 
-            val turnsFlashlightOn =
-                Regex("""(?is)\bturn\s+on\s+(?:my\s+|the\s+)?(?:flashlight|torch)\b""").containsMatchIn(normalized) ||
-                    Regex("""(?is)\bturn\s+(?:my\s+|the\s+)?(?:flashlight|torch)\s+on\b""").containsMatchIn(normalized)
-            if (!turnsFlashlightOn) return null
+            val clauses = splitActionClauses(normalized)
+            if (clauses.size < 2) return null
 
-            val delayedOffMatch = Regex(
-                """(?is)\b(?:after|in)\s+(.+?)\s+(?:turn\s+off\s+(?:my\s+|the\s+)?(?:flashlight|torch)|turn\s+(?:my\s+|the\s+)?(?:flashlight|torch)\s+off)\b"""
-            ).find(normalized) ?: return null
-            val seconds = parseDurationSeconds(delayedOffMatch.groupValues[1].trim()) ?: return null
+            val toolCalls = mutableListOf<ToolCall>()
+            val responseParts = mutableListOf<String>()
+            clauses.forEach { clause ->
+                val trimmedClause = clause.trim()
+                if (trimmedClause.isBlank()) return@forEach
 
-            val scheduleOff = ToolCall(
+                parseConversationalClause(trimmedClause)?.let {
+                    responseParts += it
+                    return@forEach
+                }
+
+                parseDelayedActionClause(trimmedClause, availableToolNames)?.let {
+                    toolCalls += it
+                    return@forEach
+                }
+
+                inferToolCallFromModelFailure(trimmedClause, availableToolNames)?.let {
+                    toolCalls += it
+                }
+            }
+
+            if (toolCalls.size < 2 && responseParts.isEmpty()) return null
+            if (toolCalls.isEmpty()) return null
+
+            return DirectActionPlan(
+                toolCalls = toolCalls,
+                response = buildDirectActionPlanResponse(toolCalls, responseParts)
+            )
+        }
+
+        private fun splitActionClauses(userMessage: String): List<String> {
+            val withImplicitTellSeparator = Regex("""(?is)\b((?:flashlight|torch|wifi|wi-fi|bluetooth|volume|media|playback|brightness|alarm|timer))\s+(?=(?:tell|say)\b)""")
+                .replace(userMessage) { "${it.groupValues[1]} then " }
+            return withImplicitTellSeparator
+                .split(Regex("""(?is)\s*(?:,|;|\bthen\b|\band then\b|\band\b)\s*"""))
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+        }
+
+        private fun parseDelayedActionClause(
+            clause: String,
+            availableToolNames: Set<String>
+        ): ToolCall? {
+            if ("schedule_action" !in availableToolNames) return null
+            val durationPattern =
+                """(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|a|an)\s+(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)"""
+
+            val prefixDelay = Regex("""(?is)^\s*(?:after|in)\s+($durationPattern)\s+(.+?)\s*$""")
+                .find(clause)
+                ?.let { it.groupValues[1].trim() to it.groupValues[2].trim() }
+
+            val suffixDelay = Regex("""(?is)^\s*(.+?)\s+(?:after|in)\s+($durationPattern)\s*$""")
+                .find(clause)
+                ?.let { it.groupValues[2].trim() to it.groupValues[1].trim() }
+
+            val (durationSpec, actionText) = prefixDelay ?: suffixDelay ?: return null
+            val seconds = parseDurationSeconds(durationSpec) ?: return null
+            val actionTool = inferToolCallFromModelFailure(
+                actionText,
+                availableToolNames - "schedule_action"
+            ) ?: return null
+
+            return ToolCall(
                 toolName = "schedule_action",
                 arguments = mapOf(
-                    "title" to "Turn flashlight off",
-                    "instruction" to "Turn flashlight off after $seconds seconds.",
+                    "title" to titleForScheduledTool(actionTool),
+                    "instruction" to "Run ${actionTool.toolName} after $seconds seconds.",
                     "delay_seconds" to seconds,
-                    "tool_name" to "toggle_flashlight",
-                    "tool_arguments" to mapOf("enabled" to false)
+                    "tool_name" to actionTool.toolName,
+                    "tool_arguments" to actionTool.arguments
                 )
             )
-            return ChainedDirectCommand(
-                toolCalls = listOf(
-                    ToolCall("toggle_flashlight", mapOf("enabled" to true)),
-                    scheduleOff
-                ),
-                response = "Flashlight turned on. Why don't scientists trust atoms? " +
-                    "Because they make up everything. I scheduled the flashlight to turn off in $seconds seconds."
-            )
+        }
+
+        private fun parseConversationalClause(clause: String): String? {
+            val normalized = clause.trim().lowercase(Locale.US)
+            if (!Regex("""(?is)^(?:tell\s+(?:me\s+)?a\s+joke|say\s+something\s+funny|make\s+me\s+laugh)\b""")
+                    .containsMatchIn(normalized)
+            ) {
+                return null
+            }
+            return "Why don't scientists trust atoms? Because they make up everything."
+        }
+
+        private fun buildDirectActionPlanResponse(
+            toolCalls: List<ToolCall>,
+            responseParts: List<String>
+        ): String {
+            val actionSummaries = toolCalls.map { call ->
+                when (call.toolName) {
+                    "schedule_action" -> {
+                        val delay = call.arguments["delay_seconds"]?.toString()?.toDoubleOrNull()?.toInt()
+                        val tool = call.arguments["tool_name"]?.toString().orEmpty()
+                        if (delay != null && tool.isNotBlank()) {
+                            "I scheduled $tool in $delay seconds."
+                        } else {
+                            "I scheduled the requested action."
+                        }
+                    }
+                    "toggle_flashlight" -> {
+                        val enabled = call.arguments["enabled"] as? Boolean
+                        if (enabled == false) "Flashlight turned off." else "Flashlight turned on."
+                    }
+                    else -> "I ran ${call.toolName}."
+                }
+            }
+            return (actionSummaries + responseParts).joinToString(" ")
+        }
+
+        private fun titleForScheduledTool(toolCall: ToolCall): String {
+            if (toolCall.toolName == "toggle_flashlight") {
+                val enabled = toolCall.arguments["enabled"] as? Boolean
+                return if (enabled == false) "Turn flashlight off" else "Turn flashlight on"
+            }
+            return "Run ${toolCall.toolName}"
         }
 
         internal fun inferToolCallFromModelFailure(
@@ -369,9 +454,14 @@ class ChatViewModel(
             }
 
             if ("toggle_flashlight" in availableToolNames) {
-                Regex("""(?is)^\s*(?:turn\s+)?(?:flashlight|torch)(?:\s+(on|off))?\s*$""")
+                Regex(
+                    """(?is)^\s*(?:turn\s+)?(?:(on|off)\s+(?:my\s+|the\s+)?(?:flashlight|torch)|(?:my\s+|the\s+)?(?:flashlight|torch)(?:\s+(on|off))?)\s*$"""
+                )
                     .find(normalized)?.let { match ->
-                        val enabled = match.groupValues.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+                        val enabled = listOf(
+                            match.groupValues.getOrNull(1),
+                            match.groupValues.getOrNull(2)
+                        ).firstOrNull { !it.isNullOrBlank() }?.trim()
                             ?.equals("on", ignoreCase = true)
                             ?: true
                         return ToolCall("toggle_flashlight", mapOf("enabled" to enabled))
@@ -863,23 +953,23 @@ class ChatViewModel(
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
-        val chainedDirectCommand = if (image == null && audio == null) {
-            parseChainedFlashlightJokeSchedule(trimmed, availableToolNames)
+        val directActionPlan = if (image == null && audio == null) {
+            planDirectActionChain(trimmed, availableToolNames)
         } else {
             null
         }
-        if (chainedDirectCommand != null) {
+        if (directActionPlan != null) {
             viewModelScope.launch(Dispatchers.IO) {
                 DebugLogger.log(
-                    "ChatViewModel: executing chained direct command with " +
-                        chainedDirectCommand.toolCalls.joinToString(",") { it.toolName }
+                    "ChatViewModel: executing direct action plan with " +
+                        directActionPlan.toolCalls.joinToString(",") { it.toolName }
                 )
-                val results = chainedDirectCommand.toolCalls.map { executeToolCallInternal(context.applicationContext, it) }
+                val results = directActionPlan.toolCalls.map { executeToolCallInternal(context.applicationContext, it) }
                 val firstError = results.firstOrNull { it.isError }
                 val response = if (firstError != null) {
                     firstError.output
                 } else {
-                    chainedDirectCommand.response
+                    directActionPlan.response
                 }
                 finalizeDirectToolResponse(response)
             }

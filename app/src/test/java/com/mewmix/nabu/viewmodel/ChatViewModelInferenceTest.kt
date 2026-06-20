@@ -65,14 +65,14 @@ class ChatViewModelInferenceTest {
     }
 
     @Test
-    fun parseChainedFlashlightJokeSchedule_handlesSmokeCommand() {
-        val command = ChatViewModel.parseChainedFlashlightJokeSchedule(
+    fun planDirectActionChain_handlesSmokeCommand() {
+        val plan = ChatViewModel.planDirectActionChain(
             userMessage = "turn on my flashlight Tell me a joke then after 10 seconds turn off the flashlight",
             availableToolNames = setOf("schedule_action", "toggle_flashlight")
         )
 
-        assertNotNull(command)
-        val parsed = requireNotNull(command)
+        assertNotNull(plan)
+        val parsed = requireNotNull(plan)
         assertEquals(
             listOf(
                 ToolCall("toggle_flashlight", mapOf("enabled" to true)),
@@ -80,10 +80,37 @@ class ChatViewModelInferenceTest {
                     "schedule_action",
                     mapOf(
                         "title" to "Turn flashlight off",
-                        "instruction" to "Turn flashlight off after 10 seconds.",
+                        "instruction" to "Run toggle_flashlight after 10 seconds.",
                         "delay_seconds" to 10,
                         "tool_name" to "toggle_flashlight",
                         "tool_arguments" to mapOf("enabled" to false)
+                    )
+                )
+            ),
+            parsed.toolCalls
+        )
+    }
+
+    @Test
+    fun planDirectActionChain_schedulesOtherSupportedActions() {
+        val plan = ChatViewModel.planDirectActionChain(
+            userMessage = "pause media then in 15 seconds play media",
+            availableToolNames = setOf("schedule_action", "pause_media", "play_media")
+        )
+
+        assertNotNull(plan)
+        val parsed = requireNotNull(plan)
+        assertEquals(
+            listOf(
+                ToolCall("pause_media", emptyMap()),
+                ToolCall(
+                    "schedule_action",
+                    mapOf(
+                        "title" to "Run play_media",
+                        "instruction" to "Run play_media after 15 seconds.",
+                        "delay_seconds" to 15,
+                        "tool_name" to "play_media",
+                        "tool_arguments" to emptyMap<String, Any>()
                     )
                 )
             ),
