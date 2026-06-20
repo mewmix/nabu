@@ -65,6 +65,33 @@ class ChatViewModelInferenceTest {
     }
 
     @Test
+    fun parseChainedFlashlightJokeSchedule_handlesSmokeCommand() {
+        val command = ChatViewModel.parseChainedFlashlightJokeSchedule(
+            userMessage = "turn on my flashlight Tell me a joke then after 10 seconds turn off the flashlight",
+            availableToolNames = setOf("schedule_action", "toggle_flashlight")
+        )
+
+        assertNotNull(command)
+        val parsed = requireNotNull(command)
+        assertEquals(
+            listOf(
+                ToolCall("toggle_flashlight", mapOf("enabled" to true)),
+                ToolCall(
+                    "schedule_action",
+                    mapOf(
+                        "title" to "Turn flashlight off",
+                        "instruction" to "Turn flashlight off after 10 seconds.",
+                        "delay_seconds" to 10,
+                        "tool_name" to "toggle_flashlight",
+                        "tool_arguments" to mapOf("enabled" to false)
+                    )
+                )
+            ),
+            parsed.toolCalls
+        )
+    }
+
+    @Test
     fun inferToolCallFromModelFailure_parsesOpenUrl() {
         val toolCall = ChatViewModel.inferToolCallFromModelFailure(
             userMessage = "open url https://example.com",

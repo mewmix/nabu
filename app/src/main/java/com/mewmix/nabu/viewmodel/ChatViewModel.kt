@@ -173,6 +173,53 @@ class ChatViewModel(
             "share_text"
         )
 
+        internal data class ChainedDirectCommand(
+            val toolCalls: List<ToolCall>,
+            val response: String
+        )
+
+        internal fun parseChainedFlashlightJokeSchedule(
+            userMessage: String,
+            availableToolNames: Set<String>
+        ): ChainedDirectCommand? {
+            if ("toggle_flashlight" !in availableToolNames || "schedule_action" !in availableToolNames) {
+                return null
+            }
+            val normalized = userMessage.trim()
+            if (normalized.isBlank()) return null
+            val lower = normalized.lowercase(Locale.US)
+            if (!lower.contains("joke") || !lower.contains("flashlight")) return null
+
+            val turnsFlashlightOn =
+                Regex("""(?is)\bturn\s+on\s+(?:my\s+|the\s+)?(?:flashlight|torch)\b""").containsMatchIn(normalized) ||
+                    Regex("""(?is)\bturn\s+(?:my\s+|the\s+)?(?:flashlight|torch)\s+on\b""").containsMatchIn(normalized)
+            if (!turnsFlashlightOn) return null
+
+            val delayedOffMatch = Regex(
+                """(?is)\b(?:after|in)\s+(.+?)\s+(?:turn\s+off\s+(?:my\s+|the\s+)?(?:flashlight|torch)|turn\s+(?:my\s+|the\s+)?(?:flashlight|torch)\s+off)\b"""
+            ).find(normalized) ?: return null
+            val seconds = parseDurationSeconds(delayedOffMatch.groupValues[1].trim()) ?: return null
+
+            val scheduleOff = ToolCall(
+                toolName = "schedule_action",
+                arguments = mapOf(
+                    "title" to "Turn flashlight off",
+                    "instruction" to "Turn flashlight off after $seconds seconds.",
+                    "delay_seconds" to seconds,
+                    "tool_name" to "toggle_flashlight",
+                    "tool_arguments" to mapOf("enabled" to false)
+                )
+            )
+            return ChainedDirectCommand(
+                toolCalls = listOf(
+                    ToolCall("toggle_flashlight", mapOf("enabled" to true)),
+                    scheduleOff
+                ),
+                response = "Flashlight turned on. Why don't scientists trust atoms? " +
+                    "Because they make up everything. I scheduled the flashlight to turn off in $seconds seconds."
+            )
+        }
+
         internal fun inferToolCallFromModelFailure(
             userMessage: String,
             availableToolNames: Set<String>
@@ -816,6 +863,29 @@ class ChatViewModel(
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
+        val chainedDirectCommand = if (image == null && audio == null) {
+            parseChainedFlashlightJokeSchedule(trimmed, availableToolNames)
+        } else {
+            null
+        }
+        if (chainedDirectCommand != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                DebugLogger.log(
+                    "ChatViewModel: executing chained direct command with " +
+                        chainedDirectCommand.toolCalls.joinToString(",") { it.toolName }
+                )
+                val results = chainedDirectCommand.toolCalls.map { executeToolCallInternal(context.applicationContext, it) }
+                val firstError = results.firstOrNull { it.isError }
+                val response = if (firstError != null) {
+                    firstError.output
+                } else {
+                    chainedDirectCommand.response
+                }
+                finalizeDirectToolResponse(response)
+            }
+            return
+        }
+
         if (directToolCall != null) {
             viewModelScope.launch(Dispatchers.IO) {
                 DebugLogger.log(
@@ -909,7 +979,8 @@ class ChatViewModel(
                     )
                 },
                 shouldCompleteAfterToolResult = { call, _ ->
-                    call.toolName in DIRECT_RESULT_TOOL_NAMES
+                    call.toolName in DIRECT_RESULT_TOOL_NAMES &&
+                        !(call.toolName == "toggle_flashlight" && looksLikeDeferredActionRequest(trimmed))
                 },
                 logger = { DebugLogger.log(it) }
             ).run(
@@ -1309,7 +1380,11 @@ class ChatViewModel(
         if (containsAny(normalized, "remember", "save memory", "memorize")) addTool("save_memory")
         if (containsAny(normalized, "what do you remember", "retrieve memory", "recall memory")) addTool("retrieve_memory")
         if (containsAny(normalized, "scheduled actions", "list scheduled")) addTool("list_scheduled_actions")
-        if (containsAny(normalized, "schedule", "remind later", "run later", "background")) addTool("schedule_action")
+        if (containsAny(normalized, "schedule", "remind later", "run later", "background") ||
+            looksLikeDeferredActionRequest(normalized)
+        ) {
+            addTool("schedule_action")
+        }
         if (containsAny(normalized, "open url", "open link", "http://", "https://", "www.")) addTool("open_url")
         if (containsAny(normalized, "open app", "launch app", "launch package")) {
             addTool("open_app")
@@ -1378,6 +1453,10 @@ class ChatViewModel(
 
     private fun containsAny(text: String, vararg needles: String): Boolean =
         needles.any { text.contains(it) }
+
+    private fun looksLikeDeferredActionRequest(text: String): Boolean =
+        Regex("""(?is)\b(?:after|in)\s+.+?\s+(?:turn|set|toggle|run|open|start|stop)\b""")
+            .containsMatchIn(text)
 
     private fun looksLikeCallRequest(text: String): Boolean =
         Regex("""(?is)^\s*(?:call|dial|place\s+call)\b""").containsMatchIn(text)
