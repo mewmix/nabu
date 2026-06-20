@@ -29,7 +29,7 @@ class VoiceAssistantWidgetProvider : AppWidgetProvider() {
         val intent = Intent(context, ChatActivity::class.java).apply {
             action = ACTION_OPEN_VOICE_ASSISTANT
             putExtra(ChatActivity.EXTRA_START_VOICE, true)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         return PendingIntent.getActivity(
             context,

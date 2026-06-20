@@ -4,9 +4,11 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -19,9 +21,11 @@ import java.util.concurrent.TimeUnit
 
 object ScheduledActionScheduler {
     private const val IN_PROCESS_MAX_DELAY_MS = 15L * 60L * 1000L
+    private const val EXACT_ALARM_SETTINGS_PROMPT_INTERVAL_MS = 60L * 60L * 1000L
     private val gson = Gson()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingInProcessRuns = mutableMapOf<String, Runnable>()
+    private var lastExactAlarmSettingsPromptAt = 0L
     internal var workEnqueuer: (Context, String, OneTimeWorkRequest) -> Unit = { context, uniqueName, request ->
         WorkManager.getInstance(context.applicationContext)
             .enqueueUniqueWork(uniqueName, ExistingWorkPolicy.REPLACE, request)
@@ -104,6 +108,7 @@ object ScheduledActionScheduler {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
             DebugLogger.log("ScheduledActionScheduler exact alarm permission unavailable for actionId=${action.id}")
+            promptForExactAlarmAccess(context)
             return
         }
 
@@ -133,6 +138,38 @@ object ScheduledActionScheduler {
             DebugLogger.log("ScheduledActionScheduler exact alarm set actionId=${action.id} triggerAt=${action.triggerAtEpochMs}")
         }.onFailure {
             DebugLogger.log("ScheduledActionScheduler exact alarm failed actionId=${action.id}: ${it.message}")
+        }
+    }
+
+    private fun promptForExactAlarmAccess(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val now = System.currentTimeMillis()
+        if (now - lastExactAlarmSettingsPromptAt < EXACT_ALARM_SETTINGS_PROMPT_INTERVAL_MS) return
+        lastExactAlarmSettingsPromptAt = now
+
+        val appContext = context.applicationContext
+        val exactAlarmIntent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = Uri.parse("package:${appContext.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:${appContext.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        runCatching {
+            appContext.startActivity(exactAlarmIntent)
+            DebugLogger.log("ScheduledActionScheduler opened exact alarm access settings")
+        }.onFailure { exactAlarmError ->
+            runCatching {
+                appContext.startActivity(fallbackIntent)
+                DebugLogger.log("ScheduledActionScheduler opened app settings for exact alarm access")
+            }.onFailure { fallbackError ->
+                DebugLogger.log(
+                    "ScheduledActionScheduler could not open exact alarm settings: " +
+                        "${exactAlarmError.message}; fallback=${fallbackError.message}"
+                )
+            }
         }
     }
 }

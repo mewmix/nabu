@@ -30,6 +30,7 @@ import androidx.lifecycle.lifecycleScope
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.Model
 import com.mewmix.nabu.data.ModelType
+import com.mewmix.nabu.data.ConversationRepository
 import com.mewmix.nabu.data.OAuthRemoteModels
 import com.mewmix.nabu.screens.ChatScreen
 import com.mewmix.nabu.utils.OnnxRuntimeManager
@@ -111,12 +112,42 @@ class ChatActivity : ComponentActivity() {
                 return@launch
             }
 
-            if (available.size == 1) {
+            val preferred = if (startVoice) preferredVoiceLaunchModel(available) else null
+            if (preferred != null) {
+                DebugLogger.log("ChatActivity: quick voice using model ${preferred.id}")
+                startChat(preferred, initialPrompt, startVoice)
+            } else if (available.size == 1) {
                 startChat(available.first(), initialPrompt, startVoice)
             } else {
                 selectModel(available, initialPrompt, startVoice)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_START_VOICE, false) ||
+            intent.hasExtra(EXTRA_INITIAL_PROMPT) ||
+            intent.action == Intent.ACTION_SEND ||
+            intent.action == Intent.ACTION_VIEW
+        ) {
+            recreate()
+        }
+    }
+
+    private fun preferredVoiceLaunchModel(models: List<Model>): Model? {
+        if (models.size == 1) return models.first()
+        val modelsById = models.associateBy { it.id }
+        val normalizedModelsById = models.associateBy { OAuthRemoteModels.normalizeModelId(it.id) }
+        ConversationRepository.getConversationSummaries(applicationContext)
+            .sortedByDescending { it.updatedAt }
+            .forEach { summary ->
+                val modelId = summary.modelId ?: return@forEach
+                modelsById[modelId]?.let { return it }
+                normalizedModelsById[OAuthRemoteModels.normalizeModelId(modelId)]?.let { return it }
+            }
+        return null
     }
 
     private fun selectModel(models: List<Model>, initialPrompt: String?, startVoice: Boolean) {

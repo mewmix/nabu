@@ -105,6 +105,7 @@
             android:exported="true"
             android:theme="@style/AppTheme"
             android:forceDarkAllowed="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

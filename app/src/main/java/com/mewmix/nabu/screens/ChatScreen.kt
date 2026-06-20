@@ -282,6 +282,22 @@ fun ChatScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Tools: ${availableTools.count { it.isAvailable }} available",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                BrutalButton(onClick = { showToolPicker = true }) {
+                    Text("View Tools", color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
 
             BrutalSection(
                 title = "Conversation Settings",
@@ -1015,11 +1031,11 @@ fun ChatScreen(
     if (showToolPicker) {
         AlertDialog(
             onDismissRequest = { showToolPicker = false },
-            title = { Text("Tool Prefill") },
+            title = { Text("Available Tools") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text(
-                        text = "Pick a context mode, then choose a tool to prefill a direct call.",
+                        text = "${availableTools.count { it.isAvailable }} tools registered. Pick a context mode, then choose a tool to prefill a direct call.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
