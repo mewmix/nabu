@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
@@ -152,6 +153,10 @@
 
         <receiver
             android:name=".utils.PlaybackReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".actions.ScheduledActionAlarmReceiver"
             android:exported="false" />
 
         <receiver

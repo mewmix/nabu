@@ -43,6 +43,28 @@ class ChatViewModelInferenceTest {
     }
 
     @Test
+    fun inferToolCallFromModelFailure_parsesScheduledFlashlightDelay() {
+        val toolCall = ChatViewModel.inferToolCallFromModelFailure(
+            userMessage = "turn off my flashlight after ten seconds",
+            availableToolNames = setOf("schedule_action", "toggle_flashlight")
+        )
+
+        assertEquals(
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Turn flashlight off",
+                    "instruction" to "Turn flashlight off after 10 seconds.",
+                    "delay_seconds" to 10,
+                    "tool_name" to "toggle_flashlight",
+                    "tool_arguments" to mapOf("enabled" to false)
+                )
+            ),
+            toolCall
+        )
+    }
+
+    @Test
     fun inferToolCallFromModelFailure_parsesOpenUrl() {
         val toolCall = ChatViewModel.inferToolCallFromModelFailure(
             userMessage = "open url https://example.com",

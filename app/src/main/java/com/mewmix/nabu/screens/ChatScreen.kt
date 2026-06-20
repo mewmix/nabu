@@ -847,7 +847,7 @@ fun ChatScreen(
                             if (activeModelSupportsAudio) {
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Icon(
-                                    imageVector = Icons.Default.Mic,
+                                    imageVector = if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
                                     contentDescription = if (isRecordingVoice) "Stop recording" else "Record voice",
                                     modifier = Modifier.clickable {
                                         if (isRecordingVoice) {

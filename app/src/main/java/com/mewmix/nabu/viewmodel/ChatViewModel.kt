@@ -150,6 +150,8 @@ class ChatViewModel(
         private val DIRECT_RESULT_TOOL_NAMES = setOf(
             "send_sms",
             "place_call",
+            "schedule_action",
+            "list_scheduled_actions",
             "open_url",
             "open_app",
             "launch_package",
@@ -184,6 +186,10 @@ class ChatViewModel(
 
             if ("set_timer" in availableToolNames) {
                 parseTimerFallback(normalized)?.let { return it }
+            }
+
+            if ("schedule_action" in availableToolNames && "toggle_flashlight" in availableToolNames) {
+                parseScheduledFlashlightFallback(normalized)?.let { return it }
             }
 
             if ("search_web_context" in availableToolNames) {
@@ -406,6 +412,32 @@ class ChatViewModel(
             )
         }
 
+        private fun parseScheduledFlashlightFallback(normalized: String): ToolCall? {
+            val match = Regex(
+                pattern = """(?is)^\s*(?:turn\s+)?(?:(on|off)\s+(?:my\s+)?(?:flashlight|torch)|(?:my\s+)?(?:flashlight|torch)\s+(on|off))\s+(?:after|in)\s+(.+?)\s*$"""
+            ).find(normalized) ?: return null
+
+            val state = listOf(match.groupValues[1], match.groupValues[2])
+                .firstOrNull { it.isNotBlank() }
+                ?.lowercase()
+                ?: return null
+            val durationSpec = match.groupValues[3].trim()
+            val seconds = parseDurationSeconds(durationSpec) ?: return null
+            val enabled = state == "on"
+            val title = if (enabled) "Turn flashlight on" else "Turn flashlight off"
+
+            return ToolCall(
+                toolName = "schedule_action",
+                arguments = mapOf(
+                    "title" to title,
+                    "instruction" to "$title after $seconds seconds.",
+                    "delay_seconds" to seconds,
+                    "tool_name" to "toggle_flashlight",
+                    "tool_arguments" to mapOf("enabled" to enabled)
+                )
+            )
+        }
+
         private fun parseSmsFallback(normalized: String): ToolCall? {
             Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+([+()\-\d\s]+?)(?:\s+(?:saying|message)\s+(.+?))?\s*$""")
                 .find(normalized)
@@ -478,13 +510,13 @@ class ChatViewModel(
         }
 
         private fun parseDurationSeconds(durationSpec: String): Int? {
-            val unitRegex = Regex("""(?is)(\d+)\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs)\b""")
+            val unitRegex = Regex("""(?is)(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty)\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs)\b""")
             val matches = unitRegex.findAll(durationSpec).toList()
             if (matches.isEmpty()) return null
 
             var totalSeconds = 0
             for (match in matches) {
-                val amount = match.groupValues[1].toIntOrNull() ?: return null
+                val amount = parseDurationAmount(match.groupValues[1]) ?: return null
                 val unit = match.groupValues[2].lowercase()
                 totalSeconds += when (unit) {
                     "hour", "hours", "hr", "hrs" -> amount * 3600
@@ -495,6 +527,37 @@ class ChatViewModel(
             }
 
             return totalSeconds.takeIf { it > 0 }
+        }
+
+        private fun parseDurationAmount(value: String): Int? {
+            value.toIntOrNull()?.let { return it }
+            return when (value.lowercase()) {
+                "one" -> 1
+                "two" -> 2
+                "three" -> 3
+                "four" -> 4
+                "five" -> 5
+                "six" -> 6
+                "seven" -> 7
+                "eight" -> 8
+                "nine" -> 9
+                "ten" -> 10
+                "eleven" -> 11
+                "twelve" -> 12
+                "thirteen" -> 13
+                "fourteen" -> 14
+                "fifteen" -> 15
+                "sixteen" -> 16
+                "seventeen" -> 17
+                "eighteen" -> 18
+                "nineteen" -> 19
+                "twenty" -> 20
+                "thirty" -> 30
+                "forty" -> 40
+                "fifty" -> 50
+                "sixty" -> 60
+                else -> null
+            }
         }
     }
 
@@ -721,7 +784,16 @@ class ChatViewModel(
             DebugLogger.log("No active conversation; ignoring message")
             return
         }
+        val availableToolNames = ToolRegistry.tools.value
+            .filter { it.isAvailable }
+            .map { it.name }
+            .toSet()
         val directToolCall = ToolCallProtocol.parseDirectUserToolCommand(trimmed)
+            ?: if (image == null && audio == null) {
+                inferToolCallFromModelFailure(trimmed, availableToolNames)
+            } else {
+                null
+            }
 
         dropQueuedAudio = false
         DebugLogger.log("ChatViewModel sendMessage: $trimmed (hasImage=${image != null}, hasAudio=${audio != null})")
@@ -820,10 +892,6 @@ class ChatViewModel(
                 }
             }
 
-            val availableToolNames = ToolRegistry.tools.value
-                .filter { it.isAvailable }
-                .map { it.name }
-                .toSet()
             AgentTurnRunner(
                 backend = backend,
                 scope = viewModelScope,

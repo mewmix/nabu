@@ -28,6 +28,8 @@ class ActionToolsTest {
         WeatherAction.resetForTesting()
         WebActionReasoner.resetForTesting()
         ScheduledActionScheduler.workEnqueuer = { _, _, _ -> }
+        ScheduledActionScheduler.alarmScheduler = { _, _ -> }
+        ScheduledActionScheduler.inProcessScheduler = { _, _, _ -> }
     }
 
     @After
@@ -41,6 +43,8 @@ class ActionToolsTest {
             androidx.work.WorkManager.getInstance(testContext.applicationContext)
                 .enqueueUniqueWork(uniqueName, androidx.work.ExistingWorkPolicy.REPLACE, request)
         }
+        ScheduledActionScheduler.alarmScheduler = { _, _ -> }
+        ScheduledActionScheduler.inProcessScheduler = { _, _, _ -> }
     }
 
     @Test
@@ -213,6 +217,56 @@ class ActionToolsTest {
 
         assertFalse(result?.isError ?: true)
         assertTrue(result?.output?.contains("tool=get_weather") == true)
+    }
+
+    @Test
+    fun execute_scheduleActionAcceptsRelativeDelaySeconds() {
+        val before = System.currentTimeMillis()
+        var inProcessDelayMs: Long? = null
+        ScheduledActionScheduler.inProcessScheduler = { _, action, delayMs ->
+            if (action.title == "Flashlight off") {
+                inProcessDelayMs = delayMs
+            }
+        }
+        val result = ActionTools.execute(
+            context,
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Flashlight off",
+                    "delay_seconds" to 10,
+                    "tool_name" to "toggle_flashlight",
+                    "tool_arguments" to mapOf("enabled" to false)
+                )
+            )
+        )
+
+        assertFalse(result?.isError ?: true)
+        val stored = ScheduledActionStore.list(context).firstOrNull { it.title == "Flashlight off" }
+        assertNotNull(stored)
+        assertTrue((stored?.triggerAtEpochMs ?: 0L) >= before + 10_000L)
+        assertEquals("toggle_flashlight", stored?.effectiveSteps()?.firstOrNull()?.toolName)
+        assertNotNull(inProcessDelayMs)
+        assertTrue((inProcessDelayMs ?: 0L) in 1L..10_000L)
+    }
+
+    @Test
+    fun execute_scheduleActionAcceptsSecondPrecisionLocalTime() {
+        val result = ActionTools.execute(
+            context,
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Weather later",
+                    "run_at_local" to "2030-01-01 12:00:15",
+                    "tool_name" to "get_weather",
+                    "tool_arguments" to mapOf("location" to "Seattle")
+                )
+            )
+        )
+
+        assertFalse(result?.isError ?: true)
+        assertTrue(result?.output?.contains("2030-01-01T12:00:15") == true)
     }
 
     @Test

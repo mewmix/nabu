@@ -24,53 +24,10 @@ class ScheduledActionWorker(
     override fun doWork(): Result {
         val actionId = inputData.getString(KEY_ACTION_ID).orEmpty()
         val fallbackAction = actionFromInputData(actionId)
-        val action = ScheduledActionStore.find(applicationContext, actionId) ?: fallbackAction
-        val executionRun = if (action.effectiveSteps().isNotEmpty()) {
-            ActionPlanRunner.run(applicationContext, action) { appContext, call ->
-                val step = action.effectiveSteps().firstOrNull {
-                    it.toolName == call.toolName && it.toolArguments == call.arguments
-                }
-                if (call.toolName == ActionTools.SCHEDULED_AGENT_STEP_TOOL && step != null) {
-                    ScheduledAgentStepExecutor.execute(appContext, action, step)
-                } else {
-                    ActionTools.execute(appContext, call)
-                }
-            }
-        } else {
-            null
+        val outcome = ScheduledActionExecutor.executeDueAction(applicationContext, actionId, fallbackAction)
+        if (outcome != null) {
+            notifyActionComplete(outcome.action, outcome.executionRun)
         }
-
-        if (executionRun != null) {
-            ScheduledActionStore.recordRun(applicationContext, action.id, executionRun)
-        }
-
-        val storedAction = ScheduledActionStore.find(applicationContext, action.id) ?: action
-
-        if (storedAction.recurrence == ScheduledAction.RECURRENCE_DAILY || storedAction.recurrence == ScheduledAction.RECURRENCE_WEEKLY) {
-            val step = if (storedAction.recurrence == ScheduledAction.RECURRENCE_WEEKLY) {
-                7L * 24L * 60L * 60L * 1000L
-            } else {
-                24L * 60L * 60L * 1000L
-            }
-            val next = storedAction.copy(
-                triggerAtEpochMs = storedAction.triggerAtEpochMs + step,
-                completedAtEpochMs = null
-            )
-            ScheduledActionScheduler.schedule(applicationContext, next)
-        } else {
-            val finalRun = executionRun ?: ActionRun(
-                id = java.util.UUID.randomUUID().toString(),
-                actionId = action.id,
-                startedAtEpochMs = System.currentTimeMillis(),
-                finishedAtEpochMs = System.currentTimeMillis(),
-                status = ActionRun.STATUS_SUCCEEDED,
-                stepResults = emptyList(),
-                summary = action.instruction
-            )
-            ScheduledActionStore.complete(applicationContext, action.id, finalRun)
-        }
-
-        notifyActionComplete(action, executionRun)
 
         return Result.success()
     }

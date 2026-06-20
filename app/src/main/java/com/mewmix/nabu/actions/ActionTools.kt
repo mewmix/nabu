@@ -37,10 +37,11 @@ object ActionTools {
         ),
         Tool(
             name = "schedule_action",
-            description = "Schedule one or more background-safe tool steps at a specific local date-time.",
+            description = "Schedule one or more background-safe tool steps at a specific local date-time or after a short delay.",
             parameters = mapOf(
                 "instruction" to "Human-readable description of what should happen when due.",
-                "run_at_local" to "Local datetime in yyyy-MM-dd HH:mm format.",
+                "run_at_local" to "Local datetime in yyyy-MM-dd HH:mm or yyyy-MM-dd HH:mm:ss format.",
+                "delay_seconds" to "Optional relative delay in whole seconds. Use this for requests like in 10 seconds.",
                 "title" to "Short title.",
                 "recurrence" to "none, daily, or weekly",
                 "tool_name" to "The background-safe tool name to execute when due.",
@@ -480,14 +481,18 @@ object ActionTools {
     private fun runScheduleAction(context: Context, call: ToolCall): ToolResult {
         val instruction = call.arguments["instruction"]?.toString()?.trim().orEmpty()
         val runAtLocal = call.arguments["run_at_local"]?.toString()?.trim().orEmpty()
+        val delaySeconds = parseWholeNumberArgument(call.arguments["delay_seconds"])
         val title = call.arguments["title"]?.toString()?.trim().ifNullOrBlank("Scheduled action")
         val recurrence = call.arguments["recurrence"]?.toString()?.trim()?.lowercase().normalizeRecurrence()
         val toolName = call.arguments["tool_name"]?.toString()?.trim().orEmpty()
         val toolArguments = call.arguments["tool_arguments"].asStringKeyedMap()
         val parsedSteps = parseScheduledSteps(call.arguments["steps"])
 
-        if (runAtLocal.isBlank()) {
-            return ToolResult(call.toolName, "Missing required parameter: run_at_local", true)
+        if (runAtLocal.isBlank() && delaySeconds == null) {
+            return ToolResult(call.toolName, "Missing required parameter: run_at_local or delay_seconds", true)
+        }
+        if (delaySeconds != null && delaySeconds <= 0) {
+            return ToolResult(call.toolName, "delay_seconds must be a positive whole number.", true)
         }
         if (instruction.isBlank() && toolName.isBlank() && parsedSteps.isEmpty()) {
             return ToolResult(call.toolName, "Provide at least one of: instruction, tool_name, or steps", true)
@@ -511,8 +516,12 @@ object ActionTools {
             )
         }
 
-        val triggerAt = parseLocalDateTime(runAtLocal)
-            ?: return ToolResult(call.toolName, "Invalid run_at_local format. Use yyyy-MM-dd HH:mm", true)
+        val triggerAt = if (delaySeconds != null) {
+            System.currentTimeMillis() + delaySeconds * 1000L
+        } else {
+            parseLocalDateTime(runAtLocal)
+                ?: return ToolResult(call.toolName, "Invalid run_at_local format. Use yyyy-MM-dd HH:mm or yyyy-MM-dd HH:mm:ss", true)
+        }
 
         val resolvedInstruction = instruction.ifBlank {
             if (parsedSteps.isNotEmpty()) {
@@ -632,13 +641,15 @@ object ActionTools {
     }
 
     private fun parseLocalDateTime(value: String): Long? {
-        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-        return runCatching {
-            LocalDateTime.parse(value, formatter)
-                .atZone(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-        }.getOrNull()
+        return listOf("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm")
+            .firstNotNullOfOrNull { pattern ->
+                runCatching {
+                    LocalDateTime.parse(value, DateTimeFormatter.ofPattern(pattern))
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli()
+                }.getOrNull()
+            }
     }
 
     private fun formatEpoch(epochMs: Long): String =

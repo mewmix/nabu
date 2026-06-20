@@ -3,6 +3,7 @@ package com.mewmix.nabu.actions
 import android.content.Context
 import com.mewmix.nabu.tools.ToolCall
 import com.mewmix.nabu.tools.ToolResult
+import com.mewmix.nabu.utils.DebugLogger
 import java.util.UUID
 
 object ActionPlanRunner {
@@ -44,6 +45,10 @@ object ActionPlanRunner {
                 finishedAtEpochMs = System.currentTimeMillis(),
                 output = result.output,
                 isError = result.isError
+            )
+            DebugLogger.log(
+                "ActionPlanRunner step actionId=${action.id} step=${step.title} tool=${step.toolName} " +
+                    "error=${result.isError} output=${result.output.take(160)}"
             )
             results += stepResult
             if (result.isError && !step.continueOnError) {
@@ -99,15 +104,59 @@ object ActionPlanRunner {
 }
 
 fun ScheduledAction.effectiveSteps(): List<ActionStep> {
-    val explicitSteps = steps.orEmpty().filter { it.toolName.isNotBlank() }
+    val explicitSteps = (steps as? List<*>).orEmpty()
+        .mapNotNull { it.toActionStepOrNull() }
+        .filter { it.toolName.isNotBlank() }
     if (explicitSteps.isNotEmpty()) return explicitSteps
     val legacyTool = toolName?.trim().orEmpty()
     if (legacyTool.isBlank()) return emptyList()
     return listOf(
         ActionPlanRunner.buildStep(
             toolName = legacyTool,
-            toolArguments = toolArguments,
+            toolArguments = toolArguments.normalizedStringMap(),
             title = instruction.ifBlank { legacyTool }
         )
     )
+}
+
+private fun Any?.toActionStepOrNull(): ActionStep? {
+    return when (this) {
+        is ActionStep -> this.copy(toolArguments = toolArguments.normalizedStringMap())
+        is Map<*, *> -> {
+            val map = normalizedStringMap()
+            val toolName = (map["toolName"] ?: map["tool_name"] ?: map["tool"])?.toString()?.trim().orEmpty()
+            if (toolName.isBlank()) return null
+            ActionStep(
+                id = map["id"]?.toString()?.trim().orEmpty().ifBlank { UUID.randomUUID().toString() },
+                title = map["title"]?.toString()?.trim().orEmpty().ifBlank { toolName },
+                toolName = toolName,
+                toolArguments = (map["toolArguments"] ?: map["tool_arguments"] ?: map["arguments"] ?: map["args"]).normalizedStringMap(),
+                continueOnError = map["continueOnError"].toBooleanOrFalse() || map["continue_on_error"].toBooleanOrFalse()
+            )
+        }
+        else -> null
+    }
+}
+
+private fun Any?.normalizedStringMap(): Map<String, Any> {
+    return when (this) {
+        null -> emptyMap()
+        is Map<*, *> -> entries.mapNotNull { (key, value) ->
+            val stringKey = key?.toString() ?: return@mapNotNull null
+            value?.let { stringKey to it }
+        }.toMap()
+        else -> emptyMap()
+    }
+}
+
+private fun Any?.toBooleanOrFalse(): Boolean {
+    return when (this) {
+        is Boolean -> this
+        is Number -> toInt() != 0
+        is String -> trim().equals("true", ignoreCase = true) ||
+            trim().equals("yes", ignoreCase = true) ||
+            trim().equals("on", ignoreCase = true) ||
+            trim() == "1"
+        else -> false
+    }
 }

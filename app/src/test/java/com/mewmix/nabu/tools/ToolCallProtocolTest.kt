@@ -54,6 +54,18 @@ class ToolCallProtocolTest {
     }
 
     @Test
+    fun extractToolCall_parsesTaggedFunctionStyleCallFromLocalModel() {
+        val toolCall = ToolCallProtocol.extractToolCall(
+            """<tool_call>toggle_flashlight({"enabled": true})</tool_call>
+            The flashlight is now on."""
+        )
+
+        assertNotNull(toolCall)
+        assertEquals("toggle_flashlight", toolCall?.toolName)
+        assertEquals(true, toolCall?.arguments?.get("enabled"))
+    }
+
+    @Test
     fun extractToolCall_returnsNullForNonToolText() {
         val toolCall = ToolCallProtocol.extractToolCall("Normal assistant response with no tool call")
         assertNull(toolCall)

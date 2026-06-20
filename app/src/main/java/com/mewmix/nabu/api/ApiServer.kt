@@ -3,6 +3,7 @@ package com.mewmix.nabu.api
 import android.content.Context
 import android.graphics.BitmapFactory
 import com.mewmix.nabu.chat.LlamaCppBackend
+import com.mewmix.nabu.chat.LlmAudioInput
 import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.LlmMessage
@@ -212,10 +213,12 @@ class ApiServer(
                         call = call,
                         requestedModel = requestedModel,
                         requireImageInput = parsedMessages.image != null,
+                        requireAudioInput = parsedMessages.audio != null,
                         generationOptions = generationOptions,
                         sendGeneration = { modelId, backend, listener ->
                             ensureImageInputSupported(modelId, backend, parsedMessages.image)
-                            if (parsedMessages.image != null) {
+                            ensureAudioInputSupported(modelId, backend, parsedMessages.audio)
+                            if (parsedMessages.image != null && parsedMessages.audio == null) {
                                 backend.sendMessage(parsedMessages.messages, parsedMessages.image, listener)
                             } else {
                                 backend.sendMessage(parsedMessages.messages, listener)
@@ -500,6 +503,7 @@ class ApiServer(
         call: io.ktor.server.application.ApplicationCall,
         requestedModel: String?,
         requireImageInput: Boolean = false,
+        requireAudioInput: Boolean = false,
         generationOptions: ApiGenerationOptions = ApiGenerationOptions(),
         sendGeneration: (String, LlmBackend, (String, Boolean) -> Unit) -> Unit
     ) {
@@ -511,7 +515,11 @@ class ApiServer(
             val created = System.currentTimeMillis() / 1000L
             try {
                 requestLock.withLock {
-                    val (modelId, activeBackend) = getOrCreateBackend(requestedModel, requireImageInput)
+                    val (modelId, activeBackend) = getOrCreateBackend(
+                        requestedModel,
+                        requireImageInput = requireImageInput,
+                        requireAudioInput = requireAudioInput
+                    )
                     applyGenerationOptions(activeBackend, generationOptions)
 
                     val stream = Channel<StreamEvent>(Channel.UNLIMITED)
@@ -584,12 +592,17 @@ class ApiServer(
             val created = System.currentTimeMillis() / 1000L
             try {
                 requestLock.withLock {
-                    val (modelId, activeBackend) = getOrCreateBackend(requestedModel, payload.image != null)
+                    val (modelId, activeBackend) = getOrCreateBackend(
+                        requestedModel,
+                        requireImageInput = payload.image != null,
+                        requireAudioInput = payload.audio != null
+                    )
                     applyGenerationOptions(activeBackend, generationOptions)
 
                     val stream = Channel<StreamEvent>(Channel.UNLIMITED)
                     ensureImageInputSupported(modelId, activeBackend, payload.image)
-                    if (payload.image != null) {
+                    ensureAudioInputSupported(modelId, activeBackend, payload.audio)
+                    if (payload.image != null && payload.audio == null) {
                         activeBackend.sendMessage(payload.messages, payload.image) { partial, done ->
                             if (partial.isNotEmpty()) {
                                 stream.trySend(StreamEvent.Token(partial))
@@ -935,11 +948,19 @@ class ApiServer(
         }
 
         return requestLock.withLock {
-            val (modelId, activeBackend) = getOrCreateBackend(requestedModel, image != null)
+            val audio = messages.lastOrNull { it.role == "user" }?.audios?.firstOrNull()
+            val imageFromMessage = messages.lastOrNull { it.role == "user" }?.images?.firstOrNull()
+            val effectiveImage = image ?: imageFromMessage
+            val (modelId, activeBackend) = getOrCreateBackend(
+                requestedModel,
+                requireImageInput = effectiveImage != null,
+                requireAudioInput = audio != null
+            )
             applyGenerationOptions(activeBackend, generationOptions)
-            ensureImageInputSupported(modelId, activeBackend, image)
+            ensureImageInputSupported(modelId, activeBackend, effectiveImage)
+            ensureAudioInputSupported(modelId, activeBackend, audio)
             val text = runGeneration(activeBackend) { listener ->
-                if (image != null) {
+                if (image != null && audio == null) {
                     activeBackend.sendMessage(messages, image, listener)
                 } else {
                     activeBackend.sendMessage(messages, listener)
@@ -979,7 +1000,8 @@ class ApiServer(
 
     private fun getOrCreateBackend(
         requestedModelId: String?,
-        requireImageInput: Boolean = false
+        requireImageInput: Boolean = false,
+        requireAudioInput: Boolean = false
     ): Pair<String, LlmBackend> {
         synchronized(backendLock) {
             val availableModels = listAvailableModels(ModelScope.LLM)
@@ -993,6 +1015,11 @@ class ApiServer(
                         ?: throw IllegalArgumentException(
                             "No downloaded image-capable model available. Download an allowlisted multimodal model and retry."
                         )
+                } else if (requireAudioInput) {
+                    availableModels.firstOrNull { modelSupportsAudioInput(it) }
+                        ?: throw IllegalArgumentException(
+                            "No downloaded audio-capable model available. Download an allowlisted audio model and retry."
+                        )
                 } else {
                     availableModels.first()
                 }
@@ -1002,6 +1029,11 @@ class ApiServer(
                 if (requireImageInput && !modelSupportsImageInput(requested)) {
                     throw IllegalArgumentException(
                         "Requested model '$requestedModelId' does not support image input."
+                    )
+                }
+                if (requireAudioInput && !modelSupportsAudioInput(requested)) {
+                    throw IllegalArgumentException(
+                        "Requested model '$requestedModelId' does not support audio input."
                     )
                 }
                 requested
@@ -1052,7 +1084,15 @@ class ApiServer(
 
         val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
             ?: return false
-        return artifact.backend == "mediapipe"
+        return artifact.backend == "mediapipe" || artifact.backend == "litertlm"
+    }
+
+    private fun modelSupportsAudioInput(model: com.mewmix.nabu.data.Model): Boolean {
+        if (!VisionModelSupport.supportsAudioInput(model.id)) return false
+
+        val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
+            ?: return false
+        return artifact.backend == "litertlm"
     }
 
     private suspend fun runGeneration(
@@ -1138,6 +1178,7 @@ class ApiServer(
     private fun parseMessages(input: JSONArray, tools: List<com.mewmix.nabu.tools.Tool> = emptyList()): ParsedMessages {
         val messages = mutableListOf<LlmMessage>()
         var image: LlmImageInput? = null
+        var audio: LlmAudioInput? = null
 
         val systemPromptBuilder = StringBuilder()
         if (tools.isNotEmpty()) {
@@ -1162,14 +1203,27 @@ class ApiServer(
             }
 
             val parsed = parseMessageContent(item, role)
-            if (parsed.content.isNotEmpty()) {
-                messages.add(LlmMessage(role = role, content = parsed.content))
-            }
             if (parsed.image != null) {
                 if (image != null) {
                     throw IllegalArgumentException("Only one image input is supported per request.")
                 }
                 image = parsed.image
+            }
+            if (parsed.audio != null) {
+                if (audio != null) {
+                    throw IllegalArgumentException("Only one audio input is supported per request.")
+                }
+                audio = parsed.audio
+            }
+            if (parsed.content.isNotEmpty() || parsed.image != null || parsed.audio != null) {
+                messages.add(
+                    LlmMessage(
+                        role = role,
+                        content = parsed.content,
+                        images = listOfNotNull(parsed.image),
+                        audios = listOfNotNull(parsed.audio)
+                    )
+                )
             }
         }
 
@@ -1181,7 +1235,7 @@ class ApiServer(
         if (messages.isEmpty()) {
             throw IllegalArgumentException("'messages' must include at least one non-empty content entry.")
         }
-        return ParsedMessages(messages = messages, image = image, tools = tools)
+        return ParsedMessages(messages = messages, image = image, audio = audio, tools = tools)
     }
 
     private fun parseMessageContent(item: JSONObject, role: String): ParsedMessageContent {
@@ -1189,6 +1243,7 @@ class ApiServer(
         if (contentRaw is JSONArray) {
             val textParts = mutableListOf<String>()
             var image: LlmImageInput? = null
+            var audio: LlmAudioInput? = null
             for (idx in 0 until contentRaw.length()) {
                 val part = contentRaw.optJSONObject(idx) ?: continue
                 when (part.optString("type").trim().lowercase()) {
@@ -1213,6 +1268,20 @@ class ApiServer(
                             ?: throw IllegalArgumentException("'image_url' entry is missing a usable 'url' value.")
                         image = decodeImageInput(imageUrl)
                     }
+                    "input_audio" -> {
+                        if (role != "user") {
+                            throw IllegalArgumentException("Audio input is only supported for user messages.")
+                        }
+                        if (audio != null) {
+                            throw IllegalArgumentException("Only one audio input is supported per request.")
+                        }
+                        val inputAudio = part.optJSONObject("input_audio")
+                            ?: throw IllegalArgumentException("'input_audio' entry is missing an object payload.")
+                        val data = inputAudio.optString("data").trim().ifBlank { null }
+                            ?: throw IllegalArgumentException("'input_audio' entry is missing base64 'data'.")
+                        val format = inputAudio.optString("format").trim().ifBlank { "wav" }
+                        audio = decodeAudioInput(data, format)
+                    }
                     else -> Unit
                 }
             }
@@ -1220,12 +1289,48 @@ class ApiServer(
             if (image != null && content.isEmpty()) {
                 content = DEFAULT_IMAGE_PROMPT
             }
-            return ParsedMessageContent(content = content, image = image)
+            return ParsedMessageContent(content = content, image = image, audio = audio)
         }
 
         return ParsedMessageContent(
             content = item.optString("content").trim(),
-            image = null
+            image = null,
+            audio = null
+        )
+    }
+
+    private fun decodeAudioInput(raw: String, format: String): LlmAudioInput {
+        if (!format.equals("wav", ignoreCase = true)) {
+            throw IllegalArgumentException("Only WAV input_audio is supported for LiteRT-LM audio input.")
+        }
+
+        val base64Payload = raw.trim().let { value ->
+            if (value.startsWith("data:", ignoreCase = true)) {
+                val commaIndex = value.indexOf(',')
+                if (commaIndex <= 0 || commaIndex >= value.length - 1) {
+                    throw IllegalArgumentException("Invalid data URL audio payload.")
+                }
+                val meta = value.substring(0, commaIndex)
+                if (!meta.contains(";base64", ignoreCase = true)) {
+                    throw IllegalArgumentException("Only base64 data URL audio payloads are supported.")
+                }
+                value.substring(commaIndex + 1)
+            } else {
+                value
+            }
+        }
+
+        val audioBytes = try {
+            Base64.getDecoder().decode(base64Payload)
+        } catch (_: IllegalArgumentException) {
+            throw IllegalArgumentException("Audio payload is not valid base64.")
+        }
+        if (!audioBytes.hasWavHeader()) {
+            throw IllegalArgumentException("Audio payload must be a WAV file.")
+        }
+        return LlmAudioInput(
+            bytes = audioBytes,
+            displayName = "input_audio.wav"
         )
     }
 
@@ -1293,6 +1398,31 @@ class ApiServer(
             )
         }
     }
+
+    private fun ensureAudioInputSupported(modelId: String, backend: LlmBackend, audio: LlmAudioInput?) {
+        if (audio == null) return
+        if (!VisionModelSupport.supportsAudioInput(modelId)) {
+            throw IllegalArgumentException(
+                "Model '$modelId' is not allowlisted for audio input."
+            )
+        }
+        if (!backend.supportsAudioInput()) {
+            throw IllegalArgumentException(
+                "Backend for model '$modelId' does not support audio input."
+            )
+        }
+    }
+
+    private fun ByteArray.hasWavHeader(): Boolean =
+        size > 44 &&
+            this[0] == 'R'.code.toByte() &&
+            this[1] == 'I'.code.toByte() &&
+            this[2] == 'F'.code.toByte() &&
+            this[3] == 'F'.code.toByte() &&
+            this[8] == 'W'.code.toByte() &&
+            this[9] == 'A'.code.toByte() &&
+            this[10] == 'V'.code.toByte() &&
+            this[11] == 'E'.code.toByte()
 
     private suspend fun Writer.writeSseData(payload: String) {
         write("data: ")
@@ -1712,12 +1842,14 @@ class ApiServer(
     private data class ParsedMessages(
         val messages: List<LlmMessage>,
         val image: LlmImageInput?,
+        val audio: LlmAudioInput?,
         val tools: List<com.mewmix.nabu.tools.Tool> = emptyList()
     )
 
     private data class ParsedMessageContent(
         val content: String,
-        val image: LlmImageInput?
+        val image: LlmImageInput?,
+        val audio: LlmAudioInput?
     )
 
     private fun parseTools(body: JSONObject): List<com.mewmix.nabu.tools.Tool> {

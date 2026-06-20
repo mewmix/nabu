@@ -205,10 +205,29 @@ object ToolCallProtocol {
     private fun parseCommandStyleToolCall(text: String): ToolCall? {
         val compact = text.trim()
         if (compact.isBlank()) return null
+        val unwrapped = Regex("(?is)<tool_call>\\s*([\\s\\S]*?)\\s*</tool_call>")
+            .find(compact)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?: compact
+                .replace(Regex("(?is)^\\s*<tool_call>\\s*"), "")
+                .replace(Regex("(?is)\\s*</tool_call>\\s*$"), "")
+                .trim()
+
+        val functionStyleRegex =
+            Regex("(?is)^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(\\s*(\\{[\\s\\S]*\\})\\s*\\)\\s*(?:[.。!！])?\\s*$")
+        functionStyleRegex.find(unwrapped)?.let { match ->
+            val toolName = match.groupValues[1].trim()
+            val argsJson = match.groupValues[2].trim()
+            val argsObject = runCatching { JsonParser.parseString(argsJson).asJsonObject }.getOrNull()
+                ?: return@let
+            return ToolCall(toolName, jsonToMap(argsObject))
+        }
 
         val listFilesRegex =
             Regex("(?is)^\\s*list_files\\b(?:\\s|\\(|:)+(?:path\\s*[=:]\\s*)?[\"']?([^\\s\"'\\),`]+)")
-        listFilesRegex.find(compact)?.groupValues?.getOrNull(1)?.let { rawPath ->
+        listFilesRegex.find(unwrapped)?.groupValues?.getOrNull(1)?.let { rawPath ->
             val path = rawPath.trim()
             if (path.startsWith("/")) {
                 return ToolCall("list_files", mapOf("path" to path))
@@ -217,7 +236,7 @@ object ToolCallProtocol {
 
         val readFileRegex =
             Regex("(?is)^\\s*read_file\\b(?:\\s|\\(|:)+(?:path\\s*[=:]\\s*)?[\"']?([^\\s\"'\\),`]+)")
-        readFileRegex.find(compact)?.groupValues?.getOrNull(1)?.let { rawPath ->
+        readFileRegex.find(unwrapped)?.groupValues?.getOrNull(1)?.let { rawPath ->
             val path = rawPath.trim()
             if (path.startsWith("/")) {
                 return ToolCall("read_file", mapOf("path" to path))
@@ -228,7 +247,7 @@ object ToolCallProtocol {
             Regex(
                 "(?is)^\\s*(?:set_alarm|set\\s+alarm|set\\s+an\\s+alarm|alarm)\\b.*?hour\\s*[=:]\\s*(\\d{1,2})\\b.*?minute\\s*[=:]\\s*(\\d{1,2})\\b(?:.*?message\\s*[=:]\\s*[\"']?([^\"']+?)[\"']?)?\\s*$"
             )
-        alarmRegex.find(compact)?.let { match ->
+        alarmRegex.find(unwrapped)?.let { match ->
             val hour = match.groupValues[1].toIntOrNull()
             val minute = match.groupValues[2].toIntOrNull()
             val message = match.groupValues.getOrNull(3)?.trim().orEmpty()

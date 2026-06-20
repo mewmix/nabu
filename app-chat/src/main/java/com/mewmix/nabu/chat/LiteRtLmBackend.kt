@@ -207,9 +207,14 @@ class LiteRtLmBackend(
         runBlocking {
             val flow = if (image != null || audio != null) {
                 val contents = mutableListOf<Content>()
-                if (prompt.isNotBlank()) contents.add(Content.Text(prompt))
-                if (image != null) contents.add(Content.ImageBytes(image.toPngBytes()))
+                if (prompt.isNotBlank()) {
+                    contents.add(Content.Text(prompt))
+                }
                 if (audio != null) contents.add(audio.toLiteRtLmContent())
+                if (image != null) contents.add(Content.ImageBytes(image.toPngBytes()))
+                DebugLogger.log(
+                    "LiteRtLmBackend sending multimodal content text=${prompt.isNotBlank()} image=${image != null} audio=${audio != null}"
+                )
                 conversation.sendMessageAsync(Contents.of(contents))
             } else {
                 conversation.sendMessageAsync(prompt)
@@ -327,14 +332,8 @@ class LiteRtLmBackend(
     }
 
     private fun LlmAudioInput.toLiteRtLmContent(): Content {
-        val path = absolutePath
-        return if (!path.isNullOrBlank()) {
-            DebugLogger.log("LiteRtLmBackend using audio file path name=$displayName bytes=${bytes.size} path=$path")
-            Content.AudioFile(path)
-        } else {
-            DebugLogger.log("LiteRtLmBackend using inline audio bytes name=$displayName bytes=${bytes.size}")
-            Content.AudioBytes(bytes)
-        }
+        DebugLogger.log("LiteRtLmBackend using inline audio bytes name=$displayName bytes=${bytes.size} path=${absolutePath.orEmpty()}")
+        return Content.AudioBytes(bytes)
     }
 
     private fun ByteArray.hasWavHeader(): Boolean =

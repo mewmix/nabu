@@ -80,4 +80,30 @@ class ActionPlanRunnerTest {
         assertEquals("get_weather", steps.first().toolName)
         assertEquals("Seattle", steps.first().toolArguments["location"])
     }
+
+    @Test
+    @Suppress("UNCHECKED_CAST")
+    fun effectiveSteps_acceptsPersistedMapSteps() {
+        val rawMapSteps = listOf(
+            mapOf(
+                "id" to "step-1",
+                "title" to "Flashlight off",
+                "toolName" to "toggle_flashlight",
+                "toolArguments" to mapOf("enabled" to false)
+            )
+        ) as List<ActionStep>
+        val raw = ScheduledAction(
+            id = "persisted",
+            title = "Persisted",
+            instruction = "Run persisted steps",
+            triggerAtEpochMs = 1,
+            steps = rawMapSteps
+        )
+
+        val steps = raw.effectiveSteps()
+
+        assertEquals(1, steps.size)
+        assertEquals("toggle_flashlight", steps.first().toolName)
+        assertEquals(false, steps.first().toolArguments["enabled"])
+    }
 }

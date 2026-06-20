@@ -62,7 +62,7 @@ class AgentTurnRunner(
                 if (!done) {
                     onBenchmarkPartial(partial)
                     responseBuilder.append(partial)
-                    if (partial.contains("<tool_call>", ignoreCase = true)) {
+                    if (partial.contains("<tool_call", ignoreCase = true)) {
                         suppressSpeechForThisPass = true
                         onSuppressSpeakablePartials()
                     } else if (!mayCallTool || lastToolResult != null) {
@@ -74,7 +74,7 @@ class AgentTurnRunner(
 
                 if (partial.isNotEmpty()) {
                     responseBuilder.append(partial)
-                    if (partial.contains("<tool_call>", ignoreCase = true)) {
+                    if (partial.contains("<tool_call", ignoreCase = true)) {
                         suppressSpeechForThisPass = true
                         onSuppressSpeakablePartials()
                     } else if (!mayCallTool || lastToolResult != null) {

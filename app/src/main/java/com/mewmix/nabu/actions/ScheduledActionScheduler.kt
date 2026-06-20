@@ -1,21 +1,33 @@
 package com.mewmix.nabu.actions
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
 import com.google.gson.Gson
+import com.mewmix.nabu.utils.DebugLogger
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 object ScheduledActionScheduler {
+    private const val IN_PROCESS_MAX_DELAY_MS = 15L * 60L * 1000L
     private val gson = Gson()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val pendingInProcessRuns = mutableMapOf<String, Runnable>()
     internal var workEnqueuer: (Context, String, OneTimeWorkRequest) -> Unit = { context, uniqueName, request ->
         WorkManager.getInstance(context.applicationContext)
             .enqueueUniqueWork(uniqueName, ExistingWorkPolicy.REPLACE, request)
     }
+    internal var alarmScheduler: (Context, ScheduledAction) -> Unit = ::scheduleExactAlarm
+    internal var inProcessScheduler: (Context, ScheduledAction, Long) -> Unit = ::scheduleInProcess
 
     fun schedule(context: Context, action: ScheduledAction) {
         val delayMs = (action.triggerAtEpochMs - System.currentTimeMillis()).coerceAtLeast(0L)
@@ -37,6 +49,10 @@ object ScheduledActionScheduler {
 
         workEnqueuer(context.applicationContext, uniqueName(action.id), request)
         ScheduledActionStore.upsert(context.applicationContext, action)
+        alarmScheduler(context.applicationContext, action)
+        if (action.recurrence == ScheduledAction.RECURRENCE_NONE && delayMs <= IN_PROCESS_MAX_DELAY_MS) {
+            inProcessScheduler(context.applicationContext, action, delayMs)
+        }
     }
 
     fun createAndSchedule(
@@ -64,4 +80,59 @@ object ScheduledActionScheduler {
     }
 
     private fun uniqueName(actionId: String): String = "scheduled_action_$actionId"
+
+    private fun scheduleInProcess(context: Context, action: ScheduledAction, delayMs: Long) {
+        pendingInProcessRuns.remove(action.id)?.let(mainHandler::removeCallbacks)
+        val appContext = context.applicationContext
+        val runnable = Runnable {
+            pendingInProcessRuns.remove(action.id)
+            DebugLogger.log("ScheduledActionScheduler in-process due actionId=${action.id}")
+            Thread {
+                runCatching {
+                    ScheduledActionExecutor.executeDueAction(appContext, action.id, action)
+                }.onFailure {
+                    DebugLogger.log("ScheduledActionScheduler in-process failed actionId=${action.id}: ${it::class.java.simpleName}: ${it.message}")
+                }
+            }.start()
+        }
+        pendingInProcessRuns[action.id] = runnable
+        mainHandler.postDelayed(runnable, delayMs)
+        DebugLogger.log("ScheduledActionScheduler in-process timer set actionId=${action.id} delayMs=$delayMs")
+    }
+
+    private fun scheduleExactAlarm(context: Context, action: ScheduledAction) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+            DebugLogger.log("ScheduledActionScheduler exact alarm permission unavailable for actionId=${action.id}")
+            return
+        }
+
+        val intent = Intent(context, ScheduledActionAlarmReceiver::class.java)
+            .putExtra(ScheduledActionWorker.KEY_ACTION_ID, action.id)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            action.id.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    action.triggerAtEpochMs,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    action.triggerAtEpochMs,
+                    pendingIntent
+                )
+            }
+            DebugLogger.log("ScheduledActionScheduler exact alarm set actionId=${action.id} triggerAt=${action.triggerAtEpochMs}")
+        }.onFailure {
+            DebugLogger.log("ScheduledActionScheduler exact alarm failed actionId=${action.id}: ${it.message}")
+        }
+    }
 }

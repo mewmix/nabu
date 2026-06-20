@@ -33,7 +33,7 @@ object ScheduledActionStore {
                 action
             } else {
                 val history = listOf(run)
-                    .plus(action.runHistory.orEmpty())
+                    .plus(action.runHistory.normalizedRuns())
                     .distinctBy { it.id }
                     .take(MAX_RUN_HISTORY)
                 action.copy(lastRun = run, runHistory = history)
@@ -48,7 +48,7 @@ object ScheduledActionStore {
                 action
             } else {
                 val history = listOf(run)
-                    .plus(action.runHistory.orEmpty())
+                    .plus(action.runHistory.normalizedRuns())
                     .distinctBy { it.id }
                     .take(MAX_RUN_HISTORY)
                 action.copy(
@@ -67,5 +67,28 @@ object ScheduledActionStore {
     fun remove(context: Context, actionId: String) {
         val next = list(context).filterNot { it.id == actionId }
         DatabaseManager.setSetting(context, KEY_SCHEDULED_ACTIONS, gson.toJson(next, listType))
+    }
+
+    private fun List<ActionRun>?.normalizedRuns(): List<ActionRun> {
+        return (this as? List<*>).orEmpty().mapNotNull { raw ->
+            when (raw) {
+                is ActionRun -> raw
+                is Map<*, *> -> {
+                    val map = raw.entries.mapNotNull { (key, value) ->
+                        key?.toString()?.let { it to value }
+                    }.toMap()
+                    ActionRun(
+                        id = map["id"]?.toString().orEmpty().ifBlank { java.util.UUID.randomUUID().toString() },
+                        actionId = map["actionId"]?.toString() ?: map["action_id"]?.toString().orEmpty(),
+                        startedAtEpochMs = (map["startedAtEpochMs"] as? Number)?.toLong() ?: 0L,
+                        finishedAtEpochMs = (map["finishedAtEpochMs"] as? Number)?.toLong() ?: 0L,
+                        status = map["status"]?.toString().orEmpty().ifBlank { ActionRun.STATUS_SUCCEEDED },
+                        stepResults = emptyList(),
+                        summary = map["summary"]?.toString().orEmpty()
+                    )
+                }
+                else -> null
+            }
+        }
     }
 }
