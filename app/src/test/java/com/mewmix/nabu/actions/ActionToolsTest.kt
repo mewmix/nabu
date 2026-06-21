@@ -220,6 +220,28 @@ class ActionToolsTest {
     }
 
     @Test
+    fun execute_scheduleActionAcceptsDeferredSmsComposer() {
+        val result = ActionTools.execute(
+            context,
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Text later",
+                    "delay_seconds" to 300,
+                    "tool_name" to "send_sms",
+                    "tool_arguments" to mapOf(
+                        "phone_number" to "1234567890",
+                        "message" to "five minutes is up"
+                    )
+                )
+            )
+        )
+
+        assertFalse(result?.isError ?: true)
+        assertTrue(result?.output?.contains("tool=send_sms") == true)
+    }
+
+    @Test
     fun execute_scheduleActionAcceptsRelativeDelaySeconds() {
         val before = System.currentTimeMillis()
         var inProcessDelayMs: Long? = null

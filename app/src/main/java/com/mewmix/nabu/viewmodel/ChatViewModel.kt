@@ -178,6 +178,14 @@ class ChatViewModel(
             val response: String
         )
 
+        private const val DURATION_PATTERN =
+            """(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|a|an)\s+(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)"""
+
+        private data class TimedHoldPlan(
+            val toolCalls: List<ToolCall>,
+            val subject: ToolCall
+        )
+
         internal fun planDirectActionChain(
             userMessage: String,
             availableToolNames: Set<String>
@@ -190,8 +198,10 @@ class ChatViewModel(
 
             val toolCalls = mutableListOf<ToolCall>()
             val responseParts = mutableListOf<String>()
+            var lastActionSubject: ToolCall? = null
+            var lastTimedHoldInverse: ToolCall? = null
             clauses.forEach { clause ->
-                val trimmedClause = clause.trim()
+                val trimmedClause = clause.trim().trimEnd('.', '!', '?')
                 if (trimmedClause.isBlank()) return@forEach
 
                 parseConversationalClause(trimmedClause)?.let {
@@ -199,13 +209,25 @@ class ChatViewModel(
                     return@forEach
                 }
 
-                parseDelayedActionClause(trimmedClause, availableToolNames)?.let {
-                    toolCalls += it
+                parseTimedHoldClause(trimmedClause, availableToolNames)?.let {
+                    toolCalls += it.toolCalls
+                    lastActionSubject = it.subject
+                    lastTimedHoldInverse = it.toolCalls.lastOrNull()?.let(::scheduledInnerToolCall)
                     return@forEach
                 }
 
-                inferToolCallFromModelFailure(trimmedClause, availableToolNames)?.let {
+                val resolvedClause = resolvePronounClause(trimmedClause, lastActionSubject)
+
+                parseDelayedActionClause(resolvedClause, availableToolNames)?.let {
                     toolCalls += it
+                    subjectForPronouns(it)?.let { subject -> lastActionSubject = subject }
+                    return@forEach
+                }
+
+                inferToolCallFromModelFailure(resolvedClause, availableToolNames)?.let {
+                    if (it == lastTimedHoldInverse) return@forEach
+                    toolCalls += it
+                    subjectForPronouns(it)?.let { subject -> lastActionSubject = subject }
                 }
             }
 
@@ -232,24 +254,33 @@ class ChatViewModel(
             availableToolNames: Set<String>
         ): ToolCall? {
             if ("schedule_action" !in availableToolNames) return null
-            val durationPattern =
-                """(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|a|an)\s+(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)"""
 
-            val prefixDelay = Regex("""(?is)^\s*(?:after|in)\s+($durationPattern)\s+(.+?)\s*$""")
+            val prefixDelay = Regex("""(?is)^\s*(?:after|in)\s+($DURATION_PATTERN)\s+(.+?)\s*$""")
                 .find(clause)
                 ?.let { it.groupValues[1].trim() to it.groupValues[2].trim() }
 
-            val suffixDelay = Regex("""(?is)^\s*(.+?)\s+(?:after|in)\s+($durationPattern)\s*$""")
+            val suffixDelay = Regex("""(?is)^\s*(.+?)\s+(?:after|in)\s+($DURATION_PATTERN)\s*$""")
                 .find(clause)
                 ?.let { it.groupValues[2].trim() to it.groupValues[1].trim() }
 
-            val (durationSpec, actionText) = prefixDelay ?: suffixDelay ?: return null
+            val embeddedDelay = Regex("""(?is)^\s*(.+?)\s+(?:after|in)\s+($DURATION_PATTERN)\s+(.+?)\s*$""")
+                .find(clause)
+                ?.let {
+                    val actionText = "${it.groupValues[1].trim()} ${it.groupValues[3].trim()}".trim()
+                    it.groupValues[2].trim() to actionText
+                }
+
+            val (durationSpec, actionText) = prefixDelay ?: suffixDelay ?: embeddedDelay ?: return null
             val seconds = parseDurationSeconds(durationSpec) ?: return null
             val actionTool = inferToolCallFromModelFailure(
                 actionText,
                 availableToolNames - "schedule_action"
             ) ?: return null
 
+            return scheduledToolCall(actionTool, seconds)
+        }
+
+        private fun scheduledToolCall(actionTool: ToolCall, seconds: Int): ToolCall {
             return ToolCall(
                 toolName = "schedule_action",
                 arguments = mapOf(
@@ -260,6 +291,85 @@ class ChatViewModel(
                     "tool_arguments" to actionTool.arguments
                 )
             )
+        }
+
+        private fun parseTimedHoldClause(
+            clause: String,
+            availableToolNames: Set<String>
+        ): TimedHoldPlan? {
+            if ("schedule_action" !in availableToolNames) return null
+            val match = Regex("""(?is)^\s*(.+?)\s+for\s+($DURATION_PATTERN)\s*$""")
+                .find(clause) ?: return null
+
+            val actionText = match.groupValues[1].trim()
+            val seconds = parseDurationSeconds(match.groupValues[2].trim()) ?: return null
+            val immediate = inferToolCallFromModelFailure(
+                actionText,
+                availableToolNames - "schedule_action"
+            ) ?: return null
+            val inverse = inverseToolCallForTimedHold(immediate, availableToolNames) ?: return null
+
+            return TimedHoldPlan(
+                toolCalls = listOf(immediate, scheduledToolCall(inverse, seconds)),
+                subject = immediate
+            )
+        }
+
+        private fun inverseToolCallForTimedHold(
+            actionTool: ToolCall,
+            availableToolNames: Set<String>
+        ): ToolCall? {
+            return when (actionTool.toolName) {
+                "toggle_flashlight" -> {
+                    val enabled = actionTool.arguments["enabled"] as? Boolean ?: return null
+                    ToolCall("toggle_flashlight", mapOf("enabled" to !enabled))
+                }
+                "mute" -> {
+                    val enabled = actionTool.arguments["enabled"] as? Boolean ?: return null
+                    ToolCall("mute", mapOf("enabled" to !enabled))
+                }
+                "play_media" -> if ("pause_media" in availableToolNames) ToolCall("pause_media", emptyMap()) else null
+                "pause_media" -> if ("play_media" in availableToolNames) ToolCall("play_media", emptyMap()) else null
+                else -> null
+            }
+        }
+
+        private fun resolvePronounClause(clause: String, lastActionSubject: ToolCall?): String {
+            val subject = lastActionSubject ?: return clause
+            return when (subject.toolName) {
+                "toggle_flashlight" -> Regex("""(?is)^\s*(?:turn\s+)?it\s+(on|off)(?:\s+again)?(.*)$""")
+                    .find(clause)
+                    ?.let { "turn flashlight ${it.groupValues[1]}${it.groupValues[2]}" }
+                    ?: clause
+                "play_media", "pause_media" -> when {
+                    Regex("""(?is)^\s*(?:pause|stop)\s+it(?:\s+again)?\s*$""").matches(clause) -> "pause media"
+                    Regex("""(?is)^\s*(?:play|resume)\s+it(?:\s+again)?\s*$""").matches(clause) -> "play media"
+                    else -> clause
+                }
+                else -> clause
+            }
+        }
+
+        private fun subjectForPronouns(toolCall: ToolCall): ToolCall? {
+            val subject = if (toolCall.toolName == "schedule_action") {
+                scheduledInnerToolCall(toolCall)
+            } else {
+                toolCall
+            } ?: return null
+            return subject
+                .takeIf { inverseToolCallForTimedHold(it, DIRECT_RESULT_TOOL_NAMES) != null }
+        }
+
+        private fun scheduledInnerToolCall(toolCall: ToolCall): ToolCall? {
+            if (toolCall.toolName != "schedule_action") return null
+            val scheduledToolName = toolCall.arguments["tool_name"]?.toString() ?: return null
+            val scheduledArguments = (toolCall.arguments["tool_arguments"] as? Map<*, *>)
+                ?.mapNotNull { (key, value) ->
+                    if (key != null && value != null) key.toString() to value else null
+                }
+                ?.toMap()
+                ?: emptyMap<String, Any>()
+            return ToolCall(scheduledToolName, scheduledArguments)
         }
 
         private fun parseConversationalClause(clause: String): String? {
@@ -322,6 +432,10 @@ class ChatViewModel(
 
             if ("schedule_action" in availableToolNames && "toggle_flashlight" in availableToolNames) {
                 parseScheduledFlashlightFallback(normalized)?.let { return it }
+            }
+
+            if ("schedule_action" in availableToolNames) {
+                parseDelayedActionClause(normalized, availableToolNames)?.let { return it }
             }
 
             if ("search_web_context" in availableToolNames) {
@@ -576,7 +690,9 @@ class ChatViewModel(
         }
 
         private fun parseSmsFallback(normalized: String): ToolCall? {
-            Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+([+()\-\d\s]+?)(?:\s+(?:saying|message)\s+(.+?))?\s*$""")
+            val smsVerb = """(?:send\s+sms|send\s+a\s+text|send\s+text|text|compose\s+(?:a\s+)?text|draft\s+(?:a\s+)?text)"""
+
+            Regex("""(?is)^\s*$smsVerb\s+to\s+([+()\-\d\s]+?)(?:\s+(?:saying|message(?:\s+that)?|that\s+says)\s+(.+?))?\s*$""")
                 .find(normalized)
                 ?.let { match ->
                     val phoneNumber = match.groupValues[1].trim()
@@ -594,10 +710,28 @@ class ChatViewModel(
                     }
                 }
 
+            Regex("""(?is)^\s*$smsVerb\s+(?:saying|message(?:\s+that)?|that\s+says)\s+(.+?)\s+to\s+([+()\-\d\s]+?)\s*$""")
+                .find(normalized)
+                ?.let { match ->
+                    val message = match.groupValues[1].trim()
+                    val phoneNumber = match.groupValues[2].trim()
+                    if (phoneNumber.isNotBlank()) {
+                        return ToolCall(
+                            "send_sms",
+                            buildMap {
+                                put("phone_number", phoneNumber)
+                                if (message.isNotBlank()) {
+                                    put("message", message)
+                                }
+                            }
+                        )
+                    }
+                }
+
             val contactMatch = sequenceOf(
-                Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+(.+?)\s+(?:saying|message(?:\s+that)?)\s+(.+?)\s*$""").find(normalized),
-                Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+(.+?)\s*,\s*(.+?)\s*$""").find(normalized),
-                Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+(.+?)\s*:\s*(.+?)\s*$""").find(normalized)
+                Regex("""(?is)^\s*$smsVerb\s+to\s+(.+?)\s+(?:saying|message(?:\s+that)?|that\s+says)\s+(.+?)\s*$""").find(normalized),
+                Regex("""(?is)^\s*$smsVerb\s+to\s+(.+?)\s*,\s*(.+?)\s*$""").find(normalized),
+                Regex("""(?is)^\s*$smsVerb\s+to\s+(.+?)\s*:\s*(.+?)\s*$""").find(normalized)
             ).firstOrNull()
 
             if (contactMatch != null) {
@@ -616,7 +750,7 @@ class ChatViewModel(
                 }
             }
 
-            Regex("""(?is)^\s*(?:send\s+sms|text)\s+to\s+(.+?)\s*$""").find(normalized)
+            Regex("""(?is)^\s*$smsVerb\s+to\s+(.+?)\s*$""").find(normalized)
                 ?.groupValues?.getOrNull(1)?.trim()
                 ?.takeIf { it.isNotBlank() && it.any(Char::isLetter) }
                 ?.let { recipient ->

@@ -19,6 +19,7 @@ object ActionTools {
         "get_weather",
         "save_memory",
         "retrieve_memory",
+        "send_sms",
         "toggle_flashlight",
         "set_volume",
         "mute",

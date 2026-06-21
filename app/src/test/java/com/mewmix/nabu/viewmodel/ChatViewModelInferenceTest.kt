@@ -119,6 +119,58 @@ class ChatViewModelInferenceTest {
     }
 
     @Test
+    fun planDirectActionChain_handlesTimedFlashlightHold() {
+        val plan = ChatViewModel.planDirectActionChain(
+            userMessage = "turn on my flashlight for 60 seconds, then turn it off again.",
+            availableToolNames = setOf("schedule_action", "toggle_flashlight")
+        )
+
+        assertNotNull(plan)
+        val parsed = requireNotNull(plan)
+        assertEquals(
+            listOf(
+                ToolCall("toggle_flashlight", mapOf("enabled" to true)),
+                ToolCall(
+                    "schedule_action",
+                    mapOf(
+                        "title" to "Turn flashlight off",
+                        "instruction" to "Run toggle_flashlight after 60 seconds.",
+                        "delay_seconds" to 60,
+                        "tool_name" to "toggle_flashlight",
+                        "tool_arguments" to mapOf("enabled" to false)
+                    )
+                )
+            ),
+            parsed.toolCalls
+        )
+    }
+
+    @Test
+    fun inferToolCallFromModelFailure_schedulesComposedText() {
+        val toolCall = ChatViewModel.inferToolCallFromModelFailure(
+            userMessage = "compose a text in 5 minutes saying five minutes is up to 949 771 4923",
+            availableToolNames = setOf("schedule_action", "send_sms")
+        )
+
+        assertEquals(
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Run send_sms",
+                    "instruction" to "Run send_sms after 300 seconds.",
+                    "delay_seconds" to 300,
+                    "tool_name" to "send_sms",
+                    "tool_arguments" to mapOf(
+                        "phone_number" to "949 771 4923",
+                        "message" to "five minutes is up"
+                    )
+                )
+            ),
+            toolCall
+        )
+    }
+
+    @Test
     fun inferToolCallFromModelFailure_parsesOpenUrl() {
         val toolCall = ChatViewModel.inferToolCallFromModelFailure(
             userMessage = "open url https://example.com",
