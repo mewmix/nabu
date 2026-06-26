@@ -6,6 +6,9 @@ import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mewmix.nabu.agent.AgentTurnRunner
+import com.mewmix.nabu.agent.ActionPlanner
+import com.mewmix.nabu.chat.ActionTrace
+import com.mewmix.nabu.chat.ActionTraceEntry
 import com.mewmix.nabu.chat.ChatMessage
 import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.LlmAudioInput
@@ -1108,7 +1111,15 @@ class ChatViewModel(
                 } else {
                     directActionPlan.response
                 }
-                finalizeDirectToolResponse(response)
+                finalizeDirectToolResponse(
+                    response,
+                    buildActionTrace(
+                        title = "Deterministic Action Chain",
+                        source = "direct_chain_parser",
+                        toolCalls = directActionPlan.toolCalls,
+                        results = results
+                    )
+                )
             }
             return
         }
@@ -1119,7 +1130,15 @@ class ChatViewModel(
                     "ChatViewModel: executing direct tool command ${directToolCall.toolName} with ${directToolCall.arguments}"
                 )
                 val result = executeToolCallInternal(context.applicationContext, directToolCall)
-                finalizeDirectToolResponse(summarizeToolResultMessage(result))
+                finalizeDirectToolResponse(
+                    summarizeToolResultMessage(result),
+                    buildActionTrace(
+                        title = "Direct Tool Command",
+                        source = "direct_tool_parser",
+                        toolCalls = listOf(directToolCall),
+                        results = listOf(result)
+                    )
+                )
             }
             return
         }
@@ -1166,14 +1185,21 @@ class ChatViewModel(
                 }
             }
 
-            fun finalizeAssistantResponse(finalResponse: String, speakOutput: Boolean) {
+            fun finalizeAssistantResponse(
+                finalResponse: String,
+                speakOutput: Boolean,
+                actionTrace: ActionTrace? = null
+            ) {
                 viewModelScope.launch {
                     _isLoading.value = false
                     DebugLogger.log("ChatViewModel response complete")
                     val last = _chatMessages.value.lastOrNull()
                     if (last != null) {
                         _chatMessages.value =
-                            _chatMessages.value.dropLast(1) + last.copy(message = finalResponse)
+                            _chatMessages.value.dropLast(1) + last.copy(
+                                message = finalResponse,
+                                actionTrace = actionTrace
+                            )
                     }
                     conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
                     persistConversationMessages()
@@ -1187,6 +1213,75 @@ class ChatViewModel(
                         dropQueuedAudio = false
                     }
                 }
+            }
+
+            val actionPlannerTools = if (image == null && audio == null) {
+                selectPromptToolsForConversation(
+                    conversationHistory,
+                    ToolRegistry.tools.value.filter { it.isAvailable }
+                )
+            } else {
+                emptyList()
+            }
+            if (ActionPlanner.shouldUseActionPlanner(trimmed, actionPlannerTools)) {
+                updateAssistantPlaceholder("Planning actions...")
+                DebugLogger.log(
+                    "ChatViewModel: action planner selected tools=${actionPlannerTools.joinToString(",") { it.name }}"
+                )
+                val actionPlan = ActionPlanner.planWithModel(
+                    backend = backend,
+                    userMessage = trimmed,
+                    selectedTools = actionPlannerTools,
+                    recentContext = conversationHistory
+                        .dropLast(1)
+                        .takeLast(4)
+                        .map { turn ->
+                            LlmMessage(
+                                role = if (turn.role == ConversationRole.USER) "user" else "model",
+                                content = turn.content
+                            )
+                        }
+                )
+                if (actionPlan != null) {
+                    DebugLogger.log(
+                        "ChatViewModel: executing ${actionPlan.source} with " +
+                            actionPlan.toolCalls.joinToString(",") { it.toolName }
+                    )
+                    if (actionPlan.toolCalls.isEmpty()) {
+                        finalizeAssistantResponse(
+                            actionPlan.response,
+                            speakOutput = true,
+                            actionTrace = ActionTrace(
+                                title = "Action Planner",
+                                entries = listOf(
+                                    ActionTraceEntry("Intent", "Action-shaped request detected."),
+                                    ActionTraceEntry("Planner", "Planner source=${actionPlan.source}."),
+                                    ActionTraceEntry("Decision", "Planner requested confirmation or produced no executable steps.")
+                                )
+                            )
+                        )
+                        return@launch
+                    }
+                    val results = actionPlan.toolCalls.map { executeToolCallInternal(appContext, it) }
+                    val firstError = results.firstOrNull { it.isError }
+                    val response = if (firstError != null) {
+                        summarizeToolResultMessage(firstError)
+                    } else {
+                        actionPlan.response
+                    }
+                    finalizeAssistantResponse(
+                        response,
+                        speakOutput = true,
+                        actionTrace = buildActionTrace(
+                            title = "Action Planner",
+                            source = actionPlan.source,
+                            toolCalls = actionPlan.toolCalls,
+                            results = results
+                        )
+                    )
+                    return@launch
+                }
+                DebugLogger.log("ChatViewModel: action planner did not return an executable plan; falling back to chat agent")
             }
 
             AgentTurnRunner(
@@ -1243,7 +1338,8 @@ class ChatViewModel(
                     }
                     finalizeAssistantResponse(
                         finalResponse = result.finalResponse,
-                        speakOutput = result.speakOutput
+                        speakOutput = result.speakOutput,
+                        actionTrace = buildAgentTrace(result.transcript)
                     )
                 }
             )
@@ -1756,18 +1852,69 @@ class ChatViewModel(
         )
     }
 
-    private fun finalizeDirectToolResponse(finalResponse: String) {
+    private fun finalizeDirectToolResponse(finalResponse: String, actionTrace: ActionTrace? = null) {
         viewModelScope.launch(Dispatchers.Main) {
             _isLoading.value = false
             DebugLogger.log("ChatViewModel response complete")
             val last = _chatMessages.value.lastOrNull()
             if (last != null) {
                 _chatMessages.value =
-                    _chatMessages.value.dropLast(1) + last.copy(message = finalResponse)
+                    _chatMessages.value.dropLast(1) + last.copy(
+                        message = finalResponse,
+                        actionTrace = actionTrace
+                    )
             }
             conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
             persistConversationMessages()
         }
+    }
+
+    private fun buildActionTrace(
+        title: String,
+        source: String,
+        toolCalls: List<ToolCall>,
+        results: List<ToolResult>
+    ): ActionTrace {
+        val entries = mutableListOf<ActionTraceEntry>()
+        entries += ActionTraceEntry("Intent", "Action-shaped request detected.")
+        entries += ActionTraceEntry("Planner", "Plan source=$source; steps=${toolCalls.size}.")
+        toolCalls.zip(results).forEachIndexed { index, (call, result) ->
+            entries += ActionTraceEntry(
+                phase = "Tool ${index + 1}",
+                detail = "Call ${call.toolName} args=${call.arguments}",
+                toolName = call.toolName
+            )
+            entries += ActionTraceEntry(
+                phase = "Output ${index + 1}",
+                detail = if (result.isError) "Tool returned an error." else "Tool completed.",
+                toolName = result.toolName,
+                output = result.output,
+                isError = result.isError
+            )
+        }
+        return ActionTrace(title = title, entries = entries)
+    }
+
+    private fun buildAgentTrace(transcript: List<AgentTurnRunner.ToolExchange>): ActionTrace? {
+        if (transcript.isEmpty()) return null
+        val entries = mutableListOf<ActionTraceEntry>()
+        entries += ActionTraceEntry("Intent", "Model/tool loop used for this response.")
+        transcript.forEachIndexed { index, exchange ->
+            entries += ActionTraceEntry(
+                phase = "Tool ${index + 1}",
+                detail = "Call ${exchange.call.toolName} args=${exchange.call.arguments}" +
+                    if (exchange.inferred) " (inferred from user request/model failure)" else "",
+                toolName = exchange.call.toolName
+            )
+            entries += ActionTraceEntry(
+                phase = "Output ${index + 1}",
+                detail = if (exchange.result.isError) "Tool returned an error." else "Tool completed.",
+                toolName = exchange.result.toolName,
+                output = exchange.result.output,
+                isError = exchange.result.isError
+            )
+        }
+        return ActionTrace(title = "Tool Call Trace", entries = entries)
     }
 
     private fun takeSingleTurnConversation(conversation: List<ConversationTurn>): List<ConversationTurn> {

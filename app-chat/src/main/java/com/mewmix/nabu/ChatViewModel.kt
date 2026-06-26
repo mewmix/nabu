@@ -14,7 +14,21 @@ data class ChatMessage(
     val message: String,
     val isFromUser: Boolean,
     val image: LlmImageInput? = null,
-    val audio: LlmAudioInput? = null
+    val audio: LlmAudioInput? = null,
+    val actionTrace: ActionTrace? = null
+)
+
+data class ActionTrace(
+    val title: String,
+    val entries: List<ActionTraceEntry>
+)
+
+data class ActionTraceEntry(
+    val phase: String,
+    val detail: String,
+    val toolName: String? = null,
+    val output: String? = null,
+    val isError: Boolean = false
 )
 
 class ChatViewModel(private val llmBackend: LlmBackend) : ViewModel() {

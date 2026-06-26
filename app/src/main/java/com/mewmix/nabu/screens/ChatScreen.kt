@@ -71,6 +71,7 @@ import android.provider.OpenableColumns
 import androidx.core.content.ContextCompat
 import com.mewmix.nabu.chat.LlmAudioInput
 import com.mewmix.nabu.chat.LlmImageInput
+import com.mewmix.nabu.chat.ActionTrace
 import com.mewmix.nabu.chat.MessageBubble
 import com.mewmix.nabu.chat.VisionModelSupport
 import com.mewmix.nabu.speech.VoiceAttachmentRecorder
@@ -117,6 +118,7 @@ fun ChatScreen(
     var startVoiceHandled by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf(initialMessage) }
     var attachmentMenuExpanded by remember { mutableStateOf(false) }
+    var actionTraceToShow by remember { mutableStateOf<ActionTrace?>(null) }
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -727,6 +729,15 @@ fun ChatScreen(
                             enabled = !isLoading && !isSynthesizing,
                             size = 48.dp
                         )
+                        if (!chatMessage.isFromUser && chatMessage.actionTrace != null) {
+                            BrutalIconButton(
+                                imageVector = Icons.Filled.Description,
+                                contentDescription = "View action trace",
+                                onClick = { actionTraceToShow = chatMessage.actionTrace },
+                                enabled = !isLoading,
+                                size = 48.dp
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -1023,6 +1034,60 @@ fun ChatScreen(
             dismissButton = {
                 BrutalButton(onClick = { editMessageIndex = null }) {
                     Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        )
+    }
+
+    actionTraceToShow?.let { trace ->
+        AlertDialog(
+            onDismissRequest = { actionTraceToShow = null },
+            title = { Text(trace.title) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    trace.entries.forEach { entry ->
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = entry.phase,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (entry.isError) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            )
+                            if (!entry.toolName.isNullOrBlank()) {
+                                Text(
+                                    text = "Tool: ${entry.toolName}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = entry.detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            val output = entry.output
+                            if (!output.isNullOrBlank()) {
+                                Text(
+                                    text = output,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                BrutalButton(onClick = { actionTraceToShow = null }) {
+                    Text("Hide", color = MaterialTheme.colorScheme.onSurface)
                 }
             }
         )
