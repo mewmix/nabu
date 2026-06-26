@@ -11,6 +11,12 @@ object ToolCallProtocol {
 
     private val taggedToolCallRegex =
         Regex("<tool_call>\\s*(\\{[\\s\\S]*?\\})\\s*</tool_call>", setOf(RegexOption.IGNORE_CASE))
+    private val wrappedToolCallRegex =
+        Regex("<tool_call>\\s*([\\s\\S]*?)\\s*</tool_call>", setOf(RegexOption.IGNORE_CASE))
+    private val colonWrappedToolCallRegex =
+        Regex("<tool_call:\\s*([\\s\\S]*?)\\s*</tool_call>", setOf(RegexOption.IGNORE_CASE))
+    private val malformedColonToolCallRegex =
+        Regex("<tool_call:\\s*([\\s\\S]*?)(?:<tool_call\\|>|$)", setOf(RegexOption.IGNORE_CASE))
     private val fencedJsonRegex =
         Regex("```(?:json)?\\s*(\\{[\\s\\S]*?\\})\\s*```", setOf(RegexOption.IGNORE_CASE))
 
@@ -109,6 +115,27 @@ object ToolCallProtocol {
             return parseToolCallJson(taggedJson)
         }
 
+        colonWrappedToolCallRegex.find(text)?.groupValues?.getOrNull(1)?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { body ->
+                parseToolCallJson(body)?.let { return it }
+                parseCommandStyleToolCall(body, allowGenericTool = true)?.let { return it }
+            }
+
+        malformedColonToolCallRegex.find(text)?.groupValues?.getOrNull(1)?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { body ->
+                parseToolCallJson(body)?.let { return it }
+                parseCommandStyleToolCall(body, allowGenericTool = true)?.let { return it }
+            }
+
+        wrappedToolCallRegex.find(text)?.groupValues?.getOrNull(1)?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { body ->
+                parseToolCallJson(body)?.let { return it }
+                parseCommandStyleToolCall(body, allowGenericTool = true)?.let { return it }
+            }
+
         val fencedJson = fencedJsonRegex.find(text)?.groupValues?.getOrNull(1)
         if (!fencedJson.isNullOrBlank()) {
             return parseToolCallJson(fencedJson)
@@ -124,7 +151,14 @@ object ToolCallProtocol {
             parseToolCallJson(inlineJson)?.let { return it }
         }
 
-        return parseCommandStyleToolCall(text)
+        return parseCommandStyleToolCall(text, allowGenericTool = false)
+    }
+
+    fun looksLikeToolControlText(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return false
+        return trimmed.contains("<tool_call", ignoreCase = true) ||
+            trimmed.startsWith("```") && extractToolCall(trimmed) != null
     }
 
     fun formatToolResultForModel(result: ToolResult): String {
@@ -202,18 +236,26 @@ object ToolCallProtocol {
         }
     }
 
-    private fun parseCommandStyleToolCall(text: String): ToolCall? {
+    private fun parseCommandStyleToolCall(text: String, allowGenericTool: Boolean): ToolCall? {
         val compact = text.trim()
         if (compact.isBlank()) return null
-        val unwrapped = Regex("(?is)<tool_call>\\s*([\\s\\S]*?)\\s*</tool_call>")
-            .find(compact)
+        val unwrapped = colonWrappedToolCallRegex.find(compact)
             ?.groupValues
             ?.getOrNull(1)
             ?.trim()
+            ?: malformedColonToolCallRegex.find(compact)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.trim()
+            ?: wrappedToolCallRegex.find(compact)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.trim()
             ?: compact
-                .replace(Regex("(?is)^\\s*<tool_call>\\s*"), "")
-                .replace(Regex("(?is)\\s*</tool_call>\\s*$"), "")
-                .trim()
+            .replace(Regex("(?is)^\\s*<tool_call>\\s*"), "")
+            .replace(Regex("(?is)^\\s*<tool_call:\\s*"), "")
+            .replace(Regex("(?is)\\s*</tool_call>\\s*$"), "")
+            .trim()
 
         val functionStyleRegex =
             Regex("(?is)^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(\\s*(\\{[\\s\\S]*\\})\\s*\\)\\s*(?:[.。!！])?\\s*$")
@@ -223,6 +265,38 @@ object ToolCallProtocol {
             val argsObject = runCatching { JsonParser.parseString(argsJson).asJsonObject }.getOrNull()
                 ?: return@let
             return ToolCall(toolName, jsonToMap(argsObject))
+        }
+
+        if (allowGenericTool) {
+            val emptyCallRegex =
+                Regex("(?is)^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?:\\(\\s*\\)|\\{\\s*\\})\\s*(?:[.。!！])?\\s*$")
+            emptyCallRegex.find(unwrapped)?.let { match ->
+                return ToolCall(match.groupValues[1].trim(), emptyMap())
+            }
+
+            val commaArgumentsRegex =
+                Regex("(?is)^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*,\\s*(?:arguments|args)\\s*[:=]\\s*([\\s\\S]*?)\\s*(?:[.。!！])?\\s*$")
+            commaArgumentsRegex.find(unwrapped)?.let { match ->
+                val toolName = match.groupValues[1].trim()
+                val arguments = parseLooseArgumentMap(match.groupValues[2].trim())
+                if (arguments != null) return ToolCall(toolName, arguments)
+            }
+
+            val looseFunctionRegex =
+                Regex("(?is)^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(\\s*([\\s\\S]*?)\\s*\\)\\s*(?:[.。!！])?\\s*$")
+            looseFunctionRegex.find(unwrapped)?.let { match ->
+                val toolName = match.groupValues[1].trim()
+                val arguments = parseLooseArgumentMap(match.groupValues[2].trim())
+                if (arguments != null) return ToolCall(toolName, arguments)
+            }
+
+            val looseBraceRegex =
+                Regex("(?is)^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\{\\s*([\\s\\S]*?)\\s*\\}\\s*(?:[.。!！])?\\s*$")
+            looseBraceRegex.find(unwrapped)?.let { match ->
+                val toolName = match.groupValues[1].trim()
+                val arguments = parseLooseArgumentMap(match.groupValues[2].trim())
+                if (arguments != null) return ToolCall(toolName, arguments)
+            }
         }
 
         val listFilesRegex =
@@ -266,6 +340,36 @@ object ToolCallProtocol {
         }
 
         return null
+    }
+
+    private fun parseLooseArgumentMap(rawText: String): Map<String, Any>? {
+        val raw = rawText.trim().trimStart('{').trimEnd('}').trim()
+        if (raw.isBlank()) return emptyMap()
+        val arguments = linkedMapOf<String, Any>()
+        val pairRegex =
+            Regex("""(?is)([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*("[^"]*"|'[^']*'|true|false|-?\d+(?:\.\d+)?|[^,)}]+)""")
+        for (match in pairRegex.findAll(raw)) {
+            val key = match.groupValues[1].trim()
+            val value = parseLooseScalar(match.groupValues[2].trim())
+            arguments[key] = value
+        }
+        return arguments.takeIf { it.isNotEmpty() }
+    }
+
+    private fun parseLooseScalar(rawValue: String): Any {
+        val value = rawValue.trim().trimEnd('.', '。', '!', '！')
+        val unquoted = when {
+            value.length >= 2 && value.startsWith("\"") && value.endsWith("\"") -> value.substring(1, value.length - 1)
+            value.length >= 2 && value.startsWith("'") && value.endsWith("'") -> value.substring(1, value.length - 1)
+            else -> value
+        }
+        return when {
+            unquoted.equals("true", ignoreCase = true) -> true
+            unquoted.equals("false", ignoreCase = true) -> false
+            unquoted.toLongOrNull() != null -> unquoted.toLong()
+            unquoted.toDoubleOrNull() != null -> unquoted.toDouble()
+            else -> unquoted
+        }
     }
 
     private fun jsonToMap(json: JsonObject): Map<String, Any> {

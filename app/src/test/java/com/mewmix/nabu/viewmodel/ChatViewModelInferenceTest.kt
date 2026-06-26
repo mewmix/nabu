@@ -146,6 +146,33 @@ class ChatViewModelInferenceTest {
     }
 
     @Test
+    fun planDirectActionChain_handlesImmediateNowThenDelayedPronoun() {
+        val plan = ChatViewModel.planDirectActionChain(
+            userMessage = "turn on flashlight now, then in 10 minutes turn it off",
+            availableToolNames = setOf("schedule_action", "toggle_flashlight")
+        )
+
+        assertNotNull(plan)
+        val parsed = requireNotNull(plan)
+        assertEquals(
+            listOf(
+                ToolCall("toggle_flashlight", mapOf("enabled" to true)),
+                ToolCall(
+                    "schedule_action",
+                    mapOf(
+                        "title" to "Turn flashlight off",
+                        "instruction" to "Run toggle_flashlight after 600 seconds.",
+                        "delay_seconds" to 600,
+                        "tool_name" to "toggle_flashlight",
+                        "tool_arguments" to mapOf("enabled" to false)
+                    )
+                )
+            ),
+            parsed.toolCalls
+        )
+    }
+
+    @Test
     fun inferToolCallFromModelFailure_schedulesComposedText() {
         val toolCall = ChatViewModel.inferToolCallFromModelFailure(
             userMessage = "compose a text in 5 minutes saying five minutes is up to 949 771 4923",

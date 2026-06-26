@@ -273,6 +273,45 @@ class ActionToolsTest {
     }
 
     @Test
+    fun execute_scheduleActionRepairsInstructionOnlyCurrentTimeTool() {
+        val result = ActionTools.execute(
+            context,
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Current Time Check",
+                    "delay_seconds" to 10,
+                    "instruction" to "get current time"
+                )
+            )
+        )
+
+        assertFalse(result?.isError ?: true)
+        assertTrue(result?.output?.contains("tool=get_current_time") == true)
+        val stored = ScheduledActionStore.list(context).firstOrNull { it.title == "Current Time Check" }
+        assertNotNull(stored)
+        assertEquals("get_current_time", stored?.effectiveSteps()?.firstOrNull()?.toolName)
+    }
+
+    @Test
+    fun execute_scheduleActionRejectsNotificationOnlyInstruction() {
+        val result = ActionTools.execute(
+            context,
+            ToolCall(
+                "schedule_action",
+                mapOf(
+                    "title" to "Vague notification",
+                    "delay_seconds" to 10,
+                    "instruction" to "do the vague thing"
+                )
+            )
+        )
+
+        assertTrue(result?.isError == true)
+        assertTrue(result?.output?.contains("requires tool_name or steps") == true)
+    }
+
+    @Test
     fun execute_scheduleActionAcceptsSecondPrecisionLocalTime() {
         val result = ActionTools.execute(
             context,

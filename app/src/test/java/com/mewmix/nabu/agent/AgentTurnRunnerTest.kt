@@ -277,6 +277,120 @@ class AgentTurnRunnerTest {
         assertEquals("Opened SMS composer for 1234567890 with draft message.", finalResult?.finalResponse)
     }
 
+    @Test
+    fun run_executesGemmaColonWrappedLooseToolCall() = runTest {
+        val backend = FakeBackend(listOf("""<tool_call:toggle_flashlight(enabled: true) </tool_call>"""))
+        val toolCalls = mutableListOf<ToolCall>()
+        var finalResult: AgentTurnRunner.Result? = null
+
+        AgentTurnRunner(
+            backend = backend,
+            scope = this,
+            toolExecutor = { call ->
+                toolCalls += call
+                ToolResult(call.toolName, "Flashlight turned on.")
+            },
+            inferToolCallFromModelFailure = { _, _ -> null },
+            recoveryConversationProvider = { emptyList() },
+            shouldCompleteAfterToolResult = { call, _ -> call.toolName == "toggle_flashlight" },
+            inferenceDispatcher = StandardTestDispatcher(testScheduler)
+        ).run(
+            initialConversation = listOf(LlmMessage("user", "turn flashlight on")),
+            latestUserMessage = "turn flashlight on",
+            availableToolNames = setOf("toggle_flashlight"),
+            maxToolCalls = 4,
+            onPartialText = {},
+            onSpeakablePartial = { _, _ -> },
+            onSuppressSpeakablePartials = {},
+            onToolStart = {},
+            onComplete = { finalResult = it }
+        )
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf("toggle_flashlight"), toolCalls.map { it.toolName })
+        assertEquals(true, toolCalls.first().arguments["enabled"])
+        assertEquals("Flashlight turned on.", finalResult?.finalResponse)
+    }
+
+    @Test
+    fun run_quarantinesUnparseableToolControlText() = runTest {
+        val backend = FakeBackend(listOf("""<tool_call:toggle_flashlight enabled true</tool_call>"""))
+        val toolCalls = mutableListOf<ToolCall>()
+        var finalResult: AgentTurnRunner.Result? = null
+
+        AgentTurnRunner(
+            backend = backend,
+            scope = this,
+            toolExecutor = { call ->
+                toolCalls += call
+                ToolResult(call.toolName, "unused")
+            },
+            inferToolCallFromModelFailure = { _, _ -> null },
+            recoveryConversationProvider = { emptyList() },
+            inferenceDispatcher = StandardTestDispatcher(testScheduler)
+        ).run(
+            initialConversation = listOf(LlmMessage("user", "turn flashlight on")),
+            latestUserMessage = "turn flashlight on",
+            availableToolNames = setOf("toggle_flashlight"),
+            maxToolCalls = 4,
+            onPartialText = {},
+            onSpeakablePartial = { _, _ -> },
+            onSuppressSpeakablePartials = {},
+            onToolStart = {},
+            onComplete = { finalResult = it }
+        )
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(emptyList<ToolCall>(), toolCalls)
+        assertEquals("I tried to call a tool, but could not parse the tool request.", finalResult?.finalResponse)
+    }
+
+    @Test
+    fun run_suppressesAllStreamedChunksAfterToolControlStarts() = runTest {
+        val backend = ChunkedBackend(
+            listOf(
+                listOf(
+                    "<tool_call:list_tools{}",
+                    "</tool_call>\nI have listed the available tools for you."
+                ),
+                listOf("Done.")
+            )
+        )
+        val speakablePartials = mutableListOf<String>()
+        val toolCalls = mutableListOf<ToolCall>()
+        var finalResult: AgentTurnRunner.Result? = null
+
+        AgentTurnRunner(
+            backend = backend,
+            scope = this,
+            toolExecutor = { call ->
+                toolCalls += call
+                ToolResult(call.toolName, "tools")
+            },
+            inferToolCallFromModelFailure = { _, _ -> null },
+            recoveryConversationProvider = { emptyList() },
+            inferenceDispatcher = StandardTestDispatcher(testScheduler)
+        ).run(
+            initialConversation = listOf(LlmMessage("user", "list tools")),
+            latestUserMessage = "list tools",
+            availableToolNames = setOf("list_tools"),
+            maxToolCalls = 4,
+            onPartialText = {},
+            onSpeakablePartial = { partial, _ -> speakablePartials += partial },
+            onSuppressSpeakablePartials = {},
+            onToolStart = {},
+            onComplete = { finalResult = it }
+        )
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf("list_tools"), toolCalls.map { it.toolName })
+        assertEquals(listOf("Done."), speakablePartials)
+        assertEquals("Done.", finalResult?.finalResponse)
+    }
+
     private class FakeBackend(
         responses: List<String>
     ) : LlmBackend {
@@ -298,6 +412,46 @@ class AgentTurnRunnerTest {
             resultListener: (partialResult: String, done: Boolean) -> Unit
         ) {
             resultListener(responseQueue.removeFirstOrNull().orEmpty(), true)
+        }
+
+        override fun sendMessage(
+            conversation: List<LlmMessage>,
+            image: LlmImageInput,
+            resultListener: (partialResult: String, done: Boolean) -> Unit
+        ) {
+            sendMessage(conversation, resultListener)
+        }
+
+        override fun cancel() = Unit
+
+        override fun close() = Unit
+    }
+
+    private class ChunkedBackend(
+        responses: List<List<String>>
+    ) : LlmBackend {
+        private val responseQueue = ArrayDeque(responses)
+        val conversations = mutableListOf<List<LlmMessage>>()
+
+        override fun initialize() = Unit
+
+        override fun sendMessage(
+            conversation: List<LlmMessage>,
+            resultListener: (partialResult: String, done: Boolean) -> Unit
+        ) {
+            conversations += conversation
+            val chunks = responseQueue.removeFirstOrNull().orEmpty()
+            chunks.dropLast(1).forEach { resultListener(it, false) }
+            resultListener(chunks.lastOrNull().orEmpty(), true)
+        }
+
+        override fun sendMessage(
+            prompt: String,
+            resultListener: (partialResult: String, done: Boolean) -> Unit
+        ) {
+            val chunks = responseQueue.removeFirstOrNull().orEmpty()
+            chunks.dropLast(1).forEach { resultListener(it, false) }
+            resultListener(chunks.lastOrNull().orEmpty(), true)
         }
 
         override fun sendMessage(

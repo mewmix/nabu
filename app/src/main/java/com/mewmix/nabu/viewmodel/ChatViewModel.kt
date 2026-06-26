@@ -148,6 +148,7 @@ class ChatViewModel(
         private const val DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
         private val TOKEN_REGEX = Regex("\\S+")
         private val DIRECT_RESULT_TOOL_NAMES = setOf(
+            "list_tools",
             "send_sms",
             "place_call",
             "schedule_action",
@@ -218,7 +219,7 @@ class ChatViewModel(
 
                 val resolvedClause = resolvePronounClause(trimmedClause, lastActionSubject)
 
-                parseDelayedActionClause(resolvedClause, availableToolNames)?.let {
+                parseDelayedActionClause(resolvedClause, availableToolNames, lastActionSubject)?.let {
                     toolCalls += it
                     subjectForPronouns(it)?.let { subject -> lastActionSubject = subject }
                     return@forEach
@@ -251,7 +252,8 @@ class ChatViewModel(
 
         private fun parseDelayedActionClause(
             clause: String,
-            availableToolNames: Set<String>
+            availableToolNames: Set<String>,
+            lastActionSubject: ToolCall? = null
         ): ToolCall? {
             if ("schedule_action" !in availableToolNames) return null
 
@@ -272,8 +274,9 @@ class ChatViewModel(
 
             val (durationSpec, actionText) = prefixDelay ?: suffixDelay ?: embeddedDelay ?: return null
             val seconds = parseDurationSeconds(durationSpec) ?: return null
+            val resolvedActionText = resolvePronounClause(actionText, lastActionSubject)
             val actionTool = inferToolCallFromModelFailure(
-                actionText,
+                resolvedActionText,
                 availableToolNames - "schedule_action"
             ) ?: return null
 
@@ -569,7 +572,7 @@ class ChatViewModel(
 
             if ("toggle_flashlight" in availableToolNames) {
                 Regex(
-                    """(?is)^\s*(?:turn\s+)?(?:(on|off)\s+(?:my\s+|the\s+)?(?:flashlight|torch)|(?:my\s+|the\s+)?(?:flashlight|torch)(?:\s+(on|off))?)\s*$"""
+                    """(?is)^\s*(?:turn\s+)?(?:(on|off)\s+(?:my\s+|the\s+)?(?:flashlight|torch)|(?:my\s+|the\s+)?(?:flashlight|torch)(?:\s+(on|off))?)(?:\s+(?:right\s+now|now))?\s*$"""
                 )
                     .find(normalized)?.let { match ->
                         val enabled = listOf(
@@ -1595,43 +1598,74 @@ class ChatViewModel(
             }
         }
 
-        ToolCallProtocol.parseDirectUserToolCommand(latestUserMessage)?.toolName?.let(::addTool)
+        fun addToolsForText(text: String) {
+            val normalizedText = text.lowercase(Locale.US)
 
-        if (containsAny(normalized, "alarm", "wake me")) addTool("set_alarm")
-        if (containsAny(normalized, "timer", "countdown")) addTool("set_timer")
-        if (containsAny(normalized, "weather", "forecast", "temperature")) addTool("get_weather")
-        if (containsAny(normalized, "search", "look up", "web", "news")) addTool("search_web_context")
-        if (containsAny(normalized, "remember", "save memory", "memorize")) addTool("save_memory")
-        if (containsAny(normalized, "what do you remember", "retrieve memory", "recall memory")) addTool("retrieve_memory")
-        if (containsAny(normalized, "scheduled actions", "list scheduled")) addTool("list_scheduled_actions")
-        if (containsAny(normalized, "schedule", "remind later", "run later", "background") ||
-            looksLikeDeferredActionRequest(normalized)
-        ) {
-            addTool("schedule_action")
+            ToolCallProtocol.parseDirectUserToolCommand(text)?.toolName?.let(::addTool)
+            ToolCallProtocol.extractToolCall(text)?.toolName?.let(::addTool)
+
+            if (containsAny(normalizedText, "alarm", "wake me")) addTool("set_alarm")
+            if (containsAny(normalizedText, "timer", "countdown")) addTool("set_timer")
+            if (containsAny(normalizedText, "weather", "forecast", "temperature")) addTool("get_weather")
+            if (containsAny(normalizedText, "search", "look up", "web", "news")) addTool("search_web_context")
+            if (containsAny(normalizedText, "remember", "save memory", "memorize")) addTool("save_memory")
+            if (containsAny(normalizedText, "what do you remember", "retrieve memory", "recall memory")) addTool("retrieve_memory")
+            if (containsAny(normalizedText, "scheduled actions", "list scheduled")) addTool("list_scheduled_actions")
+            if (containsAny(normalizedText, "schedule", "remind later", "run later", "background") ||
+                looksLikeDeferredActionRequest(normalizedText)
+            ) {
+                addTool("schedule_action")
+            }
+            if (containsAny(normalizedText, "open url", "open link", "http://", "https://", "www.")) addTool("open_url")
+            if (containsAny(normalizedText, "open app", "launch app", "launch package")) {
+                addTool("open_app")
+                addTool("launch_package")
+            }
+            if (containsAny(
+                    normalizedText,
+                    "send sms",
+                    "send text",
+                    "compose a text",
+                    "draft a text",
+                    "text ",
+                    "text me",
+                    "message "
+                )
+            ) {
+                addTool("send_sms")
+            }
+            if (looksLikeCallRequest(normalizedText)) addTool("place_call")
+            if (containsAny(normalizedText, "brightness", "dim", "brighter")) addTool("set_brightness")
+            if (containsAny(normalizedText, "flashlight", "torch", "light")) addTool("toggle_flashlight")
+            if (containsAny(normalizedText, "volume", "louder", "quieter")) addTool("set_volume")
+            if (containsAny(normalizedText, "mute", "unmute")) addTool("mute")
+            if (containsAny(normalizedText, "play media", "resume media", "resume playback")) addTool("play_media")
+            if (containsAny(normalizedText, "pause media", "pause playback")) addTool("pause_media")
+            if (containsAny(normalizedText, "next track", "skip track", "skip song")) addTool("next_track")
+            if (containsAny(normalizedText, "calendar", "event", "meeting")) addTool("create_calendar_event")
+            if (containsAny(normalizedText, "navigate to", "directions to", "route to")) addTool("navigate_to")
+            if (containsAny(normalizedText, "take a photo", "take photo", "camera")) addTool("take_photo")
+            if (containsAny(normalizedText, "record a video", "record video")) addTool("record_video")
+            if (containsAny(normalizedText, "wifi", "wi-fi")) addTool("toggle_wifi")
+            if (containsAny(normalizedText, "bluetooth")) addTool("toggle_bluetooth")
+            if (containsAny(normalizedText, "share this", "share text", "share ")) addTool("share_text")
+            if (containsAny(normalizedText, "what can you do", "what tools", "available tools", "help me", "list tools")) addTool("list_tools")
+            if (containsAny(normalizedText, "time", "clock", "hour")) addTool("get_current_time")
         }
-        if (containsAny(normalized, "open url", "open link", "http://", "https://", "www.")) addTool("open_url")
-        if (containsAny(normalized, "open app", "launch app", "launch package")) {
-            addTool("open_app")
-            addTool("launch_package")
+
+        addToolsForText(latestUserMessage)
+
+        if (looksLikeToolContinuation(normalized)) {
+            conversation
+                .asReversed()
+                .dropWhile { it.content.trim() == latestUserMessage }
+                .take(6)
+                .asReversed()
+                .forEach { turn -> addToolsForText(turn.content) }
+            if (selectedNames.isNotEmpty()) {
+                addTool("list_tools")
+            }
         }
-        if (containsAny(normalized, "send sms", "text ", "text me", "message ")) addTool("send_sms")
-        if (looksLikeCallRequest(normalized)) addTool("place_call")
-        if (containsAny(normalized, "brightness", "dim", "brighter")) addTool("set_brightness")
-        if (containsAny(normalized, "flashlight", "torch", "light")) addTool("toggle_flashlight")
-        if (containsAny(normalized, "volume", "louder", "quieter")) addTool("set_volume")
-        if (containsAny(normalized, "mute", "unmute")) addTool("mute")
-        if (containsAny(normalized, "play media", "resume media", "resume playback")) addTool("play_media")
-        if (containsAny(normalized, "pause media", "pause playback")) addTool("pause_media")
-        if (containsAny(normalized, "next track", "skip track", "skip song")) addTool("next_track")
-        if (containsAny(normalized, "calendar", "event", "meeting")) addTool("create_calendar_event")
-        if (containsAny(normalized, "navigate to", "directions to", "route to")) addTool("navigate_to")
-        if (containsAny(normalized, "take a photo", "take photo", "camera")) addTool("take_photo")
-        if (containsAny(normalized, "record a video", "record video")) addTool("record_video")
-        if (containsAny(normalized, "wifi", "wi-fi")) addTool("toggle_wifi")
-        if (containsAny(normalized, "bluetooth")) addTool("toggle_bluetooth")
-        if (containsAny(normalized, "share this", "share text", "share ")) addTool("share_text")
-        if (containsAny(normalized, "what can you do", "what tools", "available tools", "help me")) addTool("list_tools")
-        if (containsAny(normalized, "time", "clock", "hour")) addTool("get_current_time")
 
         val exactMatches = selectedNames.mapNotNull { toolsByName[it] }
         
@@ -1639,7 +1673,7 @@ class ChatViewModel(
         
         val allMatches = (exactMatches + fuzzyMatches).distinctBy { it.name }
         
-        return allMatches.take(6)
+        return allMatches.take(10)
     }
 
     private fun fuzzyMatchTools(
@@ -1679,8 +1713,15 @@ class ChatViewModel(
         needles.any { text.contains(it) }
 
     private fun looksLikeDeferredActionRequest(text: String): Boolean =
-        Regex("""(?is)\b(?:after|in)\s+.+?\s+(?:turn|set|toggle|run|open|start|stop)\b""")
-            .containsMatchIn(text)
+        Regex("""(?is)\b(?:after|in)\s+.+?\s+(?:turn|set|toggle|run|open|start|stop|send|text|message|compose|draft)\b""")
+            .containsMatchIn(text) ||
+            Regex("""(?is)\b(?:turn|set|toggle|run|open|start|stop|send|text|message|compose|draft)\b.+\b(?:at|by)\s+(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|tomorrow|tonight)\b""")
+                .containsMatchIn(text)
+
+    private fun looksLikeToolContinuation(text: String): Boolean =
+        Regex(
+            """(?is)^\s*(?:go ahead|do it|use (?:the )?tool(?:s)?(?: to do so)?|just use (?:the )?tool(?:s)?(?: to do so)?|and\??|yes|yeah|yep|ok(?:ay)?|continue|that one|it|make it .+|actually .+)\s*[.!?]*\s*$"""
+        ).containsMatchIn(text)
 
     private fun looksLikeCallRequest(text: String): Boolean =
         Regex("""(?is)^\s*(?:call|dial|place\s+call)\b""").containsMatchIn(text)

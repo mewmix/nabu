@@ -485,9 +485,20 @@ object ActionTools {
         val delaySeconds = parseWholeNumberArgument(call.arguments["delay_seconds"])
         val title = call.arguments["title"]?.toString()?.trim().ifNullOrBlank("Scheduled action")
         val recurrence = call.arguments["recurrence"]?.toString()?.trim()?.lowercase().normalizeRecurrence()
-        val toolName = call.arguments["tool_name"]?.toString()?.trim().orEmpty()
-        val toolArguments = call.arguments["tool_arguments"].asStringKeyedMap()
+        val requestedToolName = call.arguments["tool_name"]?.toString()?.trim().orEmpty()
+        val requestedToolArguments = call.arguments["tool_arguments"].asStringKeyedMap()
         val parsedSteps = parseScheduledSteps(call.arguments["steps"])
+        val inferredToolCall = if (requestedToolName.isBlank() && requestedToolArguments.isEmpty() && parsedSteps.isEmpty()) {
+            inferScheduledToolFromInstruction(instruction)
+        } else {
+            null
+        }
+        val toolName = requestedToolName.ifBlank { inferredToolCall?.toolName.orEmpty() }
+        val toolArguments = if (requestedToolName.isBlank() && requestedToolArguments.isEmpty()) {
+            inferredToolCall?.arguments ?: emptyMap()
+        } else {
+            requestedToolArguments
+        }
 
         if (runAtLocal.isBlank() && delaySeconds == null) {
             return ToolResult(call.toolName, "Missing required parameter: run_at_local or delay_seconds", true)
@@ -495,8 +506,12 @@ object ActionTools {
         if (delaySeconds != null && delaySeconds <= 0) {
             return ToolResult(call.toolName, "delay_seconds must be a positive whole number.", true)
         }
-        if (instruction.isBlank() && toolName.isBlank() && parsedSteps.isEmpty()) {
-            return ToolResult(call.toolName, "Provide at least one of: instruction, tool_name, or steps", true)
+        if (toolName.isBlank() && parsedSteps.isEmpty()) {
+            return ToolResult(
+                call.toolName,
+                "schedule_action requires tool_name or steps for executable actions. Use schedule_fuzzy_action for reminder or notification-only schedules.",
+                true
+            )
         }
         if (toolName.isNotBlank() && !isSchedulableTool(toolName)) {
             return ToolResult(
@@ -572,6 +587,32 @@ object ActionTools {
                 continueOnError = parseBooleanArgument(map["continue_on_error"]) ?: false
             )
         }
+    }
+
+    private fun inferScheduledToolFromInstruction(instruction: String): ToolCall? {
+        val normalized = instruction.trim().lowercase()
+        if (normalized.isBlank()) return null
+        return when {
+            Regex("""(?is)\b(?:get|current|check)?\s*(?:current\s+)?time\b""").containsMatchIn(normalized) ->
+                ToolCall("get_current_time", emptyMap())
+            Regex("""(?is)\bturn\s+(?:my\s+|the\s+)?(?:flashlight|torch)\s+on\b|\b(?:flashlight|torch)\s+on\b""")
+                .containsMatchIn(normalized) ->
+                ToolCall("toggle_flashlight", mapOf("enabled" to true))
+            Regex("""(?is)\bturn\s+(?:my\s+|the\s+)?(?:flashlight|torch)\s+off\b|\b(?:flashlight|torch)\s+off\b""")
+                .containsMatchIn(normalized) ->
+                ToolCall("toggle_flashlight", mapOf("enabled" to false))
+            Regex("""(?is)\b(?:pause|stop)\s+(?:media|playback|music)\b""").containsMatchIn(normalized) ->
+                ToolCall("pause_media", emptyMap())
+            Regex("""(?is)\b(?:play|resume)\s+(?:media|playback|music)\b""").containsMatchIn(normalized) ->
+                ToolCall("play_media", emptyMap())
+            Regex("""(?is)\bnext\s+(?:track|song)\b|\bskip\s+(?:track|song)\b""").containsMatchIn(normalized) ->
+                ToolCall("next_track", emptyMap())
+            Regex("""(?is)\bunmute\b""").containsMatchIn(normalized) ->
+                ToolCall("mute", mapOf("enabled" to false))
+            Regex("""(?is)\bmute\b""").containsMatchIn(normalized) ->
+                ToolCall("mute", mapOf("enabled" to true))
+            else -> null
+        }?.takeIf { isSchedulableTool(it.toolName) }
     }
 
     private fun runFuzzyAction(context: Context, call: ToolCall): ToolResult {

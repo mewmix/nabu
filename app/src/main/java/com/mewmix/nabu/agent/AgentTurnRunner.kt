@@ -65,10 +65,12 @@ class AgentTurnRunner(
                     if (partial.contains("<tool_call", ignoreCase = true)) {
                         suppressSpeechForThisPass = true
                         onSuppressSpeakablePartials()
-                    } else if (!mayCallTool || lastToolResult != null) {
+                    } else if (!suppressSpeechForThisPass && (!mayCallTool || lastToolResult != null)) {
                         onSpeakablePartial(partial, false)
                     }
-                    onPartialText(responseBuilder.toString())
+                    if (!suppressSpeechForThisPass) {
+                        onPartialText(responseBuilder.toString())
+                    }
                     return@sendMessage
                 }
 
@@ -77,7 +79,7 @@ class AgentTurnRunner(
                     if (partial.contains("<tool_call", ignoreCase = true)) {
                         suppressSpeechForThisPass = true
                         onSuppressSpeakablePartials()
-                    } else if (!mayCallTool || lastToolResult != null) {
+                    } else if (!suppressSpeechForThisPass && (!mayCallTool || lastToolResult != null)) {
                         onSpeakablePartial(partial, true)
                     }
                 }
@@ -86,7 +88,7 @@ class AgentTurnRunner(
                 val toolCall = ToolCallProtocol.extractToolCall(finalResponse)
                 val looksLikeMalformedToolAttempt =
                     finalResponse.trim().startsWith("```") ||
-                        finalResponse.contains("<tool_call", ignoreCase = true)
+                        ToolCallProtocol.looksLikeToolControlText(finalResponse)
                 val looksLikeBackendFailure =
                     finalResponse.contains("generation failed", ignoreCase = true) ||
                         finalResponse.contains("inference failed", ignoreCase = true)
@@ -186,11 +188,23 @@ class AgentTurnRunner(
                     logger("AgentTurnRunner: blank model response; skipping compacted-context retry because recovery prompt is unchanged")
                 }
 
+                if (effectiveToolCall == null && looksLikeMalformedToolAttempt) {
+                    logger("AgentTurnRunner: quarantined unparseable tool-like model response")
+                    onComplete(
+                        Result(
+                            finalResponse = "I tried to call a tool, but could not parse the tool request.",
+                            speakOutput = true,
+                            transcript = transcript.toList()
+                        )
+                    )
+                    return@sendMessage
+                }
+
                 val exhaustedToolBudget = effectiveToolCall != null && remainingToolCalls <= 0
                 val shouldFallbackToToolResult = lastToolResult != null && (
                     finalResponse.isBlank() ||
                         effectiveToolCall != null ||
-                        finalResponse.contains("<tool_call>", ignoreCase = true)
+                        ToolCallProtocol.looksLikeToolControlText(finalResponse)
                     )
                 val resolvedResponse = when {
                     exhaustedToolBudget && lastToolResult != null -> summarizeToolResultMessage(lastToolResult)

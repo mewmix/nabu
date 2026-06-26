@@ -66,6 +66,33 @@ class ToolCallProtocolTest {
     }
 
     @Test
+    fun extractToolCall_parsesColonWrappedEmptyCallFromGemma() {
+        val toolCall = ToolCallProtocol.extractToolCall("<tool_call:list_tools{}</tool_call>")
+
+        assertNotNull(toolCall)
+        assertEquals("list_tools", toolCall?.toolName)
+        assertEquals(emptyMap<String, Any>(), toolCall?.arguments)
+    }
+
+    @Test
+    fun extractToolCall_parsesColonWrappedLooseFunctionArgsFromGemma() {
+        val toolCall = ToolCallProtocol.extractToolCall("<tool_call:toggle_flashlight(enabled: true) </tool_call>")
+
+        assertNotNull(toolCall)
+        assertEquals("toggle_flashlight", toolCall?.toolName)
+        assertEquals(true, toolCall?.arguments?.get("enabled"))
+    }
+
+    @Test
+    fun extractToolCall_parsesMalformedColonCommaArgumentsFromGemma() {
+        val toolCall = ToolCallProtocol.extractToolCall("<tool_call:list_tools,arguments:{}<tool_call|>")
+
+        assertNotNull(toolCall)
+        assertEquals("list_tools", toolCall?.toolName)
+        assertEquals(emptyMap<String, Any>(), toolCall?.arguments)
+    }
+
+    @Test
     fun extractToolCall_returnsNullForNonToolText() {
         val toolCall = ToolCallProtocol.extractToolCall("Normal assistant response with no tool call")
         assertNull(toolCall)
