@@ -25,7 +25,7 @@
   },
   "gemma-4-E2B-it": {
     "name": "Gemma 4 E2B IT",
-    "description": "Gemma 4 E2B instruction-tuned multimodal model (2.58GB). Supports text, image, and audio inputs up to 32K context. LiteRT-LM format for on-device inference. ~47 tok/s decode on mobile CPU, ~52 tok/s on GPU. Requires ~1.7GB RAM on CPU backend.",
+    "description": "Gemma 4 E2B instruction-tuned multimodal model (2.58GB). Supports text and audio inputs up to 32K context; image support depends on the installed LiteRT-LM package/runtime compatibility probe. LiteRT-LM format for on-device inference. ~47 tok/s decode on mobile CPU, ~52 tok/s on GPU. Requires ~1.7GB RAM on CPU backend.",
     "repo": "litert-community/gemma-4-E2B-it-litert-lm",
     "downloadUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
     "gated": false,

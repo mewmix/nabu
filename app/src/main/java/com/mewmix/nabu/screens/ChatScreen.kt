@@ -73,7 +73,7 @@ import com.mewmix.nabu.chat.LlmAudioInput
 import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.ActionTrace
 import com.mewmix.nabu.chat.MessageBubble
-import com.mewmix.nabu.chat.VisionModelSupport
+import com.mewmix.nabu.chat.ModelCapabilityResolver
 import com.mewmix.nabu.speech.VoiceAttachmentRecorder
 import com.mewmix.nabu.tools.Tool
 import com.mewmix.nabu.tools.ToolRegistry
@@ -111,7 +111,7 @@ fun ChatScreen(
     val availableTools by ToolRegistry.tools.collectAsState()
     val pendingImage by viewModel.pendingImage.collectAsState()
     val pendingAudio by viewModel.pendingAudioInput.collectAsState()
-    val activeModelSupportsAudio = activeModel?.id?.let(VisionModelSupport::supportsAudioInput) == true
+    val activeModelSupportsAudio = ModelCapabilityResolver.supportsAudioInput(context, activeModel)
     val clipboardManager = LocalClipboardManager.current
     val voiceRecorder = remember { VoiceAttachmentRecorder(context.applicationContext) }
     var isRecordingVoice by remember { mutableStateOf(false) }

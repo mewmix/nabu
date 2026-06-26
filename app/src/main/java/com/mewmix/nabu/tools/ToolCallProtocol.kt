@@ -71,14 +71,30 @@ object ToolCallProtocol {
             lines += """Example search: <tool_call>{"name":"search_web_context","arguments":{"query":"eclipse news"}}</tool_call>"""
         }
 
-        if (tools.any { tool -> tool.parameters.keys.any { key -> key.contains("path", ignoreCase = true) } }) {
-            lines += "Use absolute Android paths for any path arguments. Prefer /sdcard/Download for downloads."
-        }
-        if (tools.any { it.isAvailable && it.needsFilesystemPathHint() }) {
-            lines += "Filesystem path structure: root=/sdcard; common dirs=/sdcard/Download,/sdcard/Documents,/sdcard/DCIM,/sdcard/Pictures,/sdcard/Movies,/sdcard/Music; after list_files, open/find children by appending the returned name to that directory path."
-        }
+        buildFilesystemPathContext(tools)?.let { lines += it }
 
         return lines.joinToString("\n")
+    }
+
+    fun buildFilesystemPathContext(tools: List<Tool>): String? {
+        val availableTools = tools.filter { it.isAvailable }
+        val hasPathParam = availableTools.any { tool ->
+            tool.parameters.keys.any { key -> key.contains("path", ignoreCase = true) }
+        }
+        if (!hasPathParam && availableTools.none { it.needsFilesystemPathHint() }) return null
+
+        return listOf(
+            "Filesystem tool context:",
+            "- File tools execute on the Android device through Glaive; paths refer to phone storage, not this Mac or repo.",
+            "- Use absolute Android paths for any path or root_path argument. Prefer /sdcard/Download for downloads.",
+            "- Shared storage root aliases: /sdcard and /storage/emulated/0.",
+            "- Filesystem path structure: root=/sdcard; shared root=/storage/emulated/0.",
+            "- Common dirs: /sdcard/Download, /sdcard/Documents, /sdcard/DCIM, /sdcard/Pictures, /sdcard/Movies, /sdcard/Music.",
+            "- If the user gives a relative name, first call list_files or search_files under the likely common directory.",
+            "- For search_files use root_path for the directory and query for the file/name fragment.",
+            "- Do not attempt zip, unzip, copy, move, or rename unless an exact matching tool is listed.",
+            "- After list_files, open/find children by appending the returned child name to that listed directory path."
+        ).joinToString("\n")
     }
 
     private fun Tool.needsFilesystemPathHint(): Boolean {
@@ -88,7 +104,10 @@ object ToolCallProtocol {
             "read_file",
             "open_file",
             "find_file",
-            "search_files"
+            "search_files",
+            "write_file",
+            "create_dir",
+            "delete_file"
         ) || (
             parameters.keys.any { it.contains("path", ignoreCase = true) } &&
                 normalizedName.contains("file")

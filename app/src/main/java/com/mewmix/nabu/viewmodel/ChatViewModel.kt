@@ -1706,6 +1706,19 @@ class ChatViewModel(
             if (containsAny(normalizedText, "search", "look up", "web", "news")) addTool("search_web_context")
             if (containsAny(normalizedText, "remember", "save memory", "memorize")) addTool("save_memory")
             if (containsAny(normalizedText, "what do you remember", "retrieve memory", "recall memory")) addTool("retrieve_memory")
+            if (looksLikeFileManagementRequest(normalizedText)) {
+                addTool("list_files")
+                addTool("search_files")
+                addTool("read_file")
+                addTool("list_tools")
+            }
+            if (looksLikeFileWriteRequest(normalizedText)) {
+                addTool("write_file")
+                addTool("create_dir")
+            }
+            if (looksLikeFileDeleteRequest(normalizedText)) {
+                addTool("delete_file")
+            }
             if (containsAny(normalizedText, "scheduled actions", "list scheduled")) addTool("list_scheduled_actions")
             if (containsAny(normalizedText, "schedule", "remind later", "run later", "background") ||
                 looksLikeDeferredActionRequest(normalizedText)
@@ -1808,10 +1821,54 @@ class ChatViewModel(
     private fun containsAny(text: String, vararg needles: String): Boolean =
         needles.any { text.contains(it) }
 
+    private fun looksLikeFileManagementRequest(text: String): Boolean =
+        containsAny(
+            text,
+            "file",
+            "folder",
+            "directory",
+            "download",
+            "downloads",
+            "document",
+            "documents",
+            "dcim",
+            "photo",
+            "photos",
+            "picture",
+            "pictures",
+            "music",
+            "movie",
+            "video",
+            "zip",
+            "unzip",
+            "archive",
+            "compress",
+            "extract"
+        ) ||
+            Regex("""(?is)\b(?:list|read|find|search|open|show)\b.+\b(?:/sdcard|/storage/emulated/0|downloads?|documents?|dcim)\b""")
+                .containsMatchIn(text)
+
+    private fun looksLikeFileWriteRequest(text: String): Boolean =
+        looksLikeFileManagementRequest(text) &&
+            containsAny(
+                text,
+                "write",
+                "create",
+                "make ",
+                "new file",
+                "new folder",
+                "save ",
+                "edit"
+            )
+
+    private fun looksLikeFileDeleteRequest(text: String): Boolean =
+        looksLikeFileManagementRequest(text) &&
+            containsAny(text, "delete", "remove", "trash")
+
     private fun looksLikeDeferredActionRequest(text: String): Boolean =
-        Regex("""(?is)\b(?:after|in)\s+.+?\s+(?:turn|set|toggle|run|open|start|stop|send|text|message|compose|draft)\b""")
+        Regex("""(?is)\b(?:after|in)\s+.+?\s+(?:turn|set|toggle|run|open|start|stop|send|text|message|compose|draft|list|read|find|search|write|create|delete|remove|compress|extract)\b""")
             .containsMatchIn(text) ||
-            Regex("""(?is)\b(?:turn|set|toggle|run|open|start|stop|send|text|message|compose|draft)\b.+\b(?:at|by)\s+(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|tomorrow|tonight)\b""")
+            Regex("""(?is)\b(?:turn|set|toggle|run|open|start|stop|send|text|message|compose|draft|list|read|find|search|write|create|delete|remove|compress|extract)\b.+\b(?:at|by)\s+(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|tomorrow|tonight)\b""")
                 .containsMatchIn(text)
 
     private fun looksLikeToolContinuation(text: String): Boolean =

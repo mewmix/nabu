@@ -9,7 +9,9 @@ import com.mewmix.nabu.chat.LlmImageInput
 import com.mewmix.nabu.chat.LlmMessage
 import com.mewmix.nabu.chat.MediaPipeBackend
 import com.mewmix.nabu.chat.LiteRtLmBackend
-import com.mewmix.nabu.chat.VisionModelSupport
+import com.mewmix.nabu.chat.LiteRtLmModelCompatibility
+import com.mewmix.nabu.chat.ModelCapabilityResolver
+import com.mewmix.nabu.chat.probeLiteRtLmModelCompatibility
 import com.mewmix.nabu.data.findDownloadedLlmArtifact
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
@@ -109,6 +111,10 @@ class ApiServer(
                     post("/models") {
                         val scope = parseModelScopeFromBody(call, default = ModelScope.LLM) ?: return@post
                         handleModels(call, scope)
+                    }
+
+                    post("/debug/litertlm/probe") {
+                        handleLiteRtLmProbe(call)
                     }
 
                     get("/tts/models") {
@@ -377,6 +383,72 @@ class ApiServer(
             )
         }
     }
+
+    private suspend fun handleLiteRtLmProbe(call: io.ktor.server.application.ApplicationCall) {
+        try {
+            val body = JSONObject(call.receiveText())
+            val modelId = body.optString("model").trim()
+            if (modelId.isEmpty()) {
+                respondApiError(
+                    call = call,
+                    status = HttpStatusCode.BadRequest,
+                    message = "Provide 'model' with a downloaded LiteRT-LM model id."
+                )
+                return
+            }
+
+            val artifact = findDownloadedLlmArtifact(
+                modelDir = File(context.filesDir, "models"),
+                modelId = modelId,
+                backendHint = "litertlm"
+            )
+            if (artifact == null || artifact.backend != "litertlm") {
+                respondApiError(
+                    call = call,
+                    status = HttpStatusCode.NotFound,
+                    message = "Downloaded LiteRT-LM artifact not found for model '$modelId'."
+                )
+                return
+            }
+
+            val result = probeLiteRtLmModelCompatibility(
+                context = context,
+                modelId = modelId,
+                modelPath = artifact.file.absolutePath
+            )
+            call.respondText(
+                text = JSONObject()
+                    .put("model", modelId)
+                    .put("backend", artifact.backend)
+                    .put("path", artifact.file.absolutePath)
+                    .put("litertlm_version", result.liteRtLmVersion)
+                    .put("supports_text", result.supportsText)
+                    .put("supports_audio", result.supportsAudio)
+                    .put("supports_image", result.supportsUsableVision)
+                    .put("supports_audio_image_together", result.supportsAudioAndVisionTogether)
+                    .put("text", capabilityStatusJson(result.text))
+                    .put("audio", capabilityStatusJson(result.audio))
+                    .put("vision", capabilityStatusJson(result.vision))
+                    .put("audio_vision", capabilityStatusJson(result.audioVision))
+                    .toString(),
+                contentType = ContentType.Application.Json,
+                status = HttpStatusCode.OK
+            )
+        } catch (t: Throwable) {
+            DebugLogger.logErr("ApiServer /debug/litertlm/probe failed", t)
+            respondApiError(
+                call = call,
+                status = HttpStatusCode.InternalServerError,
+                message = t.message ?: "Unable to probe LiteRT-LM model"
+            )
+        }
+    }
+
+    private fun capabilityStatusJson(status: LiteRtLmModelCompatibility.Status): JSONObject =
+        JSONObject()
+            .put("supported", status.supported)
+            .put("probed", status.probed)
+            .put("error", status.error)
 
     private suspend fun handleChatCompletions(call: io.ktor.server.application.ApplicationCall) {
         try {
@@ -1080,19 +1152,11 @@ class ApiServer(
     }
 
     private fun modelSupportsImageInput(model: com.mewmix.nabu.data.Model): Boolean {
-        if (!VisionModelSupport.supportsImageInput(model.id)) return false
-
-        val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
-            ?: return false
-        return artifact.backend == "mediapipe" || artifact.backend == "litertlm"
+        return ModelCapabilityResolver.supportsImageInput(context, model)
     }
 
     private fun modelSupportsAudioInput(model: com.mewmix.nabu.data.Model): Boolean {
-        if (!VisionModelSupport.supportsAudioInput(model.id)) return false
-
-        val artifact = findDownloadedLlmArtifact(File(context.filesDir, "models"), model.id, model.backend)
-            ?: return false
-        return artifact.backend == "litertlm"
+        return ModelCapabilityResolver.supportsAudioInput(context, model)
     }
 
     private suspend fun runGeneration(
@@ -1387,11 +1451,6 @@ class ApiServer(
 
     private fun ensureImageInputSupported(modelId: String, backend: LlmBackend, image: LlmImageInput?) {
         if (image == null) return
-        if (!VisionModelSupport.supportsImageInput(modelId)) {
-            throw IllegalArgumentException(
-                "Model '$modelId' is not allowlisted for image input."
-            )
-        }
         if (!backend.supportsImageInput()) {
             throw IllegalArgumentException(
                 "Backend for model '$modelId' does not support image input."
@@ -1401,11 +1460,6 @@ class ApiServer(
 
     private fun ensureAudioInputSupported(modelId: String, backend: LlmBackend, audio: LlmAudioInput?) {
         if (audio == null) return
-        if (!VisionModelSupport.supportsAudioInput(modelId)) {
-            throw IllegalArgumentException(
-                "Model '$modelId' is not allowlisted for audio input."
-            )
-        }
         if (!backend.supportsAudioInput()) {
             throw IllegalArgumentException(
                 "Backend for model '$modelId' does not support audio input."
@@ -1771,11 +1825,7 @@ class ApiServer(
     }
 
     private fun modelCapabilities(model: com.mewmix.nabu.data.Model): Set<String> {
-        return if (model.type == ModelType.TTS) {
-            setOf("tts")
-        } else {
-            VisionModelSupport.capabilitiesFor(model.id)
-        }
+        return ModelCapabilityResolver.capabilitiesFor(context, model)
     }
 
     private suspend fun parseModelScope(

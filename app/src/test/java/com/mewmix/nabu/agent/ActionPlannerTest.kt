@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ActionPlannerTest {
@@ -119,6 +120,36 @@ class ActionPlannerTest {
         assertEquals(1, backend.conversations.size)
         assertEquals("system", backend.conversations.single().first().role)
         assertEquals("user", backend.conversations.single().last().role)
+    }
+
+    @Test
+    fun planWithModel_includesFilesystemContextForGlaiveFileTools() = runTest {
+        val backend = FakeBackend(
+            """
+                {"type":"action_plan","response":"I will list Downloads.","steps":[{"tool_name":"list_files","tool_arguments":{"path":"/sdcard/Download"}}]}
+            """.trimIndent()
+        )
+        val fileTools = listOf(
+            Tool("list_tools", "List available tools."),
+            Tool("list_files", "List files in a directory.", mapOf("path" to "directory path")),
+            Tool("search_files", "Search for files.", mapOf("root_path" to "root directory", "query" to "name fragment")),
+            Tool("read_file", "Read a text file.", mapOf("path" to "file path"))
+        )
+
+        val plan = ActionPlanner.planWithModel(
+            backend = backend,
+            userMessage = "list the files in downloads",
+            selectedTools = fileTools,
+            timeoutMs = 5_000L
+        )
+
+        assertNotNull(plan)
+        assertEquals(listOf(ToolCall("list_files", mapOf("path" to "/sdcard/Download"))), plan?.toolCalls)
+        val systemPrompt = backend.conversations.single().first().content
+        assertTrue(systemPrompt.contains("Android device through Glaive"))
+        assertTrue(systemPrompt.contains("not this Mac or repo"))
+        assertTrue(systemPrompt.contains("/sdcard/Download"))
+        assertTrue(systemPrompt.contains("root_path"))
     }
 
     private class FakeBackend(private val response: String) : LlmBackend {

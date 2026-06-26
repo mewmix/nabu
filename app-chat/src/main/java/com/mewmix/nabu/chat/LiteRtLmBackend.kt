@@ -18,6 +18,35 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
+fun selectLiteRtLmBackendForModel(context: Context, path: String): Backend {
+    val normalized = path.lowercase()
+    val nativeLibDir = context.applicationInfo.nativeLibraryDir
+    DebugLogger.log("LiteRtLmBackend selectBackend: path=$path nativeLibDir=$nativeLibDir")
+    return if (
+        (normalized.contains("qualcomm") || normalized.contains("qcs") || normalized.contains("npu")) &&
+        !nativeLibDir.isNullOrBlank()
+    ) {
+        DebugLogger.log("LiteRtLmBackend selecting NPU backend with nativeLibDir=$nativeLibDir")
+        Backend.NPU(nativeLibDir)
+    } else {
+        DebugLogger.log("LiteRtLmBackend selecting CPU backend")
+        Backend.CPU()
+    }
+}
+
+fun probeLiteRtLmModelCompatibility(
+    context: Context,
+    modelId: String,
+    modelPath: String
+): LiteRtLmModelCompatibility.Result {
+    return LiteRtLmModelCompatibility.probeAll(
+        context = context,
+        modelId = modelId,
+        modelPath = modelPath,
+        backend = selectLiteRtLmBackendForModel(context, modelPath)
+    )
+}
+
 class LiteRtLmBackend(
     private val context: Context,
     private val modelId: String,
@@ -29,6 +58,12 @@ class LiteRtLmBackend(
 
     @Volatile
     private var engine: Engine? = null
+    @Volatile
+    private var compatibility: LiteRtLmModelCompatibility.Result? = null
+    @Volatile
+    private var activeSupportsImage = false
+    @Volatile
+    private var activeSupportsAudio = false
 
     override fun initialize() {
         if (initialized.get()) return
@@ -36,37 +71,105 @@ class LiteRtLmBackend(
             if (initialized.get()) return
             DebugLogger.log("LiteRtLmBackend initialize with model $modelId at $modelPath")
             initializationError.set(null)
-            val baseBackend = selectBackendForModel(modelPath)
-            val isVisionSupported = VisionModelSupport.supportsImageInput(modelId)
-            val isAudioSupported = VisionModelSupport.supportsAudioInput(modelId)
-            
-            val engineConfig = EngineConfig(
+            val baseBackend = selectLiteRtLmBackendForModel(context, modelPath)
+            val resolvedCompatibility = LiteRtLmModelCompatibility.cachedOrStatic(
+                context = context,
+                modelId = modelId,
                 modelPath = modelPath,
+                desiredAudio = VisionModelSupport.supportsAudioInput(modelId),
+                desiredVision = VisionModelSupport.supportsImageInput(modelId)
+            )
+            compatibility = resolvedCompatibility
+            val isAudioSupported = resolvedCompatibility.supportsAudio
+            val isVisionSupported = resolvedCompatibility.supportsUsableVision
+            if (resolvedCompatibility.supportsVision && !isVisionSupported) {
+                DebugLogger.log(
+                    "LiteRtLmBackend disabling vision for modelId=$modelId because audio+vision initialization failed."
+                )
+            }
+            if (!resolvedCompatibility.supportsText && resolvedCompatibility.text.probed) {
+                DebugLogger.log(
+                    "LiteRtLmBackend text probe failed for modelId=$modelId: ${resolvedCompatibility.text.error.orEmpty()}"
+                )
+            }
+
+            val engineConfig = buildEngineConfig(
                 backend = baseBackend,
-                visionBackend = if (isVisionSupported) baseBackend else null,
-                audioBackend = if (isAudioSupported) baseBackend else null,
-                maxNumTokens = null,
-                maxNumImages = if (isVisionSupported) 1 else null,
-                cacheDir = context.cacheDir.absolutePath
+                enableVision = isVisionSupported,
+                enableAudio = isAudioSupported
             )
             try {
-                engine = Engine(engineConfig)
-                engine?.initialize()
+                engine = initializeEngine(engineConfig)
                 initialized.set(true)
+                activeSupportsImage = engineConfig.visionBackend != null
+                activeSupportsAudio = engineConfig.audioBackend != null
+                compatibility = LiteRtLmModelCompatibility.observeSuccessfulInitialization(
+                    context = context,
+                    modelId = modelId,
+                    modelPath = modelPath,
+                    audioEnabled = activeSupportsAudio,
+                    visionEnabled = activeSupportsImage
+                )
                 DebugLogger.log("LiteRtLmBackend initialized modelId=$modelId backend=${engineConfig.backend} vision=${engineConfig.visionBackend != null} audio=${engineConfig.audioBackend != null}")
             } catch (t: Throwable) {
-                engine = null
-                initialized.set(false)
-                val message = t.message ?: t::class.java.simpleName
-                initializationError.set(message)
-                DebugLogger.log("LiteRtLmBackend initialize failed: $message")
+                compatibility = LiteRtLmModelCompatibility.observeFailedInitialization(
+                    context = context,
+                    modelId = modelId,
+                    modelPath = modelPath,
+                    audioEnabled = engineConfig.audioBackend != null,
+                    visionEnabled = engineConfig.visionBackend != null,
+                    error = t.message ?: t::class.java.simpleName
+                )
+                if (isVisionSupported && t.isVisionEncoderSignatureError()) {
+                    DebugLogger.log(
+                        "LiteRtLmBackend vision init failed for modelId=$modelId; retrying without vision: " +
+                            (t.message ?: t::class.java.simpleName)
+                    )
+                    val audioOnlyConfig = buildEngineConfig(
+                        backend = baseBackend,
+                        enableVision = false,
+                        enableAudio = isAudioSupported
+                    )
+                    try {
+                        engine = initializeEngine(audioOnlyConfig)
+                        initialized.set(true)
+                        activeSupportsImage = false
+                        activeSupportsAudio = audioOnlyConfig.audioBackend != null
+                        compatibility = LiteRtLmModelCompatibility.observeSuccessfulInitialization(
+                            context = context,
+                            modelId = modelId,
+                            modelPath = modelPath,
+                            audioEnabled = activeSupportsAudio,
+                            visionEnabled = false
+                        )
+                        DebugLogger.log("LiteRtLmBackend initialized modelId=$modelId backend=${audioOnlyConfig.backend} vision=false audio=${audioOnlyConfig.audioBackend != null}")
+                    } catch (retryError: Throwable) {
+                        compatibility = LiteRtLmModelCompatibility.observeFailedInitialization(
+                            context = context,
+                            modelId = modelId,
+                            modelPath = modelPath,
+                            audioEnabled = audioOnlyConfig.audioBackend != null,
+                            visionEnabled = false,
+                            error = retryError.message ?: retryError::class.java.simpleName
+                        )
+                        handleInitializationFailure(retryError)
+                    }
+                } else {
+                    handleInitializationFailure(t)
+                }
             }
         }
     }
 
-    override fun supportsImageInput(): Boolean = VisionModelSupport.supportsImageInput(modelId)
+    override fun supportsImageInput(): Boolean =
+        activeSupportsImage.takeIf { initialized.get() }
+            ?: LiteRtLmModelCompatibility.cachedResult(context, modelId, modelPath)?.supportsUsableVision
+            ?: VisionModelSupport.supportsImageInput(modelId)
 
-    override fun supportsAudioInput(): Boolean = VisionModelSupport.supportsAudioInput(modelId)
+    override fun supportsAudioInput(): Boolean =
+        activeSupportsAudio.takeIf { initialized.get() }
+            ?: LiteRtLmModelCompatibility.cachedResult(context, modelId, modelPath)?.supportsAudio
+            ?: VisionModelSupport.supportsAudioInput(modelId)
 
     override fun sendMessage(
         conversation: List<LlmMessage>,
@@ -185,6 +288,48 @@ class LiteRtLmBackend(
         }
     }
 
+    private fun buildEngineConfig(
+        backend: Backend,
+        enableVision: Boolean,
+        enableAudio: Boolean
+    ): EngineConfig {
+        return EngineConfig(
+            modelPath = modelPath,
+            backend = backend,
+            visionBackend = if (enableVision) backend else null,
+            audioBackend = if (enableAudio) backend else null,
+            maxNumTokens = null,
+            maxNumImages = if (enableVision) 1 else null,
+            cacheDir = context.cacheDir.absolutePath
+        )
+    }
+
+    private fun initializeEngine(config: EngineConfig): Engine {
+        return Engine(config).also { it.initialize() }
+    }
+
+    private fun handleInitializationFailure(t: Throwable) {
+        engine = null
+        initialized.set(false)
+        activeSupportsImage = false
+        activeSupportsAudio = false
+        val message = t.message ?: t::class.java.simpleName
+        initializationError.set(message)
+        DebugLogger.logErr("LiteRtLmBackend initialize failed: $message", t)
+    }
+
+    private fun Throwable.isVisionEncoderSignatureError(): Boolean {
+        val fullMessage = buildString {
+            append(message.orEmpty())
+            cause?.message?.let {
+                append('\n')
+                append(it)
+            }
+        }
+        return fullMessage.contains("Vision Encoder", ignoreCase = true) &&
+            fullMessage.contains("signature", ignoreCase = true)
+    }
+
     private fun streamMessage(
         conversation: Conversation,
         prompt: String,
@@ -192,7 +337,7 @@ class LiteRtLmBackend(
         audio: LlmAudioInput? = null,
         resultListener: (partialResult: String, done: Boolean) -> Unit
     ) {
-        if (audio != null && !VisionModelSupport.supportsAudioInput(modelId)) {
+        if (audio != null && !supportsAudioInput()) {
             resultListener("LiteRT-LM audio input is not enabled for this model.", true)
             return
         }
@@ -299,22 +444,6 @@ class LiteRtLmBackend(
             "model" -> Message.Companion.model(content)
             "user" -> Message.Companion.user(content)
             else -> null
-        }
-    }
-
-    private fun selectBackendForModel(path: String): Backend {
-        val normalized = path.lowercase()
-        val nativeLibDir = context.applicationInfo.nativeLibraryDir
-        DebugLogger.log("LiteRtLmBackend selectBackend: path=$path nativeLibDir=$nativeLibDir")
-        return if (
-            (normalized.contains("qualcomm") || normalized.contains("qcs") || normalized.contains("npu")) &&
-            !nativeLibDir.isNullOrBlank()
-        ) {
-            DebugLogger.log("LiteRtLmBackend selecting NPU backend with nativeLibDir=$nativeLibDir")
-            Backend.NPU(nativeLibDir)
-        } else {
-            DebugLogger.log("LiteRtLmBackend selecting CPU backend")
-            Backend.CPU()
         }
     }
 

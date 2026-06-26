@@ -8,7 +8,7 @@ class VisionModelSupportTest {
     @Test
     fun allowlistIsStrict() {
         assertTrue(VisionModelSupport.supportsImageInput("gemma-3n-E4B-it-int4"))
-        assertTrue(VisionModelSupport.supportsImageInput("gemma-4-E2B-it"))
+        assertFalse(VisionModelSupport.supportsImageInput("gemma-4-E2B-it"))
         assertFalse(VisionModelSupport.supportsImageInput("gemma3-1b-it-q4"))
         assertFalse(VisionModelSupport.supportsImageInput("qwen2.5-1.5b-instruct-q8"))
     }
@@ -25,7 +25,7 @@ class VisionModelSupportTest {
         assertTrue(VisionModelSupport.capabilitiesFor("gemma-3n-E4B-it-int4").contains("multimodal"))
         assertTrue(VisionModelSupport.capabilitiesFor("gemma-3n-E4B-it-int4").contains("image"))
         assertTrue(VisionModelSupport.capabilitiesFor("gemma-4-E2B-it").contains("multimodal"))
-        assertTrue(VisionModelSupport.capabilitiesFor("gemma-4-E2B-it").contains("image"))
+        assertFalse(VisionModelSupport.capabilitiesFor("gemma-4-E2B-it").contains("image"))
         assertTrue(VisionModelSupport.capabilitiesFor("gemma-4-E2B-it").contains("audio"))
         assertFalse(VisionModelSupport.capabilitiesFor("gemma3-1b-it-q4").contains("multimodal"))
     }

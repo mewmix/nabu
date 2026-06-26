@@ -3,8 +3,7 @@ package com.mewmix.nabu.chat
 object VisionModelSupport {
     // Keep this allowlist strict; only enable image input for model IDs verified in-app.
     private val visionModelIds = setOf(
-        "gemma-3n-E4B-it-int4",
-        "gemma-4-E2B-it"
+        "gemma-3n-E4B-it-int4"
     )
     private val audioModelIds = setOf(
         "gemma-4-E2B-it"

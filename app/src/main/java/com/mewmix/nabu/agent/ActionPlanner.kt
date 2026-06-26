@@ -8,6 +8,7 @@ import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.LlmMessage
 import com.mewmix.nabu.tools.Tool
 import com.mewmix.nabu.tools.ToolCall
+import com.mewmix.nabu.tools.ToolCallProtocol
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
@@ -42,7 +43,25 @@ object ActionPlanner {
             "open ",
             "call ",
             "schedule ",
-            "remind "
+            "remind ",
+            "file",
+            "folder",
+            "directory",
+            "download",
+            "document",
+            "photo",
+            "picture",
+            "read ",
+            "write ",
+            "create ",
+            "delete ",
+            "remove ",
+            "find ",
+            "zip",
+            "unzip",
+            "archive",
+            "compress",
+            "extract"
         )
         return actionSignals.any { text.contains(it) }
     }
@@ -156,11 +175,14 @@ object ActionPlanner {
             .takeLast(4)
             .joinToString("\n") { "${it.role}: ${it.content.take(240)}" }
             .ifBlank { "(none)" }
+        val filesystemContext = ToolCallProtocol.buildFilesystemPathContext(tools)
+            ?.let { "\n\n$it" }
+            .orEmpty()
         val system = """
             You are Nabu's action planner. Convert the user's request into a validated JSON action_plan.
             Do not answer conversationally outside JSON.
             Use only tools from this list_tools response:
-            $toolList
+            $toolList$filesystemContext
 
             Contract:
             {
@@ -178,6 +200,7 @@ object ActionPlanner {
             - Delays are relative to now. If the user says one action happens after a previous delayed action, use the cumulative delay.
             - Put jokes, spoken acknowledgements, or non-tool wording in response, not in steps.
             - If the request is ambiguous or dangerous, set requires_confirmation true and return no steps.
+            - If a requested file operation has no exact matching tool in the list, set requires_confirmation true and explain the missing tool in response.
             - Use exact tool names and exact parameter names.
         """.trimIndent()
         val user = """
