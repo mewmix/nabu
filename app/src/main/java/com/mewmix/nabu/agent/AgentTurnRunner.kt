@@ -146,7 +146,13 @@ class AgentTurnRunner(
                             return@launch
                         }
                         val modelToolCallMessage = if (toolCall != null) {
-                            finalResponse
+                            val endTag = "</tool_call>"
+                            val firstCallIndex = finalResponse.indexOf(endTag, ignoreCase = true)
+                            if (firstCallIndex != -1) {
+                                finalResponse.substring(0, firstCallIndex + endTag.length)
+                            } else {
+                                finalResponse
+                            }
                         } else {
                             formatSyntheticToolCall(effectiveToolCall)
                         }
