@@ -168,7 +168,10 @@ object GlaiveBridge {
             if (name.isBlank()) continue
             val description = cursor.getString(descriptionIndex)?.trim().orEmpty()
             val parameterJson = cursor.getString(parametersIndex).orEmpty()
-            val parameters = parseParameters(parameterJson)
+            var parameters = parseParameters(parameterJson)
+            if (name == "search_files" || name == "list_files") {
+                parameters = parameters + mapOf("page" to "Optional page number (default 1, 20 results per page).")
+            }
             tools += Tool(
                 name = name,
                 description = if (description.isBlank()) "Tool provided by Glaive." else description,
@@ -197,7 +200,10 @@ object GlaiveBridge {
             Tool(
                 name = "list_files",
                 description = "List files in a directory.",
-                parameters = mapOf("path" to "The directory path to list.")
+                parameters = mapOf(
+                    "path" to "The directory path to list.",
+                    "page" to "Optional page number (default 1, 20 results per page)."
+                )
             ),
             Tool(
                 name = "read_file",
@@ -224,7 +230,8 @@ object GlaiveBridge {
                 description = "Search files under a root path by query string.",
                 parameters = mapOf(
                     "root_path" to "Root directory to search under.",
-                    "query" to "Name fragment or search query."
+                    "query" to "Name fragment or search query.",
+                    "page" to "Optional page number (default 1, 20 results per page)."
                 )
             )
         )

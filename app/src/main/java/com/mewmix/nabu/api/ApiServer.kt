@@ -1247,7 +1247,7 @@ class ApiServer(
         val systemPromptBuilder = StringBuilder()
         if (tools.isNotEmpty()) {
             val protocol = com.mewmix.nabu.tools.ToolCallProtocol
-            systemPromptBuilder.append(protocol.buildSystemPrompt("", tools)).append("\n\n")
+            systemPromptBuilder.append(protocol.buildSystemPrompt("", tools, android.os.Environment.getExternalStorageDirectory().absolutePath)).append("\n\n")
         }
 
         for (i in 0 until input.length()) {

@@ -118,7 +118,8 @@ object ScheduledAgentStepExecutor {
                 Do not ask the user for clarification; use the scheduled instruction and available context.
                 Finish with a concise summary of what happened.
             """.trimIndent(),
-            tools = tools
+            tools = tools,
+            externalStoragePath = android.os.Environment.getExternalStorageDirectory().absolutePath
         )
         val priorRuns = action.runHistory.orEmpty().take(3).joinToString("\n") { run ->
             "- ${run.status}: ${run.summary}"

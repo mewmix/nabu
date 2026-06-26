@@ -20,7 +20,7 @@ object ToolCallProtocol {
     private val fencedJsonRegex =
         Regex("```(?:json)?\\s*(\\{[\\s\\S]*?\\})\\s*```", setOf(RegexOption.IGNORE_CASE))
 
-    fun buildSystemPrompt(basePrompt: String, tools: List<Tool>): String {
+    fun buildSystemPrompt(basePrompt: String, tools: List<Tool>, externalStoragePath: String? = null): String {
         if (tools.isEmpty()) {
             val lines = mutableListOf<String>()
             if (basePrompt.isNotBlank()) {
@@ -71,24 +71,25 @@ object ToolCallProtocol {
             lines += """Example search: <tool_call>{"name":"search_web_context","arguments":{"query":"eclipse news"}}</tool_call>"""
         }
 
-        buildFilesystemPathContext(tools)?.let { lines += it }
+        buildFilesystemPathContext(tools, externalStoragePath)?.let { lines += it }
 
         return lines.joinToString("\n")
     }
 
-    fun buildFilesystemPathContext(tools: List<Tool>): String? {
+    fun buildFilesystemPathContext(tools: List<Tool>, externalStoragePath: String? = null): String? {
         val availableTools = tools.filter { it.isAvailable }
         val hasPathParam = availableTools.any { tool ->
             tool.parameters.keys.any { key -> key.contains("path", ignoreCase = true) }
         }
         if (!hasPathParam && availableTools.none { it.needsFilesystemPathHint() }) return null
 
+        val rootPath = externalStoragePath ?: "/storage/emulated/0"
         return listOf(
             "Filesystem tool context:",
             "- File tools execute on the Android device through Glaive; paths refer to phone storage, not this Mac or repo.",
             "- Use absolute Android paths for any path or root_path argument. Prefer /sdcard/Download for downloads.",
-            "- Shared storage root aliases: /sdcard and /storage/emulated/0.",
-            "- Filesystem path structure: root=/sdcard; shared root=/storage/emulated/0.",
+            "- Shared storage root aliases: /sdcard and $rootPath.",
+            "- Filesystem path structure: root=/sdcard; shared root=$rootPath.",
             "- Common dirs: /sdcard/Download, /sdcard/Documents, /sdcard/DCIM, /sdcard/Pictures, /sdcard/Movies, /sdcard/Music.",
             "- If the user gives a relative name, first call list_files or search_files under the likely common directory.",
             "- For search_files use root_path for the directory and query for the file/name fragment.",

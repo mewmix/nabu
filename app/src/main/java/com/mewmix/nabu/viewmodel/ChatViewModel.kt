@@ -1201,7 +1201,13 @@ class ChatViewModel(
                                 actionTrace = actionTrace
                             )
                     }
-                    conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
+                    val historyContent = if (actionTrace != null && actionTrace.entries.isNotEmpty()) {
+                        val traceString = actionTrace.entries.joinToString("\n") { "${it.phase}: ${it.detail}" }
+                        "[Tool Execution Trace:\n$traceString]\n$finalResponse"
+                    } else {
+                        finalResponse
+                    }
+                    conversationHistory.add(ConversationTurn(ConversationRole.AGENT, historyContent))
                     persistConversationMessages()
                     if (speakOutput) {
                         if (sentenceBuilder.isBlank()) {
@@ -1613,7 +1619,8 @@ class ChatViewModel(
         val promptTools = selectPromptToolsForConversation(conversationHistory, availableTools)
         val systemPrompt = ToolCallProtocol.buildSystemPrompt(
             basePrompt = _systemPrompt.value,
-            tools = promptTools
+            tools = promptTools,
+            externalStoragePath = android.os.Environment.getExternalStorageDirectory().absolutePath
         )
         val systemMsg = LlmMessage(role = "system", content = systemPrompt)
         val systemTokens = estimateTokenCount(systemMsg.content)
@@ -1900,13 +1907,32 @@ class ChatViewModel(
                 isError = true
             )
         }
-        return withTimeoutOrNull(TOOL_EXECUTION_TIMEOUT_MS) {
+        val baseResult = withTimeoutOrNull(TOOL_EXECUTION_TIMEOUT_MS) {
             GlaiveBridge.executeTool(appContext, toolCall)
         } ?: ToolResult(
             toolName = toolCall.toolName,
             output = "Tool '${toolCall.toolName}' timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s.",
             isError = true
         )
+
+        if ((toolCall.toolName == "search_files" || toolCall.toolName == "list_files") && !baseResult.isError) {
+            val lines = baseResult.output.split("\n")
+            val page = toolCall.arguments["page"]?.toString()?.toIntOrNull() ?: 1
+            val pageSize = 20
+            val totalLines = lines.size
+            if (totalLines > pageSize) {
+                val start = (page - 1) * pageSize
+                val end = (start + pageSize).coerceAtMost(totalLines)
+                if (start < totalLines) {
+                    val pagedLines = lines.subList(start, end)
+                    val summary = "Showing ${start + 1}-$end of $totalLines results (use page=${page + 1} to see more)."
+                    return baseResult.copy(output = pagedLines.joinToString("\n") + "\n\n$summary")
+                } else {
+                    return baseResult.copy(output = "Page $page is empty. Total results: $totalLines")
+                }
+            }
+        }
+        return baseResult
     }
 
     private fun finalizeDirectToolResponse(finalResponse: String, actionTrace: ActionTrace? = null) {
