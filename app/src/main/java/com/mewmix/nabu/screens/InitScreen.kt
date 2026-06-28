@@ -286,31 +286,6 @@ fun InitScreen(
 
             BrutalButton(
                 onClick = {
-                    if (engine == "supertonic") {
-                        val selected = selectedModel
-                        if (selected == null || !selected.isDownloaded) {
-                            Toast.makeText(
-                                context,
-                                "Select and download a Supertonic model before continuing.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            return@BrutalButton
-                        }
-                    }
-                    if (engine == "soprano") {
-                        val modelId = "soprano-80m-onnx"
-                        val modelDir = java.io.File(context.filesDir, "models/$modelId")
-                        val partialDir = java.io.File(context.filesDir, "models/${modelId}_partial")
-                        val missing = TtsModelValidator.missingFiles(modelId, modelDir, partialDir)
-                        if (missing.isNotEmpty()) {
-                            Toast.makeText(
-                                context,
-                                "Soprano download incomplete. Missing: ${missing.joinToString()}",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            return@BrutalButton
-                        }
-                    }
                     SettingsManager.setTtsEngine(context, engine)
                     if (engine == "supertonic") {
                         SettingsManager.setSupertonicModelId(context, selectedModel?.id)
