@@ -352,11 +352,11 @@ class LiteRtLmBackend(
         runBlocking {
             val flow = if (image != null || audio != null) {
                 val contents = mutableListOf<Content>()
+                if (audio != null) contents.add(audio.toLiteRtLmContent())
+                if (image != null) contents.add(Content.ImageBytes(image.toPngBytes()))
                 if (prompt.isNotBlank()) {
                     contents.add(Content.Text(prompt))
                 }
-                if (audio != null) contents.add(audio.toLiteRtLmContent())
-                if (image != null) contents.add(Content.ImageBytes(image.toPngBytes()))
                 DebugLogger.log(
                     "LiteRtLmBackend sending multimodal content text=${prompt.isNotBlank()} image=${image != null} audio=${audio != null}"
                 )
@@ -426,9 +426,9 @@ class LiteRtLmBackend(
                     Message.Companion.user(content)
                 } else {
                     val contents = mutableListOf<Content>()
-                    if (content.isNotBlank()) contents.add(Content.Text(content))
-                    images.forEach { contents.add(Content.ImageBytes(it.toPngBytes())) }
                     audios.forEach { contents.add(it.toLiteRtLmContent()) }
+                    images.forEach { contents.add(Content.ImageBytes(it.toPngBytes())) }
+                    if (content.isNotBlank()) contents.add(Content.Text(content))
                     Message.Companion.user(Contents.of(contents))
                 }
             }

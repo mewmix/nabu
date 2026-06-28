@@ -1988,6 +1988,17 @@ class ChatViewModel(
                 }
             }
         }
+        if (toolCall.toolName == "take_screenshot" && !baseResult.isError) {
+            try {
+                val json = org.json.JSONObject(baseResult.output)
+                val path = json.optString("path", "")
+                if (path.isNotEmpty() && (path.endsWith(".png") || path.endsWith(".jpg"))) {
+                    return baseResult.copy(attachedImagePath = path)
+                }
+            } catch (e: Exception) {
+                // Ignore parse errors
+            }
+        }
         return baseResult
     }
 

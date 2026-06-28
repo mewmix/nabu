@@ -24,5 +24,6 @@ data class ToolCall(
 data class ToolResult(
     val toolName: String,
     val output: String,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val attachedImagePath: String? = null
 )

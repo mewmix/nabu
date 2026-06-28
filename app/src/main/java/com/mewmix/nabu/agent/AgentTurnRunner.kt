@@ -156,11 +156,16 @@ class AgentTurnRunner(
                         } else {
                             formatSyntheticToolCall(effectiveToolCall)
                         }
+                        val toolResultImages = if (result.attachedImagePath != null) {
+                            val bitmap = android.graphics.BitmapFactory.decodeFile(result.attachedImagePath)
+                            if (bitmap != null) listOf(com.mewmix.nabu.chat.LlmImageInput(bitmap)) else emptyList()
+                        } else emptyList()
                         val followUpConversation = conversation + listOf(
                             LlmMessage(role = "model", content = modelToolCallMessage),
                             LlmMessage(
                                 role = "user",
-                                content = ToolCallProtocol.formatToolResultForModel(result)
+                                content = ToolCallProtocol.formatToolResultForModel(result),
+                                images = toolResultImages
                             )
                         )
                         runInference(
