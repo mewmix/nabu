@@ -111,6 +111,7 @@ fun ChatScreen(
     val availableTools by ToolRegistry.tools.collectAsState()
     val pendingImage by viewModel.pendingImage.collectAsState()
     val pendingAudio by viewModel.pendingAudioInput.collectAsState()
+    val pendingToolApproval by viewModel.pendingToolApproval.collectAsState()
     val activeModelSupportsAudio = ModelCapabilityResolver.supportsAudioInput(context, activeModel)
     val clipboardManager = LocalClipboardManager.current
     val voiceRecorder = remember { VoiceAttachmentRecorder(context.applicationContext) }
@@ -268,6 +269,24 @@ fun ChatScreen(
                 deleteTarget = null
             }
         }
+    }
+
+    pendingToolApproval?.let { toolCall ->
+        AlertDialog(
+            onDismissRequest = { viewModel.resolveToolApproval(false) },
+            title = { Text("Approve Action") },
+            text = { Text("The assistant wants to execute a destructive action:\n\nTool: ${toolCall.toolName}\nArguments: ${toolCall.arguments}") },
+            confirmButton = {
+                BrutalButton(onClick = { viewModel.resolveToolApproval(true) }) {
+                    Text("Allow")
+                }
+            },
+            dismissButton = {
+                BrutalButton(onClick = { viewModel.resolveToolApproval(false) }) {
+                    Text("Deny")
+                }
+            }
+        )
     }
 
     Scaffold(

@@ -93,7 +93,7 @@ object ToolCallProtocol {
             "- Common dirs: /sdcard/Download, /sdcard/Documents, /sdcard/DCIM, /sdcard/Pictures, /sdcard/Movies, /sdcard/Music.",
             "- If the user gives a relative name, first call list_files or search_files under the likely common directory.",
             "- For search_files use root_path for the directory and query for the file/name fragment.",
-            "- Do not attempt zip, unzip, copy, move, or rename unless an exact matching tool is listed.",
+            "- If you need to manage files, prefer using tools like copy_file, move_file, rename_file, list_archive, create_archive, and extract_archive when available.",
             "- After list_files, open/find children by appending the returned child name to that listed directory path."
         ).joinToString("\n")
     }

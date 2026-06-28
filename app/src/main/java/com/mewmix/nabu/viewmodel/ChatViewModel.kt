@@ -53,6 +53,7 @@ import com.mewmix.nabu.tools.ToolCallProtocol
 import com.mewmix.nabu.tools.ToolRegistry
 import com.mewmix.nabu.tools.ToolResult
 import com.mewmix.nabu.actions.ActionTools
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -858,6 +859,18 @@ class ChatViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isInitializing = MutableStateFlow(false)
+    val isInitializing = _isInitializing.asStateFlow()
+
+    private val _pendingToolApproval = MutableStateFlow<ToolCall?>(null)
+    val pendingToolApproval = _pendingToolApproval.asStateFlow()
+    private var pendingToolApprovalDeferred: CompletableDeferred<Boolean>? = null
+
+    fun resolveToolApproval(allow: Boolean) {
+        pendingToolApprovalDeferred?.complete(allow)
+        _pendingToolApproval.value = null
+    }
+
     // Conversation State
     private val _conversationSummaries = MutableStateFlow<List<ConversationSummary>>(emptyList())
     val conversationSummaries = _conversationSummaries.asStateFlow()
@@ -1091,6 +1104,7 @@ class ChatViewModel(
         }
 
         val sentenceBuilder = StringBuilder()
+        var hasStreamedAudio = false
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
         val directActionPlan = if (image == null && audio == null) {
@@ -1210,7 +1224,7 @@ class ChatViewModel(
                     conversationHistory.add(ConversationTurn(ConversationRole.AGENT, historyContent))
                     persistConversationMessages()
                     if (speakOutput) {
-                        if (sentenceBuilder.isBlank()) {
+                        if (!hasStreamedAudio && sentenceBuilder.isBlank()) {
                             sentenceBuilder.append(finalResponse)
                         }
                         processSentences(sentenceBuilder, true)
@@ -1318,6 +1332,7 @@ class ChatViewModel(
                 maxToolCalls = MAX_TOOL_CALLS_PER_TURN,
                 onPartialText = ::updateAssistantPlaceholder,
                 onSpeakablePartial = { partial, done ->
+                    hasStreamedAudio = true
                     sentenceBuilder.append(partial)
                     if (!done) {
                         processSentences(sentenceBuilder, false)
@@ -1448,7 +1463,31 @@ class ChatViewModel(
                 val audio = if (!turn.audioPath.isNullOrBlank()) {
                     loadAudioFromPath(turn.audioPath, turn.audioName)
                 } else null
-                ChatMessage(turn.content, turn.role == ConversationRole.USER, image, audio)
+                
+                var displayMessage = turn.content
+                var parsedActionTrace: ActionTrace? = null
+                
+                if (turn.role == ConversationRole.AGENT && displayMessage.startsWith("[Tool Execution Trace:\n")) {
+                    val endBracketIdx = displayMessage.indexOf("]\n")
+                    if (endBracketIdx != -1) {
+                        val traceBlock = displayMessage.substring("[Tool Execution Trace:\n".length, endBracketIdx)
+                        displayMessage = displayMessage.substring(endBracketIdx + 2).trimStart()
+                        
+                        val entries = traceBlock.lines().mapNotNull { line ->
+                            val colonIdx = line.indexOf(":")
+                            if (colonIdx != -1) {
+                                val phase = line.substring(0, colonIdx).trim()
+                                val detail = line.substring(colonIdx + 1).trim()
+                                ActionTraceEntry(phase, detail)
+                            } else null
+                        }
+                        if (entries.isNotEmpty()) {
+                            parsedActionTrace = ActionTrace(title = "Restored Trace", entries = entries)
+                        }
+                    }
+                }
+                
+                ChatMessage(displayMessage, turn.role == ConversationRole.USER, image, audio, parsedActionTrace)
             }
         } else {
             _chatMessages.value = emptyList()
@@ -1488,8 +1527,10 @@ class ChatViewModel(
         llmBackend?.close()
         llmBackend = created.backend
         if (created.backend is LlamaCppBackend) {
+            _isInitializing.value = true
             viewModelScope.launch(Dispatchers.IO) {
                 created.backend.initialize()
+                _isInitializing.value = false
             }
         }
         if (persistConversation) {
@@ -1891,6 +1932,21 @@ class ChatViewModel(
     }
 
     private suspend fun executeToolCallInternal(appContext: Context, toolCall: ToolCall): ToolResult {
+        val destructiveTools = setOf("delete_file", "write_file", "move_file", "rename_file", "create_archive", "add_to_archive", "remove_from_archive")
+        if (toolCall.toolName in destructiveTools) {
+            val deferred = CompletableDeferred<Boolean>()
+            pendingToolApprovalDeferred = deferred
+            _pendingToolApproval.value = toolCall
+            val allowed = deferred.await()
+            if (!allowed) {
+                return ToolResult(
+                    toolName = toolCall.toolName,
+                    output = "User denied permission to execute this tool.",
+                    isError = true
+                )
+            }
+        }
+        
         val tool = ToolRegistry.getTool(toolCall.toolName)
         if (tool == null || !tool.isAvailable) {
             return ToolResult(

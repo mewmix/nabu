@@ -207,7 +207,7 @@ object GlaiveBridge {
             ),
             Tool(
                 name = "read_file",
-                description = "Read the content of a text file.",
+                description = "Read the content of a file (Max 1MB).",
                 parameters = mapOf("path" to "The file path to read.")
             ),
             Tool(
@@ -232,6 +232,100 @@ object GlaiveBridge {
                     "root_path" to "Root directory to search under.",
                     "query" to "Name fragment or search query.",
                     "page" to "Optional page number (default 1, 20 results per page)."
+                )
+            ),
+            Tool(
+                name = "copy_file",
+                description = "Copy a file or directory to a destination directory on Android shared storage.",
+                parameters = mapOf(
+                    "source_path" to "Absolute Android path to the source file or directory.",
+                    "destination_dir" to "Absolute Android directory path where the source should be copied."
+                )
+            ),
+            Tool(
+                name = "move_file",
+                description = "Move a file or directory to a destination directory.",
+                parameters = mapOf(
+                    "source_path" to "Absolute Android path to the source file or directory.",
+                    "destination_dir" to "Absolute Android directory path where the source should be moved."
+                )
+            ),
+            Tool(
+                name = "rename_file",
+                description = "Rename a file or directory.",
+                parameters = mapOf(
+                    "path" to "Absolute Android path to the file or directory.",
+                    "new_name" to "New name for the file or directory (no slashes)."
+                )
+            ),
+            Tool(
+                name = "create_file",
+                description = "Create a new file.",
+                parameters = mapOf(
+                    "parent_path" to "Absolute Android path to the parent directory.",
+                    "name" to "Name of the new file.",
+                    "content" to "Text content to write to the file."
+                )
+            ),
+            Tool(
+                name = "get_file_info",
+                description = "Get metadata for a file or directory.",
+                parameters = mapOf("path" to "Absolute Android path to the file or directory.")
+            ),
+            Tool(
+                name = "list_archive",
+                description = "List contents of an archive (zip, tar, etc).",
+                parameters = mapOf(
+                    "path" to "Absolute Android path to the archive file.",
+                    "internal_path" to "Internal path within the archive to list."
+                )
+            ),
+            Tool(
+                name = "create_archive",
+                description = "Create an archive from multiple source paths.",
+                parameters = mapOf(
+                    "source_paths" to "JSON array of absolute Android paths to include in the archive.",
+                    "destination_path" to "Absolute Android path for the output archive file."
+                )
+            ),
+            Tool(
+                name = "extract_archive",
+                description = "Extract an archive to a destination directory.",
+                parameters = mapOf(
+                    "path" to "Absolute Android path to the archive file.",
+                    "destination_dir" to "Absolute Android path to the destination directory.",
+                    "entry_paths" to "Optional JSON array of specific internal paths to extract."
+                )
+            ),
+            Tool(
+                name = "add_to_archive",
+                description = "Add files to an existing archive.",
+                parameters = mapOf(
+                    "archive_path" to "Absolute Android path to the archive file.",
+                    "source_paths" to "JSON array of absolute Android paths to add to the archive.",
+                    "parent_path" to "Internal parent path in the archive where files should be added."
+                )
+            ),
+            Tool(
+                name = "remove_from_archive",
+                description = "Remove files from an existing archive.",
+                parameters = mapOf(
+                    "archive_path" to "Absolute Android path to the archive file.",
+                    "entry_paths" to "JSON array of internal paths to remove from the archive."
+                )
+            ),
+            Tool(
+                name = "take_screenshot",
+                description = "Take a screenshot of the device screen.",
+                parameters = mapOf(
+                    "path" to "Absolute Android path to save the screenshot PNG."
+                )
+            ),
+            Tool(
+                name = "read_screen",
+                description = "Dump the active window UI hierarchy to an XML file.",
+                parameters = mapOf(
+                    "path" to "Absolute Android path to save the XML dump."
                 )
             )
         )

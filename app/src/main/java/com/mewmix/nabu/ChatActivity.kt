@@ -21,8 +21,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -177,11 +184,21 @@ class ChatActivity : ComponentActivity() {
 
         setContent {
             NabuTheme {
-                ChatScreen(
-                    viewModel = viewModel,
-                    initialMessage = initialPrompt.orEmpty(),
-                    startVoice = startVoice
-                )
+                val isInitializing by viewModel.isInitializing.collectAsState()
+                
+                if (isInitializing) {
+                    ChatModelPickerLoading(
+                        model = model,
+                        onCancel = { finish() }
+                    )
+                } else {
+                    ChatScreen(
+                        viewModel = viewModel,
+                        initialMessage = initialPrompt.orEmpty(),
+                        startVoice = startVoice
+                    )
+                }
+                
                 if (SettingsManager.isBenchmark(this@ChatActivity)) {
                     PerfHud.Overlay()
                 }
@@ -339,6 +356,61 @@ private fun ChatModelPicker(
             BrutalButton(
                 onClick = onCancel,
                 modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Cancel")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatModelPickerLoading(
+    model: Model,
+    onCancel: () -> Unit
+) {
+    BackHandler(onBack = onCancel)
+    PanelBox(
+        title = "Loading Runtime",
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Initializing ${model.name}",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            val estimateText = if (model.name.contains("gemma", ignoreCase = true)) {
+                "Loading runtime (Est. ~25s)..."
+            } else {
+                "Loading runtime..."
+            }
+            
+            Text(
+                text = estimateText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(0.8f),
+                color = MaterialTheme.colorScheme.tertiary,
+                trackColor = MaterialTheme.colorScheme.outline
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            BrutalButton(
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth(0.5f)
             ) {
                 Text("Cancel")
             }
