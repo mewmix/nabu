@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.content.Intent
+import android.provider.Settings
+import android.content.ComponentName
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +30,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.mewmix.nabu.tools.GlaiveBridge
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalButtonText
@@ -56,47 +60,62 @@ fun OptionalPermissionsSection(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
     val notificationPermission = optionalNotificationPermission()
     val contactsPermission = optionalContactsPermission()
     val mediaPermission = optionalMediaPermission()
     val microphonePermission = optionalMicrophonePermission()
 
-    var refreshToken by remember { mutableStateOf(0) }
-    val status = remember(refreshToken) {
-        PermissionReviewStatus.from(
-            context = context,
-            notificationPermission = notificationPermission,
-            contactsPermission = contactsPermission,
-            mediaPermission = mediaPermission,
-            microphonePermission = microphonePermission
+    val glaiveInstalled = remember { GlaiveBridge.isInstalled(context) }
+    
+    var status by remember {
+        mutableStateOf(
+            PermissionReviewStatus.from(
+                context,
+                notificationPermission,
+                contactsPermission,
+                mediaPermission,
+                microphonePermission,
+                glaiveInstalled
+            )
         )
     }
 
     val notificationLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission()
     ) {
-        refreshToken++
+        status = PermissionReviewStatus.from(context, notificationPermission, contactsPermission, mediaPermission, microphonePermission, glaiveInstalled)
     }
+
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission()
     ) {
-        refreshToken++
+        status = PermissionReviewStatus.from(context, notificationPermission, contactsPermission, mediaPermission, microphonePermission, glaiveInstalled)
     }
+
     val mediaPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission()
     ) {
-        refreshToken++
+        status = PermissionReviewStatus.from(context, notificationPermission, contactsPermission, mediaPermission, microphonePermission, glaiveInstalled)
     }
+
     val microphonePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission()
     ) {
-        refreshToken++
+        status = PermissionReviewStatus.from(context, notificationPermission, contactsPermission, mediaPermission, microphonePermission, glaiveInstalled)
     }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                refreshToken++
+                status = PermissionReviewStatus.from(
+                    context,
+                    notificationPermission,
+                    contactsPermission,
+                    mediaPermission,
+                    microphonePermission,
+                    glaiveInstalled
+                )
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -158,6 +177,20 @@ fun OptionalPermissionsSection(
                 microphonePermission?.let(microphonePermissionLauncher::launch)
             }
         )
+
+        if (glaiveInstalled) {
+            PermissionRow(
+                title = "Glaive Screen Control",
+                description = "Enable Glaive in Android Accessibility Settings so Nabu can see and interact with your screen.",
+                statusLabel = status.glaiveA11yStatus,
+                actionLabel = if (status.glaiveA11yGranted) "Enabled" else "Enable",
+                enabled = !status.glaiveA11yGranted,
+                onClick = {
+                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    context.startActivity(intent)
+                }
+            )
+        }
 
         Text(
             text = "Missing permissions do not block startup. They only limit the related features.",
@@ -226,10 +259,12 @@ private data class PermissionReviewStatus(
     val contactsGranted: Boolean,
     val mediaGranted: Boolean,
     val microphoneGranted: Boolean,
+    val glaiveA11yGranted: Boolean,
     val notificationStatus: String,
     val contactsStatus: String,
     val mediaStatus: String,
-    val microphoneStatus: String
+    val microphoneStatus: String,
+    val glaiveA11yStatus: String
 ) {
     companion object {
         fun from(
@@ -237,7 +272,8 @@ private data class PermissionReviewStatus(
             notificationPermission: String?,
             contactsPermission: String?,
             mediaPermission: String?,
-            microphonePermission: String?
+            microphonePermission: String?,
+            glaiveInstalled: Boolean
         ): PermissionReviewStatus {
             val notificationsGranted = notificationPermission == null ||
                 ContextCompat.checkSelfPermission(context, notificationPermission) == PackageManager.PERMISSION_GRANTED
@@ -248,11 +284,18 @@ private data class PermissionReviewStatus(
             val microphoneGranted = microphonePermission == null ||
                 ContextCompat.checkSelfPermission(context, microphonePermission) == PackageManager.PERMISSION_GRANTED
 
+            var glaiveA11yGranted = false
+            if (glaiveInstalled) {
+                val enabledServices = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+                glaiveA11yGranted = enabledServices?.contains("com.mewmix.glaive/com.mewmix.glaive.core.GlaiveAccessibilityService") == true
+            }
+
             return PermissionReviewStatus(
                 notificationsGranted = notificationsGranted,
                 contactsGranted = contactsGranted,
                 mediaGranted = mediaGranted,
                 microphoneGranted = microphoneGranted,
+                glaiveA11yGranted = glaiveA11yGranted,
                 notificationStatus = if (notificationPermission == null) {
                     "Not required on this Android version."
                 } else if (notificationsGranted) {
@@ -280,6 +323,13 @@ private data class PermissionReviewStatus(
                     "Granted."
                 } else {
                     "Not granted."
+                },
+                glaiveA11yStatus = if (!glaiveInstalled) {
+                    "Glaive not installed."
+                } else if (glaiveA11yGranted) {
+                    "Enabled."
+                } else {
+                    "Requires Accessibility Service to be enabled."
                 }
             )
         }
