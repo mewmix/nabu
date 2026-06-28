@@ -10,7 +10,7 @@ import com.mewmix.nabu.utils.SettingsManager
 import java.io.File
 
 object LlmBackendFactory {
-    const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
+    const val DEFAULT_MAX_CONTEXT_TOKENS = 4096
 
     data class CreatedBackend(
         val backend: LlmBackend,

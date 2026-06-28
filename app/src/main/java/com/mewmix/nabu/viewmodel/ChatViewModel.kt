@@ -2160,17 +2160,14 @@ class ChatViewModel(
 
     private fun estimateTokenCount(text: String): Int {
         if (text.isBlank()) return 0
-        return TOKEN_REGEX.findAll(text).count()
+        return (text.length / 4.0).toInt().coerceAtLeast(1)
     }
 
     private fun takeLastTokens(text: String, tokenLimit: Int): String {
         if (tokenLimit <= 0) return ""
-        val tokens = TOKEN_REGEX.findAll(text).map { it.value }.toList()
-        if (tokens.isEmpty()) return ""
-        if (tokens.size <= tokenLimit) {
-            return text.trim()
-        }
-        return tokens.takeLast(tokenLimit).joinToString(" ")
+        val charLimit = tokenLimit * 4
+        if (text.length <= charLimit) return text.trim()
+        return text.substring(text.length - charLimit).trim()
     }
 
     private fun processSentences(builder: StringBuilder, done: Boolean) {
