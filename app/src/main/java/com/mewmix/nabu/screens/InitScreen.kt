@@ -95,7 +95,6 @@ fun InitScreen(
             }
         }
     }
-    val isDownloading = kokoroDownloading || progressMap.isNotEmpty()
 
     PanelBox(
         title = "Welcome",
@@ -218,7 +217,7 @@ fun InitScreen(
                                     modelDownloader.downloadKokoroDefault()
                                 }
                             },
-                            enabled = !kokoroDownloaded && !isDownloading
+                            enabled = !kokoroDownloaded 
                         ) {
                             BrutalButtonText(kokoroButtonLabel)
                         }
@@ -275,7 +274,7 @@ fun InitScreen(
                                         modelDownloader.downloadModel(model)
                                     }
                                 },
-                                enabled = !model.isDownloaded && !isDownloading
+                                enabled = !model.isDownloaded 
                             ) {
                                 BrutalButtonText(label)
                             }
@@ -292,8 +291,7 @@ fun InitScreen(
                     }
                     SettingsManager.setInitComplete(context, true)
                     onComplete()
-                },
-                enabled = !isDownloading
+                }
             ) {
                 BrutalButtonText("Continue")
             }
