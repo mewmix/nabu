@@ -292,11 +292,35 @@ class UiAutomationOrchestrator(
         private const val INITIAL_OBSERVATION_DELAY_MS = 500L
 
         private val PLANNER_SYSTEM_PROMPT = """
-            You are an Android UI automation planner. Return only one valid JSON object.
+            You are an Android UI automation planner. Return only one valid JSON object matching this schema:
+            {
+              "goal": "the user's goal",
+              "screen_id": "the exact screen_id provided",
+              "steps": [
+                {
+                  "action": "tap|long_press|type_text|scroll|wait|ask_user|done|assert",
+                  "target": {
+                    "element_id": "optional element id",
+                    "fallback_bounds": [0, 0, 100, 100]
+                  },
+                  "text": "text to type (if action=type_text)",
+                  "direction": "UP|DOWN|LEFT|RIGHT (if action=scroll)",
+                  "ms": 1000,
+                  "reason": "reason to ask user (if action=ask_user)",
+                  "summary": "summary of completion (if action=done)",
+                  "condition": {
+                    "element_id": "optional id",
+                    "text_contains": "optional text",
+                    "checked": true
+                  }
+                }
+              ]
+            }
+
             Use the supplied goal, screenshot when present, and indexed UI elements.
             The screen_id must exactly match the supplied screen_id.
-            Emit exactly one non-assert action and optionally one trailing assert action.
-            Prefer element_id. Use fallback_bounds only when no reliable element exists.
+            Emit exactly one non-assert action and optionally one trailing assert action in the steps array.
+            Prefer element_id. Use fallback_bounds (exactly 4 integers: left, top, right, bottom) only when no reliable element exists.
             Supported actions: tap, long_press, type_text, press_back, press_home, scroll, wait, ask_user, done, assert.
             Use done with a short summary when the goal is already satisfied.
             Use ask_user when confidence is low or the target is ambiguous.
