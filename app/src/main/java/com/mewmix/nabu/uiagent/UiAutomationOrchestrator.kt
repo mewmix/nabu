@@ -77,7 +77,7 @@ class UiAutomationOrchestrator(
 
             onProgress("Verify ${actionIndex + 1}", "Observing the resulting screen")
             val next = observe() ?: return failure("UI action ran, but the resulting screen could not be observed.")
-            val assertion = actionPlan.steps.filterIsInstance<UiActionStep.Assert>().singleOrNull()?.condition
+            val assertion = actionPlan.steps.filterIsInstance<UiActionStep.Assert>().lastOrNull()?.condition
             if (assertion != null && assertionMatches(assertion, next.screen)) {
                 return success("Completed UI goal: $goal")
             }

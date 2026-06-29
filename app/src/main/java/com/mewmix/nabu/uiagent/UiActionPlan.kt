@@ -72,11 +72,9 @@ object UiActionPlanParser {
         val rawSteps = root.optJsonArray("steps")
             ?: root.optJsonObject("steps")?.let { JsonArray().apply { add(it) } }
             ?: error("Missing steps array.")
-        require(rawSteps.size() in 1..2) { "A plan must contain one action and at most one assertion." }
+        require(rawSteps.size() > 0) { "A plan must contain at least one step." }
         val steps = rawSteps.map { parseStep(it.asJsonObject) }
-        require(steps.count { it is UiActionStep.Assert } <= 1) { "A plan may contain at most one assertion." }
-        require(steps.count { it !is UiActionStep.Assert } == 1) { "A plan must contain exactly one non-assert action." }
-        require(steps.last() is UiActionStep.Assert || steps.size == 1) { "An assertion must be the final step." }
+        require(steps.any { it !is UiActionStep.Assert }) { "A plan must contain at least one non-assert action." }
         return UiActionPlan(goal, screenId, steps)
     }
 
