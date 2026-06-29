@@ -510,6 +510,35 @@ class ActionToolsTest {
     }
 
     @Test
+    fun rankAppCandidatesReturnsRelatedAppsForAmbiguousName() {
+        val candidates = listOf(
+            DeviceAction.AppCandidate("YouTube Studio", "com.google.android.apps.youtube.creator"),
+            DeviceAction.AppCandidate("YouTube", "com.google.android.youtube"),
+            DeviceAction.AppCandidate("YouTube Kids", "com.google.android.apps.youtube.kids"),
+            DeviceAction.AppCandidate("YouTube TV", "com.google.android.youtube.tv"),
+            DeviceAction.AppCandidate("Calendar", "com.google.android.calendar")
+        )
+
+        val matches = DeviceAction.rankAppCandidates("youtube", candidates)
+
+        assertEquals("YouTube", matches.first().label)
+        assertEquals(4, matches.size)
+        assertFalse(matches.any { it.label == "Calendar" })
+    }
+
+    @Test
+    fun rankAppCandidatesToleratesMinorTypo() {
+        val candidates = listOf(
+            DeviceAction.AppCandidate("Spotify", "com.spotify.music"),
+            DeviceAction.AppCandidate("Settings", "com.android.settings")
+        )
+
+        val matches = DeviceAction.rankAppCandidates("spotfy", candidates)
+
+        assertEquals(listOf("com.spotify.music"), matches.map { it.packageName })
+    }
+
+    @Test
     fun execute_sendSmsOpensComposer() {
         DeviceAction.canResolveIntent = { _, _ -> true }
         var launchedIntent: Intent? = null

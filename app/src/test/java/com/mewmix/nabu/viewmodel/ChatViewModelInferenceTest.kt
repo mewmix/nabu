@@ -211,6 +211,24 @@ class ChatViewModelInferenceTest {
     }
 
     @Test
+    fun inferToolCallFromModelFailure_parsesNaturalAppLaunch() {
+        assertEquals(
+            ToolCall("open_app", mapOf("app_name" to "YouTube")),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "open YouTube",
+                availableToolNames = setOf("open_app")
+            )
+        )
+        assertEquals(
+            ToolCall("launch_package", mapOf("app_name" to "YouTube Studio")),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "open application YouTube Studio",
+                availableToolNames = setOf("launch_package")
+            )
+        )
+    }
+
+    @Test
     fun inferToolCallFromModelFailure_parsesSendSms() {
         val toolCall = ChatViewModel.inferToolCallFromModelFailure(
             userMessage = "send sms to 1234567890 saying hello from nabu",

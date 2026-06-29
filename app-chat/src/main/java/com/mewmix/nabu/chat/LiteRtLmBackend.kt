@@ -15,6 +15,7 @@ import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -392,7 +393,7 @@ class LiteRtLmBackend(
         val latestUserIndex = nonSystemMessages.indexOfLast { it.role == "user" }
         val initialMessages = nonSystemMessages
             .subList(0, latestUserIndex)
-            .mapNotNull(::toLiteRtLmHistoryMessage)
+            .mapNotNull(::toLiteRtLmMessage)
 
         val config = ConversationConfig(
             systemInstruction = systemPrompt.takeIf { it.isNotBlank() }?.let(Contents.Companion::of),
@@ -436,17 +437,6 @@ class LiteRtLmBackend(
         }
     }
 
-    private fun toLiteRtLmHistoryMessage(message: LlmMessage): Message? {
-        val content = message.content.trim()
-        if (content.isBlank()) return null
-
-        return when (message.role) {
-            "model" -> Message.Companion.model(content)
-            "user" -> Message.Companion.user(content)
-            else -> null
-        }
-    }
-
     private data class PreparedConversationInput(
         val config: ConversationConfig,
         val prompt: String,
@@ -461,7 +451,12 @@ class LiteRtLmBackend(
     }
 
     private fun LlmAudioInput.toLiteRtLmContent(): Content {
-        DebugLogger.log("LiteRtLmBackend using inline audio bytes name=$displayName bytes=${bytes.size} path=${absolutePath.orEmpty()}")
+        val localPath = absolutePath?.takeIf { it.isNotBlank() && File(it).isFile }
+        if (localPath != null) {
+            DebugLogger.log("LiteRtLmBackend using audio file name=$displayName bytes=${bytes.size} path=$localPath")
+            return Content.AudioFile(localPath)
+        }
+        DebugLogger.log("LiteRtLmBackend using inline audio bytes name=$displayName bytes=${bytes.size}")
         return Content.AudioBytes(bytes)
     }
 

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -112,6 +113,7 @@ fun ChatScreen(
     val pendingImage by viewModel.pendingImage.collectAsState()
     val pendingAudio by viewModel.pendingAudioInput.collectAsState()
     val pendingToolApproval by viewModel.pendingToolApproval.collectAsState()
+    val pendingAppSelection by viewModel.pendingAppSelection.collectAsState()
     val activeModelSupportsAudio = ModelCapabilityResolver.supportsAudioInput(context, activeModel)
     val clipboardManager = LocalClipboardManager.current
     val voiceRecorder = remember { VoiceAttachmentRecorder(context.applicationContext) }
@@ -284,6 +286,61 @@ fun ChatScreen(
             dismissButton = {
                 BrutalButton(onClick = { viewModel.resolveToolApproval(false) }) {
                     Text("Deny")
+                }
+            }
+        )
+    }
+
+    pendingAppSelection?.let { request ->
+        AlertDialog(
+            onDismissRequest = { viewModel.resolveAppSelection(null) },
+            title = { Text("Choose App") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Multiple apps match \"${request.query}\".",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        itemsIndexed(
+                            items = request.candidates,
+                            key = { _, candidate -> candidate.packageName }
+                        ) { _, candidate ->
+                            BrutalButton(
+                                onClick = { viewModel.resolveAppSelection(candidate.packageName) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = candidate.label,
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                    Text(
+                                        text = candidate.packageName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                BrutalButton(onClick = { viewModel.resolveAppSelection(null) }) {
+                    Text("Cancel")
                 }
             }
         )

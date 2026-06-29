@@ -53,6 +53,7 @@ import com.mewmix.nabu.tools.ToolCallProtocol
 import com.mewmix.nabu.tools.ToolRegistry
 import com.mewmix.nabu.tools.ToolResult
 import com.mewmix.nabu.actions.ActionTools
+import com.mewmix.nabu.actions.DeviceAction
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -78,6 +79,11 @@ enum class ChatContextMode(val storageValue: String) {
             entries.firstOrNull { it.storageValue == value } ?: LONG_CONTEXT
     }
 }
+
+data class AppSelectionRequest(
+    val query: String,
+    val candidates: List<DeviceAction.AppCandidate>
+)
 
 class ChatViewModel(
     private val context: Context,
@@ -468,7 +474,7 @@ class ChatViewModel(
             }
 
             if ("open_app" in availableToolNames || "launch_package" in availableToolNames) {
-                Regex("""(?is)^\s*(?:open\s+app|launch\s+package)\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1)?.trim()
+                Regex("""(?is)^\s*(?:open|launch)(?:\s+(?:app|application|package))?\s+(.+?)\s*$""").find(normalized)?.groupValues?.getOrNull(1)?.trim()
                     ?.takeIf { it.isNotBlank() }
                     ?.let { appName ->
                         val toolName = if ("open_app" in availableToolNames) "open_app" else "launch_package"
@@ -866,9 +872,19 @@ class ChatViewModel(
     val pendingToolApproval = _pendingToolApproval.asStateFlow()
     private var pendingToolApprovalDeferred: CompletableDeferred<Boolean>? = null
 
+    private val _pendingAppSelection = MutableStateFlow<AppSelectionRequest?>(null)
+    val pendingAppSelection = _pendingAppSelection.asStateFlow()
+    private var pendingAppSelectionDeferred: CompletableDeferred<String?>? = null
+
     fun resolveToolApproval(allow: Boolean) {
         pendingToolApprovalDeferred?.complete(allow)
         _pendingToolApproval.value = null
+    }
+
+    fun resolveAppSelection(packageName: String?) {
+        pendingAppSelectionDeferred?.complete(packageName)
+        pendingAppSelectionDeferred = null
+        _pendingAppSelection.value = null
     }
 
     // Conversation State
@@ -1932,42 +1948,73 @@ class ChatViewModel(
     }
 
     private suspend fun executeToolCallInternal(appContext: Context, toolCall: ToolCall): ToolResult {
+        var effectiveToolCall = toolCall
+        if (toolCall.toolName == "open_app" || toolCall.toolName == "launch_package") {
+            val packageName = toolCall.arguments["package_name"]?.toString()?.trim().orEmpty()
+            val appName = toolCall.arguments["app_name"]?.toString()?.trim().orEmpty()
+            if (packageName.isBlank() && appName.isNotBlank()) {
+                val candidates = DeviceAction.findAppCandidates(appContext, appName)
+                val selectedPackage = when (candidates.size) {
+                    0 -> null
+                    1 -> candidates.first().packageName
+                    else -> {
+                        val deferred = CompletableDeferred<String?>()
+                        pendingAppSelectionDeferred = deferred
+                        _pendingAppSelection.value = AppSelectionRequest(appName, candidates)
+                        deferred.await()
+                    }
+                }
+                if (selectedPackage == null && candidates.size > 1) {
+                    return ToolResult(
+                        toolName = toolCall.toolName,
+                        output = "User canceled app selection for '$appName'.",
+                        isError = true
+                    )
+                }
+                if (selectedPackage != null) {
+                    effectiveToolCall = toolCall.copy(
+                        arguments = toolCall.arguments + ("package_name" to selectedPackage)
+                    )
+                }
+            }
+        }
+
         val destructiveTools = setOf("delete_file", "write_file", "move_file", "rename_file", "create_archive", "add_to_archive", "remove_from_archive")
-        if (toolCall.toolName in destructiveTools) {
+        if (effectiveToolCall.toolName in destructiveTools) {
             val deferred = CompletableDeferred<Boolean>()
             pendingToolApprovalDeferred = deferred
-            _pendingToolApproval.value = toolCall
+            _pendingToolApproval.value = effectiveToolCall
             val allowed = deferred.await()
             if (!allowed) {
                 return ToolResult(
-                    toolName = toolCall.toolName,
+                    toolName = effectiveToolCall.toolName,
                     output = "User denied permission to execute this tool.",
                     isError = true
                 )
             }
         }
         
-        val tool = ToolRegistry.getTool(toolCall.toolName)
+        val tool = ToolRegistry.getTool(effectiveToolCall.toolName)
         if (tool == null || !tool.isAvailable) {
             return ToolResult(
-                toolName = toolCall.toolName,
-                output = "Tool '${toolCall.toolName}' is unavailable.",
+                toolName = effectiveToolCall.toolName,
+                output = "Tool '${effectiveToolCall.toolName}' is unavailable.",
                 isError = true
             )
         }
-        ActionTools.execute(appContext, toolCall)?.let { return it }
+        ActionTools.execute(appContext, effectiveToolCall)?.let { return it }
         if (!GlaiveBridge.isInstalled(appContext)) {
             return ToolResult(
-                toolName = toolCall.toolName,
+                toolName = effectiveToolCall.toolName,
                 output = "Glaive is not installed.",
                 isError = true
             )
         }
         val baseResult = withTimeoutOrNull(TOOL_EXECUTION_TIMEOUT_MS) {
-            GlaiveBridge.executeTool(appContext, toolCall)
+            GlaiveBridge.executeTool(appContext, effectiveToolCall)
         } ?: ToolResult(
-            toolName = toolCall.toolName,
-            output = "Tool '${toolCall.toolName}' timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s.",
+            toolName = effectiveToolCall.toolName,
+            output = "Tool '${effectiveToolCall.toolName}' timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s.",
             isError = true
         )
 

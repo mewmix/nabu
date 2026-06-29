@@ -21,6 +21,11 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 object DeviceAction {
+    data class AppCandidate(
+        val label: String,
+        val packageName: String
+    )
+
     private data class ResolvedRecipient(
         val phoneNumber: String,
         val displayName: String? = null
@@ -40,8 +45,11 @@ object DeviceAction {
     }
 
     internal var appNameResolver: (Context, String) -> String? = { context, appName ->
-        findLaunchablePackageForAppName(context, appName)
+        findLaunchableApps(context, appName).firstOrNull()?.packageName
     }
+
+    internal var appCandidateResolver: (Context, String) -> List<AppCandidate> =
+        { context, appName -> findLaunchableApps(context, appName) }
 
     internal var appLabelLoader: (Context, String) -> String? = { context, packageName ->
         loadAppLabel(context, packageName)
@@ -84,7 +92,8 @@ object DeviceAction {
         launchIntentForPackageResolver = { context, packageName ->
             context.packageManager.getLaunchIntentForPackage(packageName)
         }
-        appNameResolver = { context, appName -> findLaunchablePackageForAppName(context, appName) }
+        appNameResolver = { context, appName -> findLaunchableApps(context, appName).firstOrNull()?.packageName }
+        appCandidateResolver = { context, appName -> findLaunchableApps(context, appName) }
         appLabelLoader = { context, packageName -> loadAppLabel(context, packageName) }
         activityLauncher = { context, intent -> context.startActivity(intent) }
         mediaKeyDispatcher = { context, keyCode ->
@@ -118,8 +127,9 @@ object DeviceAction {
         val resolvedPackage = when {
             packageName.isNotBlank() -> packageName
             appName.isNotBlank() -> appNameResolver(context, appName)
-            else -> null
-        } ?: return ActionResult("Missing required parameter: package_name or app_name", true)
+                ?: return ActionResult("No launchable app found for '$appName'.", true)
+            else -> return ActionResult("Missing required parameter: package_name or app_name", true)
+        }
 
         val launchIntent = launchIntentForPackageResolver(context, resolvedPackage)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -134,6 +144,9 @@ object DeviceAction {
             "Opened $label."
         }
     }
+
+    fun findAppCandidates(context: Context, appName: String): List<AppCandidate> =
+        appCandidateResolver(context, appName)
 
     fun openUrl(context: Context, url: String): ActionResult {
         if (url.isBlank()) return ActionResult("Missing required parameter: url", true)
@@ -471,17 +484,78 @@ object DeviceAction {
         else -> "music"
     }
 
-    private fun findLaunchablePackageForAppName(context: Context, appName: String): String? {
+    private fun findLaunchableApps(context: Context, appName: String): List<AppCandidate> {
         val packageManager = context.packageManager
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val normalizedQuery = appName.trim().lowercase()
-        val matches = packageManager.queryIntentActivities(launcherIntent, 0)
-        return matches.firstOrNull { resolveInfo ->
-            resolveInfo.loadLabel(packageManager)?.toString()?.trim()?.lowercase() == normalizedQuery
-        }?.activityInfo?.packageName
-            ?: matches.firstOrNull { resolveInfo ->
-                resolveInfo.loadLabel(packageManager)?.toString()?.trim()?.lowercase()?.contains(normalizedQuery) == true
-            }?.activityInfo?.packageName
+        val query = normalizeAppName(appName)
+        if (query.isBlank()) return emptyList()
+
+        val installedApps = packageManager.queryIntentActivities(launcherIntent, 0)
+            .mapNotNull { resolveInfo ->
+                val packageName = resolveInfo.activityInfo?.packageName ?: return@mapNotNull null
+                val label = resolveInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+                if (label.isBlank()) return@mapNotNull null
+                AppCandidate(label, packageName)
+            }
+        return rankAppCandidates(query, installedApps)
+    }
+
+    internal fun rankAppCandidates(appName: String, candidates: List<AppCandidate>): List<AppCandidate> {
+        val query = normalizeAppName(appName)
+        if (query.isBlank()) return emptyList()
+        return candidates
+            .mapNotNull { candidate ->
+                val score = appMatchScore(
+                    query,
+                    normalizeAppName(candidate.label),
+                    candidate.packageName.lowercase()
+                )
+                if (score <= 0) null else score to candidate
+            }
+            .distinctBy { it.second.packageName }
+            .sortedWith(compareByDescending<Pair<Int, AppCandidate>> { it.first }
+                .thenBy { it.second.label.lowercase() })
+            .take(8)
+            .map { it.second }
+    }
+
+    private fun normalizeAppName(value: String): String = value
+        .trim()
+        .lowercase()
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .trim()
+
+    private fun appMatchScore(query: String, label: String, packageName: String): Int {
+        if (label == query) return 1_000
+        if (label.startsWith("$query ")) return 900 - (label.length - query.length)
+        if (label.split(' ').any { it == query }) return 850 - (label.length - query.length).coerceAtLeast(0)
+        if (label.contains(query)) return 750 - (label.length - query.length).coerceAtLeast(0)
+        if (query.contains(label) && label.length >= 3) return 650 - (query.length - label.length)
+        if (packageName.contains(query.replace(" ", ""))) return 500
+
+        val distance = levenshteinDistance(query, label)
+        val tolerance = (query.length / 3).coerceIn(1, 3)
+        return if (distance <= tolerance) 600 - distance * 25 else 0
+    }
+
+    private fun levenshteinDistance(left: String, right: String): Int {
+        if (left == right) return 0
+        if (left.isEmpty()) return right.length
+        if (right.isEmpty()) return left.length
+        var previous = IntArray(right.length + 1) { it }
+        for (leftIndex in left.indices) {
+            val current = IntArray(right.length + 1)
+            current[0] = leftIndex + 1
+            for (rightIndex in right.indices) {
+                current[rightIndex + 1] = minOf(
+                    current[rightIndex] + 1,
+                    previous[rightIndex + 1] + 1,
+                    previous[rightIndex] + if (left[leftIndex] == right[rightIndex]) 0 else 1
+                )
+            }
+            previous = current
+        }
+        return previous[right.length]
     }
 
     private fun loadAppLabel(context: Context, packageName: String): String? {
