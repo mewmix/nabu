@@ -69,7 +69,9 @@ object UiActionPlanParser {
         val root = JsonParser.parseString(rawJson).asJsonObject
         val goal = root.requiredString("goal")
         val screenId = root.requiredString("screen_id")
-        val rawSteps = root.getAsJsonArray("steps") ?: error("Missing steps array.")
+        val rawSteps = root.optJsonArray("steps")
+            ?: root.optJsonObject("steps")?.let { JsonArray().apply { add(it) } }
+            ?: error("Missing steps array.")
         require(rawSteps.size() in 1..2) { "A plan must contain one action and at most one assertion." }
         val steps = rawSteps.map { parseStep(it.asJsonObject) }
         require(steps.count { it is UiActionStep.Assert } <= 1) { "A plan may contain at most one assertion." }
@@ -79,45 +81,53 @@ object UiActionPlanParser {
     }
 
     private fun parseStep(json: JsonObject): UiActionStep = when (json.requiredString("action")) {
-        "tap" -> UiActionStep.Tap(parseTarget(json.getAsJsonObject("target")))
-        "long_press" -> UiActionStep.LongPress(parseTarget(json.getAsJsonObject("target")))
+        "tap" -> UiActionStep.Tap(parseTarget(json.optJsonObject("target")) ?: error("Missing or invalid target."))
+        "long_press" -> UiActionStep.LongPress(parseTarget(json.optJsonObject("target")) ?: error("Missing or invalid target."))
         "type_text" -> UiActionStep.TypeText(
             text = json.requiredString("text"),
-            target = json.getAsJsonObject("target")?.let(::parseTarget)
+            target = parseTarget(json.optJsonObject("target"))
         )
         "press_back" -> UiActionStep.PressBack
         "press_home" -> UiActionStep.PressHome
         "scroll" -> UiActionStep.Scroll(
             direction = ScrollDirection.valueOf(json.requiredString("direction").uppercase()),
-            target = json.getAsJsonObject("target")?.let(::parseTarget)
+            target = parseTarget(json.optJsonObject("target"))
         )
-        "wait" -> UiActionStep.Wait(json.get("ms")?.asLong ?: error("Missing ms."))
-        "assert" -> UiActionStep.Assert(parseAssertion(json.getAsJsonObject("condition")))
+        "wait" -> UiActionStep.Wait(json.optLong("ms") ?: error("Missing ms."))
+        "assert" -> UiActionStep.Assert(parseAssertion(json.optJsonObject("condition")) ?: error("Missing or invalid condition."))
         "ask_user" -> UiActionStep.AskUser(json.requiredString("reason"))
         "done" -> UiActionStep.Done(json.requiredString("summary"))
         else -> error("Unsupported UI action '${json.get("action")?.asString.orEmpty()}'.")
     }
 
-    private fun parseTarget(json: JsonObject): UiTarget {
+    private fun parseTarget(json: JsonObject?): UiTarget? {
+        if (json == null) return null
         val elementId = json.optionalString("element_id")
-        val bounds = json.getAsJsonArray("fallback_bounds")?.toBounds()
-        require(elementId != null || bounds != null) { "A target requires element_id or fallback_bounds." }
+        val bounds = json.optJsonArray("fallback_bounds")?.toBounds()
+        if (elementId == null && bounds == null) return null
         return UiTarget(elementId, bounds)
     }
 
-    private fun parseAssertion(json: JsonObject): UiAssertion {
+    private fun parseAssertion(json: JsonObject?): UiAssertion? {
+        if (json == null) return null
         val elementId = json.optionalString("element_id")
         val textContains = json.optionalString("text_contains")
-        val checked = json.get("checked")?.asBoolean
-        require(elementId != null || textContains != null || checked != null) { "Assertion condition is empty." }
+        val checked = json.optBoolean("checked")
+        if (elementId == null && textContains == null && checked == null) return null
         return UiAssertion(elementId, textContains, checked)
     }
 
-    private fun JsonArray.toBounds(): UiBounds {
-        require(size() == 4) { "Bounds must contain four integers." }
-        return UiBounds(get(0).asInt, get(1).asInt, get(2).asInt, get(3).asInt).also {
-            require(it.isValid) { "Bounds are invalid." }
+    private fun JsonArray.toBounds(): UiBounds? {
+        val ints = mapNotNull {
+            if (it.isJsonPrimitive && it.asJsonPrimitive.isNumber) it.asInt
+            else if (it.isJsonPrimitive && it.asJsonPrimitive.isString) it.asString.toIntOrNull()
+            else null
         }
+        if (ints.size == 4) {
+            val bounds = UiBounds(ints[0], ints[1], ints[2], ints[3])
+            if (bounds.isValid) return bounds
+        }
+        return null
     }
 
     private fun JsonObject.requiredString(name: String): String =
@@ -125,4 +135,42 @@ object UiActionPlanParser {
 
     private fun JsonObject.optionalString(name: String): String? =
         get(name)?.takeUnless { it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun JsonObject.optJsonObject(name: String): JsonObject? {
+        val element = get(name) ?: return null
+        if (element.isJsonObject) return element.asJsonObject
+        if (element.isJsonPrimitive && element.asJsonPrimitive.isString) {
+            val str = element.asString.trim()
+            if (str.startsWith("{")) {
+                return runCatching { JsonParser.parseString(str).asJsonObject }.getOrNull()
+            }
+        }
+        return null
+    }
+
+    private fun JsonObject.optJsonArray(name: String): JsonArray? {
+        val element = get(name) ?: return null
+        if (element.isJsonArray) return element.asJsonArray
+        if (element.isJsonPrimitive && element.asJsonPrimitive.isString) {
+            val str = element.asString.trim()
+            if (str.startsWith("[")) {
+                return runCatching { JsonParser.parseString(str).asJsonArray }.getOrNull()
+            }
+        }
+        return null
+    }
+
+    private fun JsonObject.optBoolean(name: String): Boolean? {
+        val element = get(name) ?: return null
+        if (element.isJsonNull) return null
+        if (element.isJsonPrimitive && element.asJsonPrimitive.isBoolean) return element.asBoolean
+        return element.asString.equals("true", ignoreCase = true)
+    }
+
+    private fun JsonObject.optLong(name: String): Long? {
+        val element = get(name) ?: return null
+        if (element.isJsonNull) return null
+        if (element.isJsonPrimitive && element.asJsonPrimitive.isNumber) return element.asLong
+        return element.asString.toLongOrNull()
+    }
 }
