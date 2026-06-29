@@ -16,7 +16,8 @@ import java.io.File
 
 @Composable
 fun RuntimeStatusLine(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    ttsEnabled: Boolean = true
 ) {
     val context = LocalContext.current
     val ttsEngine = SettingsManager.getTtsEngine(context)
@@ -32,7 +33,9 @@ fun RuntimeStatusLine(
     val sopranoPartialDir = File(context.filesDir, "models/${sopranoModelId}_partial")
     val sopranoMissing = TtsModelValidator.missingFiles(sopranoModelId, sopranoDir, sopranoPartialDir)
 
-    val runtimeLabel = if (ttsEngine == "supertonic") {
+    val runtimeLabel = if (!ttsEnabled) {
+        "TTS OFF"
+    } else if (ttsEngine == "supertonic") {
         buildString {
             append("SUPERTONIC / CPU")
             supertonicModelLabel?.let { append(" / $it") }

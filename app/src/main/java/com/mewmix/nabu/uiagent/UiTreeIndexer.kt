@@ -15,11 +15,15 @@ object UiTreeIndexer {
         activityName: String? = null
     ): UiScreenState {
         require(xml.isNotBlank()) { "UI hierarchy XML is blank." }
+        require(!xml.contains("<!DOCTYPE", ignoreCase = true)) { "DOCTYPE is not allowed in UI hierarchy XML." }
+        require(!xml.contains("<!ENTITY", ignoreCase = true)) { "Entities are not allowed in UI hierarchy XML." }
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            isExpandEntityReferences = false
+            runCatching { isXIncludeAware = false }
+            setFeatureIfSupported("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeatureIfSupported("http://xml.org/sax/features/external-general-entities", false)
+            setFeatureIfSupported("http://xml.org/sax/features/external-parameter-entities", false)
         }
         val document = factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
         val indexed = mutableListOf<UiElement>()
@@ -92,7 +96,9 @@ object UiTreeIndexer {
             listOf(
                 resolvedPackage.orEmpty(),
                 activityName.orEmpty(),
-                indexed.joinToString("|") { it.id }
+                indexed.joinToString("|") {
+                    "${it.id}:${it.enabled}:${it.visible}:${it.checked}:${it.text.orEmpty()}"
+                }
             ).joinToString("\u001f")
         )
         return UiScreenState(screenId, resolvedPackage, activityName, indexed)
@@ -134,4 +140,8 @@ object UiTreeIndexer {
 
     private fun Element.booleanAttribute(name: String, default: Boolean = false): Boolean =
         attributeOrNull(name)?.toBooleanStrictOrNull() ?: default
+
+    private fun DocumentBuilderFactory.setFeatureIfSupported(name: String, value: Boolean) {
+        runCatching { setFeature(name, value) }
+    }
 }

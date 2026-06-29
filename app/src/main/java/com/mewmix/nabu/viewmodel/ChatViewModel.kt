@@ -54,9 +54,11 @@ import com.mewmix.nabu.tools.ToolRegistry
 import com.mewmix.nabu.tools.ToolResult
 import com.mewmix.nabu.actions.ActionTools
 import com.mewmix.nabu.actions.DeviceAction
+import com.mewmix.nabu.uiagent.UiAutomationOrchestrator
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -64,6 +66,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.io.File
@@ -83,6 +86,16 @@ enum class ChatContextMode(val storageValue: String) {
 data class AppSelectionRequest(
     val query: String,
     val candidates: List<DeviceAction.AppCandidate>
+)
+
+data class UiActionConfirmationRequest(val description: String)
+
+data class OrchestrationUiState(
+    val title: String,
+    val status: String,
+    val entries: List<ActionTraceEntry>,
+    val isRunning: Boolean,
+    val isVisible: Boolean = true
 )
 
 class ChatViewModel(
@@ -181,7 +194,8 @@ class ChatViewModel(
             "record_video",
             "toggle_wifi",
             "toggle_bluetooth",
-            "share_text"
+            "share_text",
+            UiAutomationOrchestrator.CONTROL_UI_TOOL
         )
 
         internal data class DirectActionPlan(
@@ -480,6 +494,33 @@ class ChatViewModel(
                         val toolName = if ("open_app" in availableToolNames) "open_app" else "launch_package"
                         return ToolCall(toolName, mapOf("app_name" to appName))
                     }
+            }
+
+            val screenReadText = normalized.lowercase(Locale.US)
+            if ("read_screen" in availableToolNames &&
+                "screen" in screenReadText &&
+                listOf("read", "describe", "what", "tell me", "inspect").any(screenReadText::contains)
+            ) {
+                return ToolCall("read_screen", emptyMap())
+            }
+
+            val uiGoalText = normalized.lowercase(Locale.US)
+            if (UiAutomationOrchestrator.CONTROL_UI_TOOL in availableToolNames &&
+                listOf(
+                    "on this screen",
+                    "current screen",
+                    "tap ",
+                    "press ",
+                    "scroll ",
+                    "dark mode",
+                    "visible toggle",
+                    "visible button"
+                ).any(uiGoalText::contains)
+            ) {
+                return ToolCall(
+                    UiAutomationOrchestrator.CONTROL_UI_TOOL,
+                    mapOf("goal" to normalized)
+                )
             }
 
             if ("send_sms" in availableToolNames) {
@@ -876,6 +917,13 @@ class ChatViewModel(
     val pendingAppSelection = _pendingAppSelection.asStateFlow()
     private var pendingAppSelectionDeferred: CompletableDeferred<String?>? = null
 
+    private val _pendingUiActionConfirmation = MutableStateFlow<UiActionConfirmationRequest?>(null)
+    val pendingUiActionConfirmation = _pendingUiActionConfirmation.asStateFlow()
+    private var pendingUiActionConfirmationDeferred: CompletableDeferred<Boolean>? = null
+
+    private val _orchestration = MutableStateFlow<OrchestrationUiState?>(null)
+    val orchestration = _orchestration.asStateFlow()
+
     fun resolveToolApproval(allow: Boolean) {
         pendingToolApprovalDeferred?.complete(allow)
         _pendingToolApproval.value = null
@@ -885,6 +933,54 @@ class ChatViewModel(
         pendingAppSelectionDeferred?.complete(packageName)
         pendingAppSelectionDeferred = null
         _pendingAppSelection.value = null
+    }
+
+    fun resolveUiActionConfirmation(allow: Boolean) {
+        pendingUiActionConfirmationDeferred?.complete(allow)
+        pendingUiActionConfirmationDeferred = null
+        _pendingUiActionConfirmation.value = null
+    }
+
+    fun dismissOrchestration() {
+        if (_orchestration.value?.isRunning != true) {
+            _orchestration.value = null
+        }
+    }
+
+    private fun startOrchestration(title: String, status: String, detail: String) {
+        _orchestration.value = OrchestrationUiState(
+            title = title,
+            status = status,
+            entries = listOf(ActionTraceEntry("Intent", detail)),
+            isRunning = true
+        )
+    }
+
+    private fun recordOrchestration(
+        phase: String,
+        detail: String,
+        toolName: String? = null,
+        output: String? = null,
+        isError: Boolean = false
+    ) {
+        val current = _orchestration.value ?: return
+        _orchestration.value = current.copy(
+            status = detail,
+            entries = current.entries + ActionTraceEntry(phase, detail, toolName, output, isError)
+        )
+    }
+
+    private fun finishOrchestration(status: String, isError: Boolean = false) {
+        val current = _orchestration.value ?: return
+        _orchestration.value = current.copy(
+            status = status,
+            entries = current.entries + ActionTraceEntry(
+                phase = if (isError) "Failed" else "Complete",
+                detail = status,
+                isError = isError
+            ),
+            isRunning = false
+        )
     }
 
     // Conversation State
@@ -948,7 +1044,11 @@ class ChatViewModel(
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(context.applicationContext)
+            if (_ttsEnabled.value) {
+                OnnxRuntimeManager.initialize(context.applicationContext)
+            } else {
+                DebugLogger.log("ChatViewModel: TTS disabled; skipping runtime initialization")
+            }
             ActionTools.tools.forEach { ToolRegistry.register(it) }
 
             // Initialize Glaive tools if available
@@ -1021,6 +1121,12 @@ class ChatViewModel(
         SettingsManager.setTtsEnabled(context, enabled)
         if (!enabled) {
             stopPlayback()
+            viewModelScope.launch(Dispatchers.IO) {
+                ttsMutex.withLock {
+                    TTSManager.close()
+                    OnnxRuntimeManager.close()
+                }
+            }
         } else {
             dropQueuedAudio = false
         }
@@ -1094,14 +1200,16 @@ class ChatViewModel(
             .filter { it.isAvailable }
             .map { it.name }
             .toSet()
-        val directToolCall = ToolCallProtocol.parseDirectUserToolCommand(trimmed)
-            ?: if (image == null && audio == null) {
-                inferToolCallFromModelFailure(trimmed, availableToolNames)
-            } else {
-                null
-            }
+        val explicitToolCall = ToolCallProtocol.parseDirectUserToolCommand(trimmed)
+        val inferredToolCall = if (explicitToolCall == null && image == null && audio == null) {
+            inferToolCallFromModelFailure(trimmed, availableToolNames)
+        } else {
+            null
+        }
+        val directToolCall = explicitToolCall ?: inferredToolCall?.takeUnless { it.toolName == "read_screen" }
 
         dropQueuedAudio = false
+        _orchestration.value = null
         DebugLogger.log("ChatViewModel sendMessage: $trimmed (hasImage=${image != null}, hasAudio=${audio != null})")
         _chatMessages.value += ChatMessage(trimmed, true, image, audio)
         
@@ -1129,12 +1237,32 @@ class ChatViewModel(
             null
         }
         if (directActionPlan != null) {
+            startOrchestration(
+                title = "Model Orchestration",
+                status = "Preparing action chain",
+                detail = trimmed
+            )
             viewModelScope.launch(Dispatchers.IO) {
                 DebugLogger.log(
                     "ChatViewModel: executing direct action plan with " +
                         directActionPlan.toolCalls.joinToString(",") { it.toolName }
                 )
-                val results = directActionPlan.toolCalls.map { executeToolCallInternal(context.applicationContext, it) }
+                recordOrchestration(
+                    "Plan",
+                    directActionPlan.toolCalls.joinToString(" -> ") { it.toolName }
+                )
+                val results = directActionPlan.toolCalls.mapIndexed { index, call ->
+                    recordOrchestration("Execute ${index + 1}", "Running ${call.toolName}", call.toolName)
+                    executeToolCallInternal(context.applicationContext, call).also { result ->
+                        recordOrchestration(
+                            "Result ${index + 1}",
+                            if (result.isError) "${call.toolName} failed" else "${call.toolName} completed",
+                            call.toolName,
+                            result.output,
+                            result.isError
+                        )
+                    }
+                }
                 val firstError = results.firstOrNull { it.isError }
                 val response = if (firstError != null) {
                     firstError.output
@@ -1155,11 +1283,24 @@ class ChatViewModel(
         }
 
         if (directToolCall != null) {
+            startOrchestration(
+                title = "Model Orchestration",
+                status = "Preparing tool call",
+                detail = trimmed
+            )
             viewModelScope.launch(Dispatchers.IO) {
                 DebugLogger.log(
                     "ChatViewModel: executing direct tool command ${directToolCall.toolName} with ${directToolCall.arguments}"
                 )
+                recordOrchestration("Execute", "Running ${directToolCall.toolName}", directToolCall.toolName)
                 val result = executeToolCallInternal(context.applicationContext, directToolCall)
+                recordOrchestration(
+                    "Result",
+                    if (result.isError) "${directToolCall.toolName} failed" else "${directToolCall.toolName} completed",
+                    directToolCall.toolName,
+                    result.output,
+                    result.isError
+                )
                 finalizeDirectToolResponse(
                     summarizeToolResultMessage(result),
                     buildActionTrace(
@@ -1222,6 +1363,7 @@ class ChatViewModel(
             ) {
                 viewModelScope.launch {
                     _isLoading.value = false
+                    finishOrchestration("Response ready")
                     DebugLogger.log("ChatViewModel response complete")
                     val last = _chatMessages.value.lastOrNull()
                     if (last != null) {
@@ -1260,7 +1402,16 @@ class ChatViewModel(
                 emptyList()
             }
             if (ActionPlanner.shouldUseActionPlanner(trimmed, actionPlannerTools)) {
+                startOrchestration(
+                    title = "Model Orchestration",
+                    status = "Selecting actions",
+                    detail = trimmed
+                )
                 updateAssistantPlaceholder("Planning actions...")
+                recordOrchestration(
+                    "Planner",
+                    "Considering ${actionPlannerTools.joinToString(", ") { it.name }}"
+                )
                 DebugLogger.log(
                     "ChatViewModel: action planner selected tools=${actionPlannerTools.joinToString(",") { it.name }}"
                 )
@@ -1284,6 +1435,7 @@ class ChatViewModel(
                             actionPlan.toolCalls.joinToString(",") { it.toolName }
                     )
                     if (actionPlan.toolCalls.isEmpty()) {
+                        recordOrchestration("Decision", "Planner requested confirmation or no execution")
                         finalizeAssistantResponse(
                             actionPlan.response,
                             speakOutput = true,
@@ -1298,7 +1450,22 @@ class ChatViewModel(
                         )
                         return@launch
                     }
-                    val results = actionPlan.toolCalls.map { executeToolCallInternal(appContext, it) }
+                    recordOrchestration(
+                        "Plan",
+                        actionPlan.toolCalls.joinToString(" -> ") { it.toolName }
+                    )
+                    val results = actionPlan.toolCalls.mapIndexed { index, call ->
+                        recordOrchestration("Execute ${index + 1}", "Running ${call.toolName}", call.toolName)
+                        executeToolCallInternal(appContext, call).also { result ->
+                            recordOrchestration(
+                                "Result ${index + 1}",
+                                if (result.isError) "${call.toolName} failed" else "${call.toolName} completed",
+                                call.toolName,
+                                result.output,
+                                result.isError
+                            )
+                        }
+                    }
                     val firstError = results.firstOrNull { it.isError }
                     val response = if (firstError != null) {
                         summarizeToolResultMessage(firstError)
@@ -1318,6 +1485,7 @@ class ChatViewModel(
                     return@launch
                 }
                 DebugLogger.log("ChatViewModel: action planner did not return an executable plan; falling back to chat agent")
+                recordOrchestration("Fallback", "Action planner returned no executable plan; using agent loop")
             }
 
             AgentTurnRunner(
@@ -1325,7 +1493,18 @@ class ChatViewModel(
                 scope = viewModelScope,
                 toolExecutor = { toolCall ->
                     withContext(Dispatchers.IO) {
-                        executeToolCallInternal(appContext, toolCall)
+                        executeToolCallInternal(appContext, toolCall).also { result ->
+                            if (_orchestration.value == null) {
+                                startOrchestration("Model Orchestration", "Analyzing tool result", trimmed)
+                            }
+                            recordOrchestration(
+                                "Tool result",
+                                if (result.isError) "${toolCall.toolName} failed" else "${toolCall.toolName} completed",
+                                toolCall.toolName,
+                                result.output,
+                                result.isError
+                            )
+                        }
                     }
                 },
                 inferToolCallFromModelFailure = Companion::inferToolCallFromModelFailure,
@@ -1358,6 +1537,12 @@ class ChatViewModel(
                     sentenceBuilder.clear()
                 },
                 onToolStart = { toolCall ->
+                    if (_orchestration.value == null && toolCall.toolName != "read_screen") {
+                        startOrchestration("Model Orchestration", "Executing tool", trimmed)
+                    }
+                    if (toolCall.toolName != "read_screen") {
+                        recordOrchestration("Tool call", "Running ${toolCall.toolName}", toolCall.toolName)
+                    }
                     updateAssistantPlaceholder("Running tool ${toolCall.toolName}...")
                 },
                 onBenchmarkPartial = { partial ->
@@ -1384,6 +1569,7 @@ class ChatViewModel(
     }
 
     fun cancelGeneration() {
+        recordOrchestration("Cancel", "Stopping model and tool execution")
         llmBackend?.cancel()
     }
 
@@ -1822,6 +2008,21 @@ class ChatViewModel(
             if (containsAny(normalizedText, "wifi", "wi-fi")) addTool("toggle_wifi")
             if (containsAny(normalizedText, "bluetooth")) addTool("toggle_bluetooth")
             if (containsAny(normalizedText, "share this", "share text", "share ")) addTool("share_text")
+            if (containsAny(
+                    normalizedText,
+                    "on this screen",
+                    "current screen",
+                    "tap ",
+                    "press ",
+                    "scroll ",
+                    "dark mode",
+                    "in settings",
+                    "visible toggle",
+                    "visible button"
+                )
+            ) {
+                addTool(UiAutomationOrchestrator.CONTROL_UI_TOOL)
+            }
             if (containsAny(normalizedText, "what can you do", "what tools", "available tools", "help me", "list tools")) addTool("list_tools")
             if (containsAny(normalizedText, "time", "clock", "hour")) addTool("get_current_time")
         }
@@ -2002,6 +2203,34 @@ class ChatViewModel(
                 isError = true
             )
         }
+        if (effectiveToolCall.toolName == UiAutomationOrchestrator.CONTROL_UI_TOOL) {
+            val goal = effectiveToolCall.arguments["goal"]?.toString()?.trim().orEmpty()
+            val plannerBackend = llmBackend ?: return ToolResult(
+                toolName = effectiveToolCall.toolName,
+                output = "No LLM backend is available for UI planning.",
+                isError = true
+            )
+            _orchestration.value = _orchestration.value?.copy(isVisible = false)
+            delay(250L)
+            return try {
+                UiAutomationOrchestrator(
+                    context = appContext,
+                    backend = plannerBackend,
+                    requestConfirmation = { description ->
+                        val deferred = CompletableDeferred<Boolean>()
+                        pendingUiActionConfirmationDeferred = deferred
+                        _pendingUiActionConfirmation.value = UiActionConfirmationRequest(description)
+                        deferred.await()
+                    },
+                    onProgress = { phase, detail ->
+                        recordOrchestration(phase, detail, UiAutomationOrchestrator.CONTROL_UI_TOOL)
+                    },
+                    logger = DebugLogger::log
+                ).run(goal)
+            } finally {
+                _orchestration.value = _orchestration.value?.copy(isVisible = true)
+            }
+        }
         ActionTools.execute(appContext, effectiveToolCall)?.let { return it }
         if (!GlaiveBridge.isInstalled(appContext)) {
             return ToolResult(
@@ -2035,6 +2264,19 @@ class ChatViewModel(
                 }
             }
         }
+        if (effectiveToolCall.toolName == "read_screen" && !baseResult.isError) {
+            val path = runCatching { JSONObject(baseResult.output).optString("path") }.getOrDefault("")
+            if (path.isNotBlank()) {
+                val xmlResult = GlaiveBridge.executeTool(
+                    appContext,
+                    ToolCall("read_ui_xml", mapOf("path" to path))
+                )
+                if (!xmlResult.isError) {
+                    return baseResult.copy(output = xmlResult.output)
+                }
+                return xmlResult.copy(toolName = "read_screen")
+            }
+        }
         if (toolCall.toolName == "take_screenshot" && !baseResult.isError) {
             try {
                 val json = org.json.JSONObject(baseResult.output)
@@ -2052,6 +2294,11 @@ class ChatViewModel(
     private fun finalizeDirectToolResponse(finalResponse: String, actionTrace: ActionTrace? = null) {
         viewModelScope.launch(Dispatchers.Main) {
             _isLoading.value = false
+            val failed = actionTrace?.entries?.any { it.isError } == true
+            finishOrchestration(
+                status = if (failed) "Execution finished with an error" else "Execution complete",
+                isError = failed
+            )
             DebugLogger.log("ChatViewModel response complete")
             val last = _chatMessages.value.lastOrNull()
             if (last != null) {
@@ -2254,6 +2501,9 @@ class ChatViewModel(
                 DebugLogger.log("Synthesizing: ${text}")
                 val audioData = withContext(Dispatchers.IO) {
                     ttsMutex.withLock {
+                        if (!_ttsEnabled.value || dropQueuedAudio) {
+                            return@withLock null
+                        }
                         val engine = TTSManager.getEngine(context, modelManager)
                             ?: throw IllegalStateException("No TTS engine available")
 
@@ -2305,7 +2555,7 @@ class ChatViewModel(
                         QueuedAudio(currentIndex, data, sampleRate)
                     }
                 }
-                if (!dropQueuedAudio) {
+                if (audioData != null && _ttsEnabled.value && !dropQueuedAudio) {
                     audioQueue.send(audioData)
                 }
             } catch (e: Exception) {

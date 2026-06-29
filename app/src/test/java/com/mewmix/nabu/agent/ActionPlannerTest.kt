@@ -101,6 +101,17 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun shouldUseActionPlanner_skipsReadOnlyScreenInspection() {
+        assertEquals(
+            false,
+            ActionPlanner.shouldUseActionPlanner(
+                "Read this screen and tell me whether Model Settings is expanded.",
+                listOf(Tool("read_screen", "Read the visible screen."))
+            )
+        )
+    }
+
+    @Test
     fun planWithModel_usesIsolatedPlannerConversation() = runTest {
         val backend = FakeBackend(
             """

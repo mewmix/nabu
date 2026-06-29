@@ -62,6 +62,11 @@ object TTSManager {
 
     suspend fun getEngine(context: Context, modelManager: ModelManager): TTSEngine? {
         DebugLogger.log("TTSManager.getEngine: enter")
+        if (!SettingsManager.isTtsEnabled(context)) {
+            DebugLogger.log("TTSManager: disabled; releasing active engine")
+            clearActiveEngineState()
+            return null
+        }
         val preferredEngine = SettingsManager.getTtsEngine(context)
         val preferredRuntime = SettingsManager.getRuntimePreference(context)
         val preferredSupertonicModel = SettingsManager.getSupertonicModelId(context)

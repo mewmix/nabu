@@ -3,6 +3,7 @@ package com.mewmix.nabu.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,6 +115,8 @@ fun ChatScreen(
     val pendingAudio by viewModel.pendingAudioInput.collectAsState()
     val pendingToolApproval by viewModel.pendingToolApproval.collectAsState()
     val pendingAppSelection by viewModel.pendingAppSelection.collectAsState()
+    val pendingUiActionConfirmation by viewModel.pendingUiActionConfirmation.collectAsState()
+    val orchestration by viewModel.orchestration.collectAsState()
     val activeModelSupportsAudio = ModelCapabilityResolver.supportsAudioInput(context, activeModel)
     val clipboardManager = LocalClipboardManager.current
     val voiceRecorder = remember { VoiceAttachmentRecorder(context.applicationContext) }
@@ -304,16 +307,11 @@ fun ChatScreen(
                         text = "Multiple apps match \"${request.query}\".",
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 420.dp),
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        itemsIndexed(
-                            items = request.candidates,
-                            key = { _, candidate -> candidate.packageName }
-                        ) { _, candidate ->
+                        request.candidates.forEach { candidate ->
                             BrutalButton(
                                 onClick = { viewModel.resolveAppSelection(candidate.packageName) },
                                 modifier = Modifier.fillMaxWidth()
@@ -346,19 +344,46 @@ fun ChatScreen(
         )
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
-    ) { paddingValues ->
-        PanelBox(
-            title = "Chat",
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
+    pendingUiActionConfirmation?.let { request ->
+        AlertDialog(
+            onDismissRequest = { viewModel.resolveUiActionConfirmation(false) },
+            title = { Text("Confirm UI Action") },
+            text = {
+                Text(
+                    text = request.description,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                )
+            },
+            confirmButton = {
+                BrutalButton(onClick = { viewModel.resolveUiActionConfirmation(true) }) {
+                    Text("Allow")
+                }
+            },
+            dismissButton = {
+                BrutalButton(onClick = { viewModel.resolveUiActionConfirmation(false) }) {
+                    Text("Deny")
+                }
+            }
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background
+        ) { paddingValues ->
+            PanelBox(
+                title = "Chat",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
             RuntimeStatusLine(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                ttsEnabled = ttsEnabled
             )
             Row(
                 modifier = Modifier
@@ -1028,6 +1053,59 @@ fun ChatScreen(
                     )
                 }
             }
+            }
+        }
+
+        orchestration?.takeIf { it.isVisible }?.let { state ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.58f))
+                    .clickable(enabled = !state.isRunning) { viewModel.dismissOrchestration() }
+                    .padding(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                PanelBox(
+                    title = state.title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 560.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (state.isRunning) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                        Text(state.status, style = MaterialTheme.typography.titleSmall)
+                        state.entries.forEach { entry ->
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(entry.phase, style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    entry.detail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (entry.isError) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    BrutalButton(
+                        onClick = if (state.isRunning) viewModel::cancelGeneration else viewModel::dismissOrchestration,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (state.isRunning) "Stop" else "Close")
+                    }
+                }
+            }
         }
     }
 
@@ -1122,8 +1200,7 @@ fun ChatScreen(
             text = {
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
+                        .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     trace.entries.forEach { entry ->
@@ -1174,7 +1251,7 @@ fun ChatScreen(
             onDismissRequest = { showToolPicker = false },
             title = { Text("Available Tools") },
             text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Column {
                     Text(
                         text = "${availableTools.count { it.isAvailable }} tools registered. Pick a context mode, then choose a tool to prefill a direct call.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant

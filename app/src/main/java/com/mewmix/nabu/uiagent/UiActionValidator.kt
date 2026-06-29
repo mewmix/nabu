@@ -43,6 +43,8 @@ object UiActionValidator {
         is UiActionStep.TypeText -> {
             if (step.text.isBlank()) {
                 UiPlanDecision.Invalid("type_text requires non-blank text.")
+            } else if (step.target == null) {
+                UiPlanDecision.Invalid("type_text requires an editable target element.")
             } else {
                 val targetDecision = step.target?.let { validateTarget(it, screen, requireEnabled = true) }
                 if (targetDecision != null) {
@@ -65,6 +67,7 @@ object UiActionValidator {
         } else null
         is UiActionStep.Assert -> validateAssertion(step.condition, screen)
         is UiActionStep.AskUser -> if (step.reason.isBlank()) UiPlanDecision.Invalid("ask_user requires a reason.") else null
+        is UiActionStep.Done -> if (step.summary.isBlank()) UiPlanDecision.Invalid("done requires a summary.") else null
         UiActionStep.PressBack, UiActionStep.PressHome -> null
     }
 

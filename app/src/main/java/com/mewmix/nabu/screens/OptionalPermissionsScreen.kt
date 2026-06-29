@@ -48,10 +48,12 @@ fun OptionalPermissionsScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        OptionalPermissionsSection(
-            showContinue = true,
-            onContinue = onContinue
-        )
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            OptionalPermissionsSection(
+                showContinue = true,
+                onContinue = onContinue
+            )
+        }
     }
 }
 
@@ -127,7 +129,7 @@ fun OptionalPermissionsSection(
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(

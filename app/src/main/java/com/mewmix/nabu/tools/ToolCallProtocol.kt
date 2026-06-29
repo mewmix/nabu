@@ -210,8 +210,13 @@ object ToolCallProtocol {
                 json.optString("toolName")
             ).firstOrNull { it.isNotBlank() } ?: return null
 
-            val rawArguments = json.opt("arguments") ?: json.opt("args") ?: return null
+            val rawArguments = json.opt("arguments") ?: json.opt("args")
             val argumentsValue = when (rawArguments) {
+                null -> json.deepCopy().apply {
+                    remove("name")
+                    remove("tool")
+                    remove("toolName")
+                }
                 is JsonObject -> rawArguments
                 is String -> runCatching { JsonParser.parseString(rawArguments).asJsonObject }.getOrNull()
                 else -> null

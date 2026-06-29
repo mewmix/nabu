@@ -77,6 +77,7 @@ Supported core actions:
 - `wait`
 - `assert`
 - `ask_user`
+- `done`
 
 ## Safety Decisions
 

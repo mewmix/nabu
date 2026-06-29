@@ -1,6 +1,7 @@
 package com.mewmix.nabu.viewmodel
 
 import com.mewmix.nabu.tools.ToolCall
+import com.mewmix.nabu.uiagent.UiAutomationOrchestrator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -89,6 +90,20 @@ class ChatViewModelInferenceTest {
             ),
             parsed.toolCalls
         )
+    }
+
+    @Test
+    fun planDirectActionChain_opensAppBeforeVisibleUiGoal() {
+        val plan = ChatViewModel.planDirectActionChain(
+            userMessage = "open settings and turn on dark mode",
+            availableToolNames = setOf("open_app", UiAutomationOrchestrator.CONTROL_UI_TOOL)
+        )
+
+        assertEquals(
+            listOf("open_app", UiAutomationOrchestrator.CONTROL_UI_TOOL),
+            plan?.toolCalls?.map { it.toolName }
+        )
+        assertEquals("settings", plan?.toolCalls?.first()?.arguments?.get("app_name"))
     }
 
     @Test
@@ -224,6 +239,31 @@ class ChatViewModelInferenceTest {
             ChatViewModel.inferToolCallFromModelFailure(
                 userMessage = "open application YouTube Studio",
                 availableToolNames = setOf("launch_package")
+            )
+        )
+    }
+
+    @Test
+    fun inferToolCallFromModelFailure_routesVisibleUiGoalToPlanner() {
+        assertEquals(
+            ToolCall(
+                UiAutomationOrchestrator.CONTROL_UI_TOOL,
+                mapOf("goal" to "turn on dark mode")
+            ),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "turn on dark mode",
+                availableToolNames = setOf(UiAutomationOrchestrator.CONTROL_UI_TOOL)
+            )
+        )
+    }
+
+    @Test
+    fun inferToolCallFromModelFailure_readsCurrentScreenWithoutUiMutation() {
+        assertEquals(
+            ToolCall("read_screen", emptyMap()),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = "Read this Nabu screen and tell me whether Model Settings is expanded.",
+                availableToolNames = setOf("read_screen", UiAutomationOrchestrator.CONTROL_UI_TOOL)
             )
         )
     }

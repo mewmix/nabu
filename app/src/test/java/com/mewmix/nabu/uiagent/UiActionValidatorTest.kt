@@ -74,4 +74,42 @@ class UiActionValidatorTest {
 
         assertTrue(UiActionValidator.validate(plan, screen) is UiPlanDecision.RequireConfirmation)
     }
+
+    @Test
+    fun parserAllowsDoneWhenGoalIsAlreadySatisfied() {
+        val plan = UiActionPlanParser.parse(
+            """{"goal":"Turn on dark mode","screen_id":"${screen.screenId}","steps":[
+              {"action":"done","summary":"Dark mode is already enabled."}
+            ]}"""
+        )
+
+        assertTrue(plan.steps.single() is UiActionStep.Done)
+        assertEquals(UiPlanDecision.Allow, UiActionValidator.validate(plan, screen))
+    }
+
+    @Test
+    fun plannerParserNormalizesCompactActionEnvelope() {
+        val target = screen.elements.first { it.resourceId == "android:id/switch_widget" }
+        val plan = UiActionPlanParser.parsePlannerOutput(
+            rawJson = """{"action":"tap","element_id":"${target.id}"}""",
+            knownGoal = "Turn on dark mode",
+            knownScreenId = screen.screenId
+        )
+
+        assertEquals("Turn on dark mode", plan.goal)
+        assertEquals(screen.screenId, plan.screenId)
+        assertEquals(target.id, (plan.steps.single() as UiActionStep.Tap).target.elementId)
+        assertEquals(UiPlanDecision.Allow, UiActionValidator.validate(plan, screen))
+    }
+
+    @Test
+    fun screenFingerprintChangesWhenCheckedStateChangesButElementIdDoesNot() {
+        val uncheckedXml = """<hierarchy><node package="p" class="android.widget.Switch" bounds="[0,0][10,10]" checked="false"/></hierarchy>"""
+        val checkedXml = uncheckedXml.replace("checked=\"false\"", "checked=\"true\"")
+        val unchecked = UiTreeIndexer.parse(uncheckedXml)
+        val checked = UiTreeIndexer.parse(checkedXml)
+
+        assertEquals(unchecked.elements.single().id, checked.elements.single().id)
+        assertTrue(unchecked.screenId != checked.screenId)
+    }
 }

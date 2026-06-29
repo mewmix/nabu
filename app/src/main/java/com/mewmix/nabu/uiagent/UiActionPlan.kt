@@ -20,6 +20,7 @@ sealed interface UiActionStep {
     data class Wait(val milliseconds: Long) : UiActionStep
     data class Assert(val condition: UiAssertion) : UiActionStep
     data class AskUser(val reason: String) : UiActionStep
+    data class Done(val summary: String) : UiActionStep
 }
 
 data class UiTarget(
@@ -36,6 +37,34 @@ data class UiAssertion(
 )
 
 object UiActionPlanParser {
+    fun parsePlannerOutput(rawJson: String, knownGoal: String, knownScreenId: String): UiActionPlan {
+        val root = JsonParser.parseString(rawJson).asJsonObject
+        if (!root.has("goal")) root.addProperty("goal", knownGoal)
+        if (!root.has("screen_id")) root.addProperty("screen_id", knownScreenId)
+        if (!root.has("steps") && root.has("action")) {
+            val step = root.deepCopy().apply {
+                remove("goal")
+                remove("screen_id")
+            }
+            val action = step.get("action")?.asString.orEmpty()
+            if (action in setOf("tap", "long_press", "type_text", "scroll") && !step.has("target")) {
+                val target = JsonObject()
+                step.remove("element_id")?.let { target.add("element_id", it) }
+                step.remove("fallback_bounds")?.let { target.add("fallback_bounds", it) }
+                if (target.size() > 0) step.add("target", target)
+            }
+            if (action == "assert" && !step.has("condition")) {
+                val condition = JsonObject()
+                listOf("element_id", "text_contains", "checked").forEach { name ->
+                    step.remove(name)?.let { condition.add(name, it) }
+                }
+                if (condition.size() > 0) step.add("condition", condition)
+            }
+            root.add("steps", JsonArray().apply { add(step) })
+        }
+        return parse(root.toString())
+    }
+
     fun parse(rawJson: String): UiActionPlan {
         val root = JsonParser.parseString(rawJson).asJsonObject
         val goal = root.requiredString("goal")
@@ -65,6 +94,7 @@ object UiActionPlanParser {
         "wait" -> UiActionStep.Wait(json.get("ms")?.asLong ?: error("Missing ms."))
         "assert" -> UiActionStep.Assert(parseAssertion(json.getAsJsonObject("condition")))
         "ask_user" -> UiActionStep.AskUser(json.requiredString("reason"))
+        "done" -> UiActionStep.Done(json.requiredString("summary"))
         else -> error("Unsupported UI action '${json.get("action")?.asString.orEmpty()}'.")
     }
 

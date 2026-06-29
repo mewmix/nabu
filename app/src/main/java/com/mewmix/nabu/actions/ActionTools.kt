@@ -5,6 +5,7 @@ import com.mewmix.nabu.tools.Tool
 import com.mewmix.nabu.tools.ToolCall
 import com.mewmix.nabu.tools.ToolRegistry
 import com.mewmix.nabu.tools.ToolResult
+import com.mewmix.nabu.uiagent.UiAutomationOrchestrator
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -34,6 +35,13 @@ object ActionTools {
             description = "List all available tools with their descriptions and parameters. Call this to discover what tools you can use.",
             parameters = mapOf(
                 "filter" to "Optional keyword to filter tools by name or description."
+            )
+        ),
+        Tool(
+            name = UiAutomationOrchestrator.CONTROL_UI_TOOL,
+            description = "Interact with the currently visible Android UI through a validated, screenshot-and-accessibility planning loop.",
+            parameters = mapOf(
+                "goal" to "The specific visible UI outcome to achieve, such as turn on dark mode or open the Downloads row."
             )
         ),
         Tool(

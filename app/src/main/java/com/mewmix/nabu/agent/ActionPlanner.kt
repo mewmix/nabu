@@ -27,6 +27,12 @@ object ActionPlanner {
         val text = userMessage.lowercase(Locale.US)
         if (selectedTools.none { it.name != "list_tools" }) return false
         if (text.isBlank()) return false
+        if (selectedTools.any { it.name == "read_screen" } &&
+            "screen" in text &&
+            listOf("read", "describe", "what", "tell me", "inspect").any(text::contains)
+        ) {
+            return false
+        }
         val actionSignals = listOf(
             " then ",
             " after ",

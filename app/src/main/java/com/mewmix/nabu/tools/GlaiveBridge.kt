@@ -16,6 +16,17 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 object GlaiveBridge {
+    private val INTERNAL_ORCHESTRATOR_TOOLS = setOf(
+        "read_screen",
+        "read_ui_xml",
+        "take_screenshot",
+        "observe_ui",
+        "ui_tap",
+        "ui_long_press",
+        "ui_set_text",
+        "ui_scroll",
+        "ui_global_action"
+    )
     private const val GLAIVE_PACKAGE = "com.mewmix.glaive"
     private const val GLAIVE_ACCESS_PERMISSION = "com.mewmix.glaive.permission.ACCESS_TOOLS"
     private const val ACTION_EXECUTE_TOOL = "com.mewmix.glaive.ACTION_EXECUTE_TOOL"
@@ -39,65 +50,95 @@ object GlaiveBridge {
         }
     }
 
-    suspend fun executeTool(context: Context, call: ToolCall): ToolResult = suspendCancellableCoroutine { continuation ->
+    suspend fun executeTool(context: Context, call: ToolCall): ToolResult {
         if (!isInstalled(context)) {
-            continuation.resume(ToolResult(call.toolName, "Glaive app is not installed.", true))
-            return@suspendCancellableCoroutine
+            return ToolResult(call.toolName, "Glaive app is not installed.", true)
         }
         if (!hasBridgePermission(context)) {
-            continuation.resume(
-                ToolResult(
-                    call.toolName,
-                    "Nabu is missing Glaive bridge permission ($GLAIVE_ACCESS_PERMISSION). " +
-                        "Update/reinstall both Nabu and Glaive from matching builds, then retry.",
-                    true
-                )
+            return ToolResult(
+                call.toolName,
+                "Nabu is missing Glaive bridge permission ($GLAIVE_ACCESS_PERMISSION). " +
+                    "Update/reinstall both Nabu and Glaive from matching builds, then retry.",
+                true
             )
-            return@suspendCancellableCoroutine
         }
 
-        try {
-            DebugLogger.log("GlaiveBridge: Preparing to call ${call.toolName} with ${call.arguments}")
-            val completed = AtomicBoolean(false)
-
-            val receiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
-                override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
-                    if (!completed.compareAndSet(false, true)) return
-                    val error = resultData?.getString(EXTRA_INTERNAL_RESULT_ERROR)
-                    val output = resultData?.getString(EXTRA_INTERNAL_RESULT_OUTPUT).orEmpty()
-                    if (error != null) {
-                        continuation.resume(ToolResult(call.toolName, error, true))
-                    } else {
-                        continuation.resume(ToolResult(call.toolName, output))
+        if (call.toolName in INTERNAL_ORCHESTRATOR_TOOLS) {
+            return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val uri = Uri.parse("content://com.mewmix.glaive.tool_provider")
+                    val extras = Bundle().apply {
+                        putString("tool_name", call.toolName)
+                        putString("tool_params", JSONObject(call.arguments).toString())
                     }
+                    val resultBundle = context.contentResolver.call(
+                        uri,
+                        "execute_ui_tool",
+                        null,
+                        extras
+                    )
+
+                    if (resultBundle == null) {
+                        ToolResult(call.toolName, "ContentProvider call returned null.", true)
+                    } else {
+                        val error = resultBundle.getString("error")
+                        val output = resultBundle.getString("result").orEmpty()
+                        if (error != null) {
+                            ToolResult(call.toolName, error, true)
+                        } else {
+                            ToolResult(call.toolName, output)
+                        }
+                    }
+                } catch (e: Exception) {
+                    ToolResult(call.toolName, "Error executing tool: ${e.message}", true)
                 }
             }
+        }
 
-            continuation.invokeOnCancellation {
-                completed.set(true)
-            }
+        return suspendCancellableCoroutine { continuation ->
+            try {
+                DebugLogger.log("GlaiveBridge: Preparing to call ${call.toolName} with ${call.arguments}")
+                val completed = AtomicBoolean(false)
 
-            val proxyIntent = Intent(context, GlaiveBridgeRelayActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                putExtra(EXTRA_INTERNAL_TOOL_NAME, call.toolName)
-                putExtra(EXTRA_INTERNAL_TOOL_PARAMS, JSONObject(call.arguments).toString())
-                putExtra(EXTRA_INTERNAL_RESULT_RECEIVER, receiver)
-            }
-            context.startActivity(proxyIntent)
-        } catch (e: SecurityException) {
-            if (continuation.isActive) {
-                continuation.resume(
-                    ToolResult(
-                        call.toolName,
-                        "Bridge launch denied: ${e.message}. " +
-                            "Open Glaive once, then ensure both apps are installed from matching signed builds.",
-                        true
+                val receiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
+                    override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                        if (!completed.compareAndSet(false, true)) return
+                        val error = resultData?.getString(EXTRA_INTERNAL_RESULT_ERROR)
+                        val output = resultData?.getString(EXTRA_INTERNAL_RESULT_OUTPUT).orEmpty()
+                        if (error != null) {
+                            continuation.resume(ToolResult(call.toolName, error, true))
+                        } else {
+                            continuation.resume(ToolResult(call.toolName, output))
+                        }
+                    }
+                }
+
+                continuation.invokeOnCancellation {
+                    completed.set(true)
+                }
+
+                val proxyIntent = Intent(context, GlaiveBridgeRelayActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    putExtra(EXTRA_INTERNAL_TOOL_NAME, call.toolName)
+                    putExtra(EXTRA_INTERNAL_TOOL_PARAMS, JSONObject(call.arguments).toString())
+                    putExtra(EXTRA_INTERNAL_RESULT_RECEIVER, receiver)
+                }
+                context.startActivity(proxyIntent)
+            } catch (e: SecurityException) {
+                if (continuation.isActive) {
+                    continuation.resume(
+                        ToolResult(
+                            call.toolName,
+                            "Bridge launch denied: ${e.message}. " +
+                                "Open Glaive once, then ensure both apps are installed from matching signed builds.",
+                            true
+                        )
                     )
-                )
-            }
-        } catch (e: Exception) {
-            if (continuation.isActive) {
-                continuation.resume(ToolResult(call.toolName, "Error executing tool: ${e.message}", true))
+                }
+            } catch (e: Exception) {
+                if (continuation.isActive) {
+                    continuation.resume(ToolResult(call.toolName, "Error executing tool: ${e.message}", true))
+                }
             }
         }
     }
@@ -165,7 +206,7 @@ object GlaiveBridge {
         val tools = mutableListOf<Tool>()
         while (cursor.moveToNext()) {
             val name = cursor.getString(nameIndex)?.trim().orEmpty()
-            if (name.isBlank()) continue
+            if (name.isBlank() || name in INTERNAL_ORCHESTRATOR_TOOLS) continue
             val description = cursor.getString(descriptionIndex)?.trim().orEmpty()
             val parameterJson = cursor.getString(parametersIndex).orEmpty()
             var parameters = parseParameters(parameterJson)

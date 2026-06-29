@@ -25,6 +25,17 @@ class ToolCallProtocolTest {
     }
 
     @Test
+    fun extractToolCall_parsesFlattenedTaggedArguments() {
+        val toolCall = ToolCallProtocol.extractToolCall(
+            """<tool_call>{"name":"read_screen","path":"Nabu screen"}</tool_call>"""
+        )
+
+        assertNotNull(toolCall)
+        assertEquals("read_screen", toolCall?.toolName)
+        assertEquals("Nabu screen", toolCall?.arguments?.get("path"))
+    }
+
+    @Test
     fun extractToolCall_parsesBareJsonWithoutWrapper() {
         val text = "{" +
             "\"tool\":\"read_file\"," +
