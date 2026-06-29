@@ -39,8 +39,8 @@ data class UiAssertion(
 object UiActionPlanParser {
     fun parsePlannerOutput(rawJson: String, knownGoal: String, knownScreenId: String): UiActionPlan {
         val root = JsonParser.parseString(rawJson).asJsonObject
-        if (!root.has("goal")) root.addProperty("goal", knownGoal)
-        if (!root.has("screen_id")) root.addProperty("screen_id", knownScreenId)
+        root.addProperty("goal", knownGoal)
+        root.addProperty("screen_id", knownScreenId)
         if (!root.has("steps") && root.has("action")) {
             val step = root.deepCopy().apply {
                 remove("goal")
