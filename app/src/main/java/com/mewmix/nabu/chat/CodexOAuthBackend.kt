@@ -17,6 +17,8 @@ class CodexOAuthBackend(
     private val scope = CoroutineScope(Dispatchers.IO)
     @Volatile private var activeJob: Job? = null
 
+    override fun runtimeDescription(): String = "CODEX / REMOTE"
+
     override fun initialize() {
         // No warmup needed for remote backend.
     }

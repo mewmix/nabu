@@ -1,11 +1,14 @@
 package com.mewmix.nabu.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.data.TtsModelValidator
@@ -17,7 +20,8 @@ import java.io.File
 @Composable
 fun RuntimeStatusLine(
     modifier: Modifier = Modifier,
-    ttsEnabled: Boolean = true
+    ttsEnabled: Boolean = true,
+    llmRuntimeDescription: String = "NOT LOADED"
 ) {
     val context = LocalContext.current
     val ttsEngine = SettingsManager.getTtsEngine(context)
@@ -54,10 +58,21 @@ fun RuntimeStatusLine(
         }
     }
 
-    Text(
-        text = "RUNTIME: $runtimeLabel",
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier
-    )
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "TTS: $runtimeLabel",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "LLM: $llmRuntimeDescription",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+    }
 }

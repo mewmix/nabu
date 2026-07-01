@@ -113,6 +113,7 @@ fun ChatScreen(
     val activeConversationId by viewModel.activeConversationId.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
     val activeModel by viewModel.activeModel.collectAsState()
+    val llmRuntimeDescription by viewModel.llmRuntimeDescription.collectAsState()
     val chatContextMode by viewModel.chatContextMode.collectAsState()
     val availableTools by ToolRegistry.tools.collectAsState()
     val pendingImage by viewModel.pendingImage.collectAsState()
@@ -387,7 +388,8 @@ fun ChatScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                ttsEnabled = ttsEnabled
+                ttsEnabled = ttsEnabled,
+                llmRuntimeDescription = llmRuntimeDescription
             )
             Row(
                 modifier = Modifier
@@ -1249,10 +1251,15 @@ fun ChatScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    availableTools
-                        .filter { it.isAvailable }
-                        .sortedBy { it.name }
-                        .forEach { tool ->
+                    val visibleTools = remember(availableTools) {
+                        availableTools.filter { it.isAvailable }.sortedBy { it.name }
+                    }
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 440.dp)
+                    ) {
+                        itemsIndexed(visibleTools, key = { _, tool -> tool.name }) { index, tool ->
                             BrutalButton(
                                 onClick = {
                                     viewModel.updateChatContextMode(toolPrefillMode)
@@ -1268,8 +1275,11 @@ fun ChatScreen(
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
+                            if (index < visibleTools.lastIndex) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
                         }
+                    }
                 }
             },
             confirmButton = {

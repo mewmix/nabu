@@ -12,6 +12,8 @@ class LlamaCppBackend(
     initialConfig: LlmRuntimeConfig
 ) : LlmBackend {
 
+    override fun runtimeDescription(): String = "LLAMA.CPP / CPU"
+
     private val initLock = Any()
     @Volatile private var config: LlmRuntimeConfig = initialConfig
     private var modelHandle: Long = 0L

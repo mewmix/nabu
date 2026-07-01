@@ -66,6 +66,18 @@ class LiteRtLmBackend(
     @Volatile
     private var activeSupportsAudio = false
 
+    override fun runtimeDescription(): String {
+        val normalized = modelPath.lowercase()
+        val accelerator = if (
+            normalized.contains("qualcomm") || normalized.contains("qcs") || normalized.contains("npu")
+        ) {
+            "NPU"
+        } else {
+            "CPU"
+        }
+        return "LITERT-LM / $accelerator"
+    }
+
     override fun initialize() {
         if (initialized.get()) return
         synchronized(this) {

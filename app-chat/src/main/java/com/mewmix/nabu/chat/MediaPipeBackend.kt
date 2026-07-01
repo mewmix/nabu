@@ -28,6 +28,9 @@ class MediaPipeBackend(
     val currentConfig: MediaPipeRuntimeConfig
         get() = config
 
+    override fun runtimeDescription(): String =
+        "MEDIAPIPE / ${config.preferredBackend?.name ?: "AUTO"}"
+
     fun updateConfig(newConfig: MediaPipeRuntimeConfig) {
         val oldConfig = config
         config = newConfig

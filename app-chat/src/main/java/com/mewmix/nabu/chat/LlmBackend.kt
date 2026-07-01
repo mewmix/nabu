@@ -1,6 +1,8 @@
 package com.mewmix.nabu.chat
 
 interface LlmBackend {
+    fun runtimeDescription(): String = "UNKNOWN"
+
     fun initialize()
 
     fun sendMessage(

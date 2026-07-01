@@ -1023,6 +1023,9 @@ class ChatViewModel(
     private val _activeModel = MutableStateFlow<Model?>(null)
     val activeModel = _activeModel.asStateFlow()
 
+    private val _llmRuntimeDescription = MutableStateFlow("NOT LOADED")
+    val llmRuntimeDescription = _llmRuntimeDescription.asStateFlow()
+
     // TTS State
     private val _isSynthesizing = MutableStateFlow(false)
     val isSynthesizing = _isSynthesizing.asStateFlow()
@@ -1368,6 +1371,7 @@ class ChatViewModel(
             }
             else -> DEFAULT_MAX_CONTEXT_TOKENS
         }
+        _llmRuntimeDescription.value = backend.runtimeDescription()
 
         val conversationForModel = prepareConversationForModel(backendMaxTokens)
         val appContext = context.applicationContext
@@ -1741,6 +1745,7 @@ class ChatViewModel(
     private fun setActiveModel(model: Model, persistConversation: Boolean = true) {
         if (_activeModel.value?.id == model.id && llmBackend != null) {
             _activeModel.value = model
+            _llmRuntimeDescription.value = llmBackend?.runtimeDescription() ?: "NOT LOADED"
             return
         }
 
@@ -1752,11 +1757,13 @@ class ChatViewModel(
         )
         if (created == null) {
             llmBackend = null
+            _llmRuntimeDescription.value = "UNAVAILABLE"
             return
         }
         _activeModel.value = model
         llmBackend?.close()
         llmBackend = created.backend
+        _llmRuntimeDescription.value = created.backend.runtimeDescription()
         if (created.backend is LlamaCppBackend) {
             _isInitializing.value = true
             viewModelScope.launch(Dispatchers.IO) {
