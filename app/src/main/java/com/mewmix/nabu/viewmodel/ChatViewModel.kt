@@ -95,7 +95,8 @@ data class OrchestrationUiState(
     val status: String,
     val entries: List<ActionTraceEntry>,
     val isRunning: Boolean,
-    val isVisible: Boolean = true
+    val isVisible: Boolean = true,
+    val liveOutput: String = ""
 )
 
 class ChatViewModel(
@@ -168,6 +169,7 @@ class ChatViewModel(
         private const val DEFAULT_MAX_CONTEXT_TOKENS = LlmBackendFactory.DEFAULT_MAX_CONTEXT_TOKENS
         private const val MAX_TOOL_CALLS_PER_TURN = 4
         private const val TOOL_EXECUTION_TIMEOUT_MS = 30_000L
+        private const val MAX_LIVE_ORCHESTRATION_CHARS = 16_000
         private const val DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
         private val TOKEN_REGEX = Regex("\\S+")
         private val DIRECT_RESULT_TOOL_NAMES = setOf(
@@ -217,6 +219,7 @@ class ChatViewModel(
         ): DirectActionPlan? {
             val normalized = userMessage.trim()
             if (normalized.isBlank()) return null
+            if (explicitControlUiGoal(normalized) != null) return null
 
             val clauses = splitActionClauses(normalized)
             if (clauses.size < 2) return null
@@ -449,6 +452,15 @@ class ChatViewModel(
             val normalized = userMessage.trim()
             if (normalized.isBlank()) return null
 
+            explicitControlUiGoal(normalized)?.let { goal ->
+                if (UiAutomationOrchestrator.CONTROL_UI_TOOL in availableToolNames) {
+                    return ToolCall(
+                        UiAutomationOrchestrator.CONTROL_UI_TOOL,
+                        mapOf("goal" to goal)
+                    )
+                }
+            }
+
             if ("set_alarm" in availableToolNames) {
                 parseAlarmFallback(normalized)?.let { return it }
             }
@@ -665,6 +677,13 @@ class ChatViewModel(
             }
 
             return null
+        }
+
+        internal fun explicitControlUiGoal(userMessage: String): String? {
+            val match = Regex(
+                """(?is)^\s*(?:(?:please\s+)?(?:use|run|invoke)\s+(?:the\s+)?)?(?:control[\s_-]*ui|ui\s+automation)(?:\s+tool)?\s*(?:[,;:-]\s*)?(?:(?:with\s+)?(?:the\s+)?goal\s*(?:is|=|:)\s*(?:to\s+)?|to\s+)?(.+?)\s*$"""
+            ).find(userMessage) ?: return null
+            return match.groupValues[1].trim().takeIf { it.isNotEmpty() }
         }
 
         private fun parseAlarmFallback(normalized: String): ToolCall? {
@@ -967,6 +986,14 @@ class ChatViewModel(
         _orchestration.value = current.copy(
             status = detail,
             entries = current.entries + ActionTraceEntry(phase, detail, toolName, output, isError)
+        )
+    }
+
+    private fun appendOrchestrationOutput(partial: String) {
+        if (partial.isEmpty()) return
+        val current = _orchestration.value ?: return
+        _orchestration.value = current.copy(
+            liveOutput = (current.liveOutput + partial).takeLast(MAX_LIVE_ORCHESTRATION_CHARS)
         )
     }
 
@@ -1419,6 +1446,7 @@ class ChatViewModel(
                     backend = backend,
                     userMessage = trimmed,
                     selectedTools = actionPlannerTools,
+                    onPartialOutput = ::appendOrchestrationOutput,
                     recentContext = conversationHistory
                         .dropLast(1)
                         .takeLast(4)
@@ -1523,7 +1551,7 @@ class ChatViewModel(
             ).run(
                 initialConversation = conversationForModel,
                 latestUserMessage = trimmed,
-                availableToolNames = availableToolNames,
+                availableToolNames = actionPlannerTools.map { it.name }.toSet(),
                 maxToolCalls = MAX_TOOL_CALLS_PER_TURN,
                 onPartialText = ::updateAssistantPlaceholder,
                 onSpeakablePartial = { partial, done ->
@@ -1546,6 +1574,7 @@ class ChatViewModel(
                     updateAssistantPlaceholder("Running tool ${toolCall.toolName}...")
                 },
                 onBenchmarkPartial = { partial ->
+                    appendOrchestrationOutput(partial)
                     if (benchmarkEnabled) {
                         BenchmarkManager.recordPartial(partial)
                     }
@@ -1938,6 +1967,10 @@ class ChatViewModel(
         val selectedNames = LinkedHashSet<String>()
         val normalized = latestUserMessage.lowercase(Locale.US)
 
+        if (explicitControlUiGoal(latestUserMessage) != null) {
+            return listOfNotNull(toolsByName[UiAutomationOrchestrator.CONTROL_UI_TOOL])
+        }
+
         fun addTool(name: String) {
             if (name in toolsByName) {
                 selectedNames += name
@@ -2225,6 +2258,7 @@ class ChatViewModel(
                     onProgress = { phase, detail ->
                         recordOrchestration(phase, detail, UiAutomationOrchestrator.CONTROL_UI_TOOL)
                     },
+                    onModelOutput = ::appendOrchestrationOutput,
                     logger = DebugLogger::log
                 ).run(goal)
             } finally {

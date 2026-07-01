@@ -85,10 +85,18 @@ class AgentTurnRunner(
                 }
 
                 val finalResponse = responseBuilder.toString()
-                val toolCall = ToolCallProtocol.extractToolCall(finalResponse)
+                val extractedToolCall = ToolCallProtocol.extractToolCall(finalResponse)
+                val toolCall = extractedToolCall?.takeIf { it.toolName in availableToolNames }
+                if (extractedToolCall != null && toolCall == null) {
+                    logger(
+                        "AgentTurnRunner: rejected unadvertised tool ${extractedToolCall.toolName}; " +
+                            "allowed=${availableToolNames.sorted().joinToString(",")}"
+                    )
+                }
                 val looksLikeMalformedToolAttempt =
                     finalResponse.trim().startsWith("```") ||
-                        ToolCallProtocol.looksLikeToolControlText(finalResponse)
+                        ToolCallProtocol.looksLikeToolControlText(finalResponse) ||
+                        extractedToolCall != null && toolCall == null
                 val looksLikeBackendFailure =
                     finalResponse.contains("generation failed", ignoreCase = true) ||
                         finalResponse.contains("inference failed", ignoreCase = true)

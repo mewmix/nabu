@@ -348,6 +348,42 @@ class AgentTurnRunnerTest {
     }
 
     @Test
+    fun run_rejectsToolThatWasNotAdvertisedForTurn() = runTest {
+        val backend = FakeBackend(
+            listOf("""<tool_call>{"name":"send_sms","arguments":{"message":"hello"}}</tool_call>""")
+        )
+        val toolCalls = mutableListOf<ToolCall>()
+        var finalResult: AgentTurnRunner.Result? = null
+
+        AgentTurnRunner(
+            backend = backend,
+            scope = this,
+            toolExecutor = { call ->
+                toolCalls += call
+                ToolResult(call.toolName, "unused")
+            },
+            inferToolCallFromModelFailure = { _, _ -> null },
+            recoveryConversationProvider = { emptyList() },
+            inferenceDispatcher = StandardTestDispatcher(testScheduler)
+        ).run(
+            initialConversation = listOf(LlmMessage("user", "tap the visible send button")),
+            latestUserMessage = "tap the visible send button",
+            availableToolNames = setOf("control_ui"),
+            maxToolCalls = 4,
+            onPartialText = {},
+            onSpeakablePartial = { _, _ -> },
+            onSuppressSpeakablePartials = {},
+            onToolStart = {},
+            onComplete = { finalResult = it }
+        )
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(emptyList<ToolCall>(), toolCalls)
+        assertEquals("I tried to call a tool, but could not parse the tool request.", finalResult?.finalResponse)
+    }
+
+    @Test
     fun run_suppressesAllStreamedChunksAfterToolControlStarts() = runTest {
         val backend = ChunkedBackend(
             listOf(

@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -67,6 +68,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import android.widget.Toast
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -84,6 +86,7 @@ import com.mewmix.nabu.utils.PcmTap
 import com.mewmix.nabu.utils.PlayerState
 import com.mewmix.nabu.viewmodel.ChatContextMode
 import com.mewmix.nabu.viewmodel.ChatViewModel
+import com.mewmix.nabu.viewmodel.OrchestrationUiState
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalIconButton
@@ -91,6 +94,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.components.RuntimeStatusLine
+import com.mewmix.nabu.ui.design.LocalNabuChrome
 import com.mewmix.nabu.utils.TextExtractor
 
 @Composable
@@ -1057,55 +1061,11 @@ fun ChatScreen(
         }
 
         orchestration?.takeIf { it.isVisible }?.let { state ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.58f))
-                    .clickable(enabled = !state.isRunning) { viewModel.dismissOrchestration() }
-                    .padding(20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                PanelBox(
-                    title = state.title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 560.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = false)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (state.isRunning) {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        }
-                        Text(state.status, style = MaterialTheme.typography.titleSmall)
-                        state.entries.forEach { entry ->
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(entry.phase, style = MaterialTheme.typography.labelLarge)
-                                Text(
-                                    entry.detail,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (entry.isError) {
-                                        MaterialTheme.colorScheme.error
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    BrutalButton(
-                        onClick = if (state.isRunning) viewModel::cancelGeneration else viewModel::dismissOrchestration,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(if (state.isRunning) "Stop" else "Close")
-                    }
-                }
-            }
+            OrchestrationModal(
+                state = state,
+                onStop = viewModel::cancelGeneration,
+                onDismiss = viewModel::dismissOrchestration
+            )
         }
     }
 
@@ -1319,6 +1279,168 @@ fun ChatScreen(
             },
             dismissButton = {}
         )
+    }
+}
+
+@Composable
+private fun OrchestrationModal(
+    state: OrchestrationUiState,
+    onStop: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val chrome = LocalNabuChrome.current
+    val statusShape = RoundedCornerShape(chrome.controlRadius)
+    var showLiveOutput by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.scrim.copy(alpha = 0.46f))
+            .clickable(enabled = !state.isRunning, onClick = onDismiss)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        PanelBox(
+            title = state.title,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 560.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.primaryContainer, statusShape)
+                    .border(chrome.borderWidth, colors.primary.copy(alpha = 0.28f), statusShape)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = if (state.isRunning) "In progress" else "Finished",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.primary
+                )
+                Text(
+                    text = state.status,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.onPrimaryContainer
+                )
+                if (state.isRunning) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = colors.primary,
+                        trackColor = colors.secondaryContainer
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                state.entries.forEachIndexed { index, entry ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(
+                                    if (entry.isError) colors.errorContainer else colors.secondaryContainer,
+                                    RoundedCornerShape(14.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (index + 1).toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (entry.isError) colors.onErrorContainer else colors.onSecondaryContainer
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = entry.phase,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (entry.isError) colors.error else colors.onSurface
+                                )
+                                entry.toolName?.let { toolName ->
+                                    Text(
+                                        text = toolName,
+                                        modifier = Modifier
+                                            .background(colors.secondaryContainer, RoundedCornerShape(chrome.chipRadius))
+                                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = colors.onSecondaryContainer,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            Text(
+                                text = entry.detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (entry.isError) colors.error else colors.onSurfaceVariant
+                            )
+                            entry.output?.takeIf { entry.isError && it.isNotBlank() }?.let { output ->
+                                Text(
+                                    text = output.take(240),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.error
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            BrutalButton(
+                onClick = { showLiveOutput = !showLiveOutput },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (showLiveOutput) "Hide live model output" else "View live model output")
+            }
+            if (showLiveOutput) {
+                Spacer(modifier = Modifier.height(10.dp))
+                SelectionContainer {
+                    Text(
+                        text = state.liveOutput.ifBlank { "Waiting for model output..." },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .verticalScroll(rememberScrollState())
+                            .background(colors.surfaceVariant, statusShape)
+                            .border(chrome.borderWidth, colors.outline.copy(alpha = 0.35f), statusShape)
+                            .padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = colors.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            BrutalButton(
+                onClick = if (state.isRunning) onStop else onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (state.isRunning) "Stop" else "Close")
+            }
+        }
     }
 }
 

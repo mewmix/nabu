@@ -107,6 +107,29 @@ class ChatViewModelInferenceTest {
     }
 
     @Test
+    fun explicitControlUiRequestBypassesMultiActionChain() {
+        val request = "use control UI, the goal is to send a chat message within Nabu"
+
+        assertEquals(
+            null,
+            ChatViewModel.planDirectActionChain(
+                userMessage = request,
+                availableToolNames = setOf("send_sms", "open_app", UiAutomationOrchestrator.CONTROL_UI_TOOL)
+            )
+        )
+        assertEquals(
+            ToolCall(
+                UiAutomationOrchestrator.CONTROL_UI_TOOL,
+                mapOf("goal" to "send a chat message within Nabu")
+            ),
+            ChatViewModel.inferToolCallFromModelFailure(
+                userMessage = request,
+                availableToolNames = setOf("send_sms", "open_app", UiAutomationOrchestrator.CONTROL_UI_TOOL)
+            )
+        )
+    }
+
+    @Test
     fun planDirectActionChain_schedulesOtherSupportedActions() {
         val plan = ChatViewModel.planDirectActionChain(
             userMessage = "pause media then in 15 seconds play media",

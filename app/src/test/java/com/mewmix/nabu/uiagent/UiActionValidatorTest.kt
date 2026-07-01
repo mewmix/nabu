@@ -37,16 +37,70 @@ class UiActionValidatorTest {
     }
 
     @Test
-    fun parserRejectsLongPlans() {
-        val result = runCatching {
-            UiActionPlanParser.parse(
-                """{"goal":"navigate","screen_id":"${screen.screenId}","steps":[
-                  {"action":"press_back"},{"action":"press_home"},{"action":"wait","ms":100}
-                ]}"""
-            )
-        }
+    fun parserReducesLongPlansToFirstAction() {
+        val plan = UiActionPlanParser.parse(
+            """{"goal":"navigate","screen_id":"${screen.screenId}","steps":[
+              {"action":"press_back"},{"action":"press_home"},{"action":"wait","ms":100}
+            ]}"""
+        )
 
-        assertTrue(result.isFailure)
+        assertEquals(listOf(UiActionStep.PressBack), plan.steps)
+    }
+
+    @Test
+    fun validatorAllowsOnScreenBoundsWhenElementIdIsStale() {
+        val plan = UiActionPlan(
+            "Tap dark mode",
+            screen.screenId,
+            listOf(UiActionStep.Tap(UiTarget("e_stale", UiBounds(920, 215, 1010, 285))))
+        )
+
+        assertEquals(UiPlanDecision.Allow, UiActionValidator.validate(plan, screen))
+    }
+
+    @Test
+    fun validatorDoesNotBlockActionForStaleOptionalAssertionId() {
+        val toggle = screen.elements.first { it.resourceId == "android:id/switch_widget" }
+        val plan = UiActionPlan(
+            "Turn on dark mode",
+            screen.screenId,
+            listOf(
+                UiActionStep.Tap(UiTarget(toggle.id, null)),
+                UiActionStep.Assert(UiAssertion("e_stale", null, true))
+            )
+        )
+
+        assertEquals(UiPlanDecision.Allow, UiActionValidator.validate(plan, screen))
+    }
+
+    @Test
+    fun plannerAliasesResolveToIndexedElements() {
+        val plannerElements = screen.plannerElements()
+
+        assertTrue(plannerElements.isNotEmpty())
+        assertEquals(plannerElements.first(), screen.element("p0"))
+        assertEquals(plannerElements.last(), screen.element("p${plannerElements.lastIndex}"))
+    }
+
+    @Test
+    fun plannerAliasesOnlyExposeActionableElementsAndIncludeChildLabels() {
+        val plannerElements = screen.plannerElements()
+        val send = plannerElements.first { it.text == "Send" }
+
+        assertTrue(plannerElements.none { it.text == "Dark mode" })
+        assertEquals("Send", screen.plannerLabel(send))
+    }
+
+    @Test
+    fun validatorRejectsTapOnNonClickableText() {
+        val label = screen.elements.first { it.text == "Dark mode" }
+        val plan = UiActionPlan(
+            "Tap dark mode",
+            screen.screenId,
+            listOf(UiActionStep.Tap(UiTarget(label.id, null)))
+        )
+
+        assertTrue(UiActionValidator.validate(plan, screen) is UiPlanDecision.Invalid)
     }
 
     @Test

@@ -21,6 +21,7 @@ class UiAutomationOrchestrator(
     private val backend: LlmBackend,
     private val requestConfirmation: suspend (String) -> Boolean,
     private val onProgress: (phase: String, detail: String) -> Unit = { _, _ -> },
+    private val onModelOutput: (String) -> Unit = {},
     private val logger: (String) -> Unit = {}
 ) {
     private data class Observation(
@@ -45,7 +46,7 @@ class UiAutomationOrchestrator(
                     rawJson = extractJson(rawPlan),
                     knownGoal = goal,
                     knownScreenId = observation.screen.screenId
-                )
+                ).canonicalizeElementIds(observation.screen)
             }
                 .getOrElse { error ->
                     logger("UiAutomation planner parse failed: ${error.message}; output=${rawPlan.take(500)}")
@@ -53,8 +54,14 @@ class UiAutomationOrchestrator(
                 }
             when (val decision = UiActionValidator.validate(actionPlan, observation.screen)) {
                 UiPlanDecision.Allow -> Unit
-                is UiPlanDecision.Invalid -> return failure(decision.reason)
-                is UiPlanDecision.Block -> return failure(decision.reason)
+                is UiPlanDecision.Invalid -> {
+                    logger("UiAutomation plan rejected: ${decision.reason}")
+                    return failure(decision.reason)
+                }
+                is UiPlanDecision.Block -> {
+                    logger("UiAutomation plan blocked: ${decision.reason}")
+                    return failure(decision.reason)
+                }
                 is UiPlanDecision.RequireConfirmation -> {
                     if (!requestConfirmation(describeConfirmation(actionPlan, decision.reason))) {
                         return failure("User denied UI action confirmation.")
@@ -71,7 +78,10 @@ class UiAutomationOrchestrator(
                 else -> {
                     onProgress("Execute ${actionIndex + 1}", "Running ${actionLabel(action)}")
                     val result = execute(action, observation)
-                    if (result.isError) return result
+                    if (result.isError) {
+                        logger("UiAutomation execution failed action=${actionLabel(action)}: ${result.output}")
+                        return result
+                    }
                 }
             }
 
@@ -139,10 +149,18 @@ class UiAutomationOrchestrator(
         val completed = AtomicBoolean(false)
         val output = StringBuilder()
         backend.sendMessage(conversation) { partial, done ->
-            if (partial.isNotEmpty()) output.append(partial)
+            if (partial.isNotEmpty()) {
+                output.append(partial)
+                onModelOutput(partial)
+            }
             if (done && completed.compareAndSet(false, true)) completion.complete(output.toString())
         }
-        return withTimeoutOrNull(PLANNER_TIMEOUT_MS) { completion.await() }
+        return withTimeoutOrNull(PLANNER_TIMEOUT_MS) { completion.await() }?.also { raw ->
+            logger(
+                "UiAutomation planner output screen=${observation.screen.screenId} " +
+                    "elements=${observation.screen.plannerElements(MAX_PROMPT_ELEMENTS).size}: ${raw.take(2_000)}"
+            )
+        }
     }
 
     private suspend fun execute(action: UiActionStep, observation: Observation): ToolResult {
@@ -217,18 +235,11 @@ class UiAutomationOrchestrator(
 
     private fun buildPlannerInput(goal: String, screen: UiScreenState): String {
         val elements = JsonArray()
-        screen.elements.asSequence()
-            .filter { it.visible }
-            .filter {
-                it.clickable || it.editable || it.scrollable || it.checkable ||
-                    !it.text.isNullOrBlank() || !it.contentDescription.isNullOrBlank()
-            }
-            .take(MAX_PROMPT_ELEMENTS)
-            .forEach { element ->
+        screen.plannerElements(MAX_PROMPT_ELEMENTS)
+            .forEachIndexed { index, element ->
                 elements.add(JsonObject().apply {
-                    addProperty("id", element.id)
-                    element.text?.let { addProperty("text", it) }
-                    element.contentDescription?.let { addProperty("content_desc", it) }
+                    addProperty("id", "p$index")
+                    screen.plannerLabel(element)?.let { addProperty("label", it) }
                     element.resourceId?.let { addProperty("resource_id", it) }
                     element.className?.let { addProperty("class", it) }
                     element.bounds?.let { bounds ->
@@ -251,6 +262,27 @@ class UiAutomationOrchestrator(
             add("elements", elements)
         }.toString()
     }
+
+    private fun UiActionPlan.canonicalizeElementIds(screen: UiScreenState): UiActionPlan = copy(
+        steps = steps.map { step ->
+            when (step) {
+                is UiActionStep.Tap -> step.copy(target = step.target.canonicalize(screen))
+                is UiActionStep.LongPress -> step.copy(target = step.target.canonicalize(screen))
+                is UiActionStep.TypeText -> step.copy(target = step.target?.canonicalize(screen))
+                is UiActionStep.Scroll -> step.copy(target = step.target?.canonicalize(screen))
+                is UiActionStep.Assert -> step.copy(
+                    condition = step.condition.copy(
+                        elementId = step.condition.elementId?.let { id -> screen.element(id)?.id ?: id }
+                    )
+                )
+                else -> step
+            }
+        }
+    )
+
+    private fun UiTarget.canonicalize(screen: UiScreenState): UiTarget = copy(
+        elementId = elementId?.let { id -> screen.element(id)?.id ?: id }
+    )
 
     private fun describeConfirmation(plan: UiActionPlan, reason: String): String =
         "$reason\n\nGoal: ${plan.goal}\nAction: ${plan.steps.first { it !is UiActionStep.Assert }::class.simpleName}"
@@ -320,10 +352,14 @@ class UiAutomationOrchestrator(
             Use the supplied goal, screenshot when present, and indexed UI elements.
             The screen_id must exactly match the supplied screen_id.
             Emit exactly one non-assert action and optionally one trailing assert action in the steps array.
+            Element IDs are short aliases such as p0 and p12. Copy an ID exactly from the supplied elements array.
+            Every supplied element is actionable. Use its label and capability flags to choose the target.
             Prefer element_id. Use fallback_bounds (exactly 4 integers: left, top, right, bottom) only when no reliable element exists.
+            If element_id is present, omit fallback_bounds.
             Supported actions: tap, long_press, type_text, press_back, press_home, scroll, wait, ask_user, done, assert.
             Use done with a short summary when the goal is already satisfied.
             Use ask_user when confidence is low or the target is ambiguous.
+            For goals involving typing or sending text, use type_text only when the exact text is present in the goal. Otherwise use ask_user. Never tap unrelated controls to discover missing text.
             Never plan payments, purchases, passwords, 2FA, account deletion, factory reset, permission escalation, or unknown APK installation.
             Include an assertion after state-changing actions when the expected result is visible.
         """.trimIndent()

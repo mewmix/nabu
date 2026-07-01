@@ -77,6 +77,7 @@ object ActionPlanner {
         userMessage: String,
         selectedTools: List<Tool>,
         recentContext: List<LlmMessage> = emptyList(),
+        onPartialOutput: (String) -> Unit = {},
         timeoutMs: Long = PLANNER_TIMEOUT_MS
     ): Plan? {
         val tools = selectedTools
@@ -89,6 +90,7 @@ object ActionPlanner {
             val deferred = CompletableDeferred<String>()
             val builder = StringBuilder()
             backend.sendMessage(buildPlannerConversation(userMessage, tools, recentContext)) { partial, done ->
+                if (partial.isNotEmpty()) onPartialOutput(partial)
                 if (!done) {
                     builder.append(partial)
                     return@sendMessage
