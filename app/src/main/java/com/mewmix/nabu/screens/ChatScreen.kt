@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -102,6 +103,7 @@ fun ChatScreen(
     viewModel: ChatViewModel,
     initialMessage: String = "",
     startVoice: Boolean = false,
+    onExit: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val chatMessages by viewModel.chatMessages.collectAsState()
@@ -130,6 +132,8 @@ fun ChatScreen(
     var message by remember { mutableStateOf(initialMessage) }
     var attachmentMenuExpanded by remember { mutableStateOf(false) }
     var actionTraceToShow by remember { mutableStateOf<ActionTrace?>(null) }
+
+    BackHandler(onBack = onExit)
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -382,7 +386,14 @@ fun ChatScreen(
                 title = "Chat",
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
+                    .padding(paddingValues),
+                headerTrailing = {
+                    BrutalIconButton(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Exit chat",
+                        onClick = onExit
+                    )
+                }
             ) {
             RuntimeStatusLine(
                 modifier = Modifier

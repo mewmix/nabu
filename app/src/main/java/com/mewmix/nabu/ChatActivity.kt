@@ -120,9 +120,13 @@ class ChatActivity : ComponentActivity() {
             }
 
             val preferred = if (startVoice) preferredVoiceLaunchModel(available) else null
+            val recentChatModel = preferredRecentChatModel(available)
             if (preferred != null) {
                 DebugLogger.log("ChatActivity: quick voice using model ${preferred.id}")
                 startChat(preferred, initialPrompt, startVoice)
+            } else if (recentChatModel != null) {
+                DebugLogger.log("ChatActivity: restoring recent chat with model ${recentChatModel.id}")
+                startChat(recentChatModel, initialPrompt, startVoice)
             } else if (available.size == 1) {
                 startChat(available.first(), initialPrompt, startVoice)
             } else {
@@ -145,6 +149,10 @@ class ChatActivity : ComponentActivity() {
 
     private fun preferredVoiceLaunchModel(models: List<Model>): Model? {
         if (models.size == 1) return models.first()
+        return preferredRecentChatModel(models)
+    }
+
+    private fun preferredRecentChatModel(models: List<Model>): Model? {
         val modelsById = models.associateBy { it.id }
         val normalizedModelsById = models.associateBy { OAuthRemoteModels.normalizeModelId(it.id) }
         ConversationRepository.getConversationSummaries(applicationContext)
@@ -163,10 +171,21 @@ class ChatActivity : ComponentActivity() {
                 ChatModelPicker(
                     models = models,
                     onSelect = { startChat(it, initialPrompt, startVoice) },
-                    onCancel = { finish() }
+                    onCancel = ::exitChat
                 )
             }
         }
+    }
+
+    private fun exitChat() {
+        if (isTaskRoot) {
+            startActivity(
+                Intent(this, MainActivity::class.java).addFlags(
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+            )
+        }
+        finish()
     }
 
     private fun startChat(model: Model, initialPrompt: String?, startVoice: Boolean) {
@@ -189,13 +208,14 @@ class ChatActivity : ComponentActivity() {
                 if (isInitializing) {
                     ChatModelPickerLoading(
                         model = model,
-                        onCancel = { finish() }
+                        onCancel = ::exitChat
                     )
                 } else {
                     ChatScreen(
                         viewModel = viewModel,
                         initialMessage = initialPrompt.orEmpty(),
-                        startVoice = startVoice
+                        startVoice = startVoice,
+                        onExit = ::exitChat
                     )
                 }
                 
