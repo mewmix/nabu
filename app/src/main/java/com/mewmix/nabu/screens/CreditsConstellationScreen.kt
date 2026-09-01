@@ -1,313 +1,393 @@
 package com.mewmix.nabu.screens
 
-import android.content.Intent
-import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.roundToInt
-import kotlin.math.sin
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.mewmix.nabu.ui.brutalist.PanelBox
 
-// Data classes representing credits hierarchy
-
-data class CreditEntry(val text: String, val url: String? = null)
+data class CreditEntry(
+    val name: String,
+    val contribution: String,
+    val url: String? = null,
+    val featured: Boolean = false,
+)
 
 data class CreditGroup(
     val title: String,
-    val entries: List<CreditEntry> = emptyList(),
-    val children: List<CreditGroup> = emptyList()
+    val subtitle: String,
+    val entries: List<CreditEntry>,
 )
 
 @Composable
 fun CreditsConstellationScreen() {
-    // FIX: The legacyCredits data structure was flattened to prevent overlapping nodes.
-    // The nested group was removed, and its entries were moved to the parent.
-    val legacyCredits = remember {
+    val communityCredits = remember {
         CreditGroup(
-            title = "Original Credits",
+            title = "Community constellation",
+            subtitle = "People and projects shaping Nabu",
             entries = listOf(
                 CreditEntry(
-                    "Kokoro: a frontier TTS model (Apache 2.0)",
-                    "https://huggingface.co/hexgrad/Kokoro-82M"
+                    name = "djzeroone",
+                    contribution = "Voice Lab prototype, runtime diagnostics, and connected smoke testing",
+                    url = "https://github.com/djzeroone",
+                    featured = true,
                 ),
                 CreditEntry(
-                    "Kokoro-ONNX: converted kokoro (MIT)",
-                    "https://github.com/thewh1teagle/kokoro-onnx"
+                    name = "puff-dayo",
+                    contribution = "Original Android Kokoro TTS implementation, ONNX runtime, style mixer, and app template",
+                    url = "https://github.com/puff-dayo/Kokoro-82M-Android",
+                    featured = true,
                 ),
                 CreditEntry(
-                    "CMU dict: a pronunciation dictionary",
-                    "http://www.speech.cs.cmu.edu/cgi-bin/cmudict"
+                    name = "Google AI Edge Gallery",
+                    contribution = "LLM integration and Hugging Face model downloading",
+                    url = "https://github.com/google-ai-edge/gallery",
                 ),
                 CreditEntry(
-                    "IPA Transcribers: language transliterators (GPL-3.0)",
-                    "https://github.com/kotlinguistics/IPA-Transcribers"
+                    name = "LiteRT Community",
+                    contribution = "Android-ready model collection on Hugging Face",
+                    url = "https://huggingface.co/litert-community",
                 ),
                 CreditEntry(
-                    "Android NNAPI: a machine learning API",
-                    "https://developer.android.com/ndk/guides/neuralnetworks"
-                )
+                    name = "jsoup",
+                    contribution = "HTML parsing for EPUB support (MIT), by Jonathan Hedley",
+                    url = "https://jsoup.org/",
+                ),
             ),
-            children = emptyList() // No longer has nested children
         )
     }
-
-    val ourCredits = remember {
+    val modelCredits = remember {
         CreditGroup(
-            title = "Our Credit Wall",
+            title = "Models & foundations",
+            subtitle = "The open work underneath the experience",
             entries = listOf(
                 CreditEntry(
-                    "puff-dayo: original Android Kokoro TTS implementation, ONNX runtime, style mixer, app template",
-                    "https://github.com/puff-dayo/Kokoro-82M-Android"
+                    name = "Kokoro",
+                    contribution = "Frontier text-to-speech model (Apache 2.0)",
+                    url = "https://huggingface.co/hexgrad/Kokoro-82M",
                 ),
                 CreditEntry(
-                    "Google AI Edge Gallery for LLM and Hugging Face model downloading",
-                    "https://github.com/google-ai-edge/gallery"
+                    name = "Kokoro ONNX",
+                    contribution = "ONNX conversion and runtime tooling (MIT)",
+                    url = "https://github.com/thewh1teagle/kokoro-onnx",
                 ),
                 CreditEntry(
-                    "LiteRT community on Hugging Face",
-                    "https://huggingface.co/litert-community",
+                    name = "Supertonic",
+                    contribution = "Lightweight text-to-speech engine for Android",
+                    url = "https://github.com/supertonic-tts/supertonic",
                 ),
                 CreditEntry(
-                    "jsoup: HTML parser for EPUB support (MIT) by Jonathan Hedley",
-                    "https://jsoup.org/",
+                    name = "Soprano",
+                    contribution = "Original model and inference code (Apache 2.0)",
+                    url = "https://github.com/ekwek1/soprano",
                 ),
                 CreditEntry(
-                    "Supertonic: a lightweight TTS engine for Android",
-                    "https://github.com/supertonic-tts/supertonic"
+                    name = "Soprano Web ONNX",
+                    contribution = "Browser inference reference and deployable ONNX model packaging",
+                    url = "https://github.com/KevinAHM/soprano-web-onnx",
                 ),
                 CreditEntry(
-                    "Soprano: original model and inference code (Apache 2.0)",
-                    "https://github.com/ekwek1/soprano"
+                    name = "CMU Pronouncing Dictionary",
+                    contribution = "Pronunciation data for speech processing",
+                    url = "https://www.speech.cs.cmu.edu/cgi-bin/cmudict",
                 ),
                 CreditEntry(
-                    "Soprano Web ONNX: browser ONNX inference reference implementation",
-                    "https://github.com/KevinAHM/soprano-web-onnx"
+                    name = "IPA Transcribers",
+                    contribution = "Language transliterators (GPL-3.0)",
+                    url = "https://github.com/kotlinguistics/IPA-Transcribers",
                 ),
                 CreditEntry(
-                    "Soprano ONNX model packaging for deployment",
-                    "https://huggingface.co/KevinAHM/soprano-onnx"
-                )
-            )
+                    name = "Android NNAPI",
+                    contribution = "Android's neural-network acceleration API",
+                    url = "https://developer.android.com/ndk/guides/neuralnetworks",
+                ),
+            ),
         )
     }
-
-    var expandedGroup by remember { mutableStateOf<CreditGroup?>(null) }
-    val context = LocalContext.current
 
     PanelBox(
         title = "Credits",
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
+            val useColumns = maxWidth >= 720.dp
+            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                CreditsHero()
+                if (useColumns) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        CreditSection(communityCredits, Modifier.weight(1f))
+                        CreditSection(modelCredits, Modifier.weight(1f))
+                    }
+                } else {
+                    CreditSection(communityCredits)
+                    CreditSection(modelCredits)
+                }
+                Text(
+                    text = "Nabu stands on open source, shared experiments, and generous people.",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreditsHero() {
+    val transition = rememberInfiniteTransition(label = "creditsTwinkle")
+    val pulse = transition.animateFloat(
+        initialValue = 0.88f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "creditsStarPulse",
+    ).value
+    val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
+    val surface = MaterialTheme.colorScheme.surfaceVariant
+    val sparkle = MaterialTheme.colorScheme.onPrimaryContainer
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        lerp(surface, MaterialTheme.colorScheme.secondaryContainer, 0.62f),
+                    ),
+                ),
+            )
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                RoundedCornerShape(22.dp),
+            )
+            .padding(horizontal = 22.dp, vertical = 26.dp),
+    ) {
+        Canvas(Modifier.matchParentSize()) {
+            val stars = listOf(
+                0.08f to 0.22f,
+                0.17f to 0.78f,
+                0.46f to 0.14f,
+                0.72f to 0.74f,
+                0.87f to 0.25f,
+                0.94f to 0.62f,
+            )
+            stars.forEachIndexed { index, (x, y) ->
+                drawCircle(
+                    color = if (index % 2 == 0) primary else secondary,
+                    radius = if (index % 3 == 0) 5f else 3f,
+                    center = Offset(size.width * x, size.height * y),
+                    alpha = 0.55f,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .pointerInput(expandedGroup) {
-                        if (expandedGroup != null) {
-                            detectTapGestures { expandedGroup = null }
-                        }
-                    },
-                contentAlignment = Alignment.Center
+                    .size(58.dp)
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    StarCluster(
-                        group = legacyCredits,
-                        expanded = expandedGroup == legacyCredits,
-                        onToggle = {
-                            expandedGroup = if (expandedGroup == legacyCredits) null else legacyCredits
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(32.dp))
-                    StarCluster(
-                        group = ourCredits,
-                        expanded = expandedGroup == ourCredits,
-                        onToggle = {
-                            expandedGroup = if (expandedGroup == ourCredits) null else ourCredits
-                        }
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .graphicsLayer {
+                            scaleX = pulse
+                            scaleY = pulse
+                            rotationZ = (pulse - 1f) * 18f
+                        },
+                    tint = sparkle,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "OPEN SOURCE • BUILT TOGETHER",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    text = "The constellation behind Nabu",
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    text = "Tap any star to visit the work that helped make Nabu possible.",
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun StarCluster(
-    group: CreditGroup,
-    modifier: Modifier = Modifier,
-    size: Dp = 200.dp,
-    expanded: Boolean? = null,
-    onToggle: (() -> Unit)? = null,
-) {
-    var internalExpanded by remember { mutableStateOf(false) }
-    val isExpanded = expanded ?: internalExpanded
-    val toggle = onToggle ?: { internalExpanded = !internalExpanded }
-    var radius = (size / 2) - 24.dp
-    val density = LocalDensity.current
-
-    // Constant-time base angle that drives all child orbiters
-    val baseAngle by rememberInfiniteTransition(label = "orbitBase")
-        .animateFloat(
-            initialValue = 0f,
-            targetValue = (2f * PI).toFloat(),
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 22000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "orbitAngle"
-        )
-
-    val nodes = remember(group) {
-        group.children.map { Node.Group(it) } + group.entries.map { Node.Entry(it) }
-    }
-    val numNodes = nodes.size
-    if (numNodes > 1) {
-        val nodeMaxWidth = 120.dp
-        val safetyPadding = 20.dp
-        val minChord = nodeMaxWidth + safetyPadding
-        val halfAngle = PI / numNodes.toDouble()
-        val sinHalf = sin(halfAngle)
-        if (sinHalf > 0.0001) {
-            val minRadiusValue = minChord.value / (2f * sinHalf.toFloat())
-            val calculatedMinRadius = minRadiusValue.dp
-            if (calculatedMinRadius > radius) {
-                radius = calculatedMinRadius
-            }
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .padding(8.dp)
-            .size(size),
-        contentAlignment = Alignment.Center
-    ) {
-        // Draw orbiting nodes behind the hub
-        AnimatedVisibility(visible = isExpanded) {
-            if (nodes.isNotEmpty()) {
-                val radiusPx = with(density) { radius.toPx() }
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    nodes.forEachIndexed { index, node ->
-                        // Deterministic per-node parameters
-                        val offsetAngle = (2f * PI * index / nodes.size).toFloat()
-                        val speed = 1.0f
-                        val ring = 1.0f
-                        // Slight wobble to avoid perfect symmetry
-                        val wobble = 1f
-
-                        val angle = baseAngle * speed + offsetAngle
-                        val distancePx = radiusPx * ring * wobble
-
-                        val x = (cos(angle) * distancePx).roundToInt()
-                        val y = (sin(angle) * distancePx).roundToInt()
-
-                        when (node) {
-                            is Node.Group -> StarCluster(
-                                group = node.group,
-                                modifier = Modifier.offset { IntOffset(x, y) },
-                                size = size * 0.5f
-                            )
-                            is Node.Entry -> StarNode(
-                                entry = node.entry,
-                                modifier = Modifier.offset { IntOffset(x, y) }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Hub (central star + title) drawn above orbiters
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            IconButton(onClick = toggle) {
-                Icon(Icons.Default.Star, contentDescription = group.title)
-            }
-            Text(
-                text = group.title,
-                style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-
-private sealed class Node {
-    data class Group(val group: CreditGroup) : Node()
-    data class Entry(val entry: CreditEntry) : Node()
-}
-
-@Composable
-private fun StarNode(entry: CreditEntry, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
+private fun CreditSection(group: CreditGroup, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        IconButton(onClick = {
-            entry.url?.let {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(it))
-                context.startActivity(intent)
-            }
-        }) {
-            Icon(Icons.Default.Star, contentDescription = entry.text, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
-        }
         Text(
-            text = entry.text,
-            style = MaterialTheme.typography.labelSmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 120.dp)
+            text = group.title,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
         )
+        Text(
+            text = group.subtitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(2.dp))
+        group.entries.forEach { entry ->
+            CreditCard(entry)
+        }
+    }
+}
+
+@Composable
+private fun CreditCard(entry: CreditEntry) {
+    val uriHandler = LocalUriHandler.current
+    val accent = if (entry.featured) {
+        MaterialTheme.colorScheme.tertiary
+    } else {
+        MaterialTheme.colorScheme.secondary
+    }
+    val container = if (entry.featured) {
+        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = entry.url != null) {
+                entry.url?.let { url -> runCatching { uriHandler.openUri(url) } }
+            },
+        shape = RoundedCornerShape(16.dp),
+        color = container,
+        tonalElevation = if (entry.featured) 3.dp else 0.dp,
+        border = BorderStroke(
+            1.dp,
+            accent.copy(alpha = if (entry.featured) 0.72f else 0.28f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(accent.copy(alpha = 0.16f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (entry.featured) 20.dp else 16.dp),
+                    tint = accent,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = entry.name,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = if (entry.featured) FontWeight.ExtraBold else FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = entry.contribution,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (entry.url != null) {
+                Spacer(Modifier.width(2.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                    contentDescription = "Open ${entry.name}",
+                    modifier = Modifier.size(18.dp),
+                    tint = accent,
+                )
+            }
+        }
     }
 }
