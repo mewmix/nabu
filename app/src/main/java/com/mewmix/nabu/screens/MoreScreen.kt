@@ -58,13 +58,6 @@ fun MoreScreen(onNavigate: (String) -> Unit) {
                     onClick = { onNavigate("Models") }
                 )
                 MoreDestination(
-                    label = "Voice Lab",
-                    icon = ImageVector.vectorResource(R.drawable.ic_audio_24),
-                    onClick = { onNavigate("VoiceLab") }
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                MoreDestination(
                     label = "Credits",
                     icon = ImageVector.vectorResource(R.drawable.ic_credits_24),
                     onClick = { onNavigate("Credits") }

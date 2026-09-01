@@ -279,7 +279,6 @@ private fun com.mewmix.nabu.Screen.asFeature(): com.mewmix.nabu.Screen? = when (
     com.mewmix.nabu.Screen.Creations,
     com.mewmix.nabu.Screen.Settings,
     com.mewmix.nabu.Screen.Models,
-    com.mewmix.nabu.Screen.VoiceLab,
     com.mewmix.nabu.Screen.Credits,
     com.mewmix.nabu.Screen.DebugLog -> com.mewmix.nabu.Screen.More
     com.mewmix.nabu.Screen.Chat -> null

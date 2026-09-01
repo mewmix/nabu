@@ -15,11 +15,11 @@ if ! "$ADB" devices | awk 'NR > 1 && $2 == "device" { found = 1 } END { exit fou
   exit 1
 fi
 
-echo "Voice Lab connected smoke gate"
+echo "TTS workbench connected smoke gate"
 echo "JAVA_HOME=$JAVA_HOME"
 echo "ANDROID_HOME=$ANDROID_HOME"
 
 ./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.mewmix.nabu.VoiceLabSmokeTest,com.mewmix.nabu.ModelsSmokeTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.mewmix.nabu.TtsWorkbenchSmokeTest,com.mewmix.nabu.ModelsSmokeTest
 
-echo "Voice Lab connected smoke gate passed."
+echo "TTS workbench connected smoke gate passed."

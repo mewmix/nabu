@@ -17,6 +17,7 @@ import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.PhonemeConverter
 import com.mewmix.nabu.utils.StyleLoader
 import com.mewmix.nabu.utils.createAudio
+import com.mewmix.nabu.utils.createAudioFromStyleVector
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -184,10 +185,18 @@ class VoiceLabRepository(
         val voiceId = request.voiceId ?: kokoroVoices().firstOrNull()?.id
             ?: throw IllegalStateException("No Kokoro voices available")
         val phonemes = phonemeConverter.phonemize(request.text)
-        val (audio, sampleRate) = createAudio(
+        val speed = request.parameters.floatValue("speed", 1.0f)
+        val (audio, sampleRate) = request.kokoroStyleVector?.let { styleVector ->
+            createAudioFromStyleVector(
+                phonemes = phonemes,
+                voice = styleVector,
+                speed = speed,
+                engine = OnnxRuntimeManager.getEngine(),
+            )
+        } ?: createAudio(
             phonemes = phonemes,
             voice = voiceId,
-            speed = request.parameters.floatValue("speed", 1.0f),
+            speed = speed,
             engine = OnnxRuntimeManager.getEngine(),
             styleLoader = styleLoader
         )

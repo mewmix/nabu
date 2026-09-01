@@ -8,7 +8,7 @@ export ANDROID_HOME="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetool
 
 cd "$ROOT_DIR"
 
-echo "Voice Lab quality gate"
+echo "TTS workbench quality gate"
 echo "JAVA_HOME=$JAVA_HOME"
 echo "ANDROID_HOME=$ANDROID_HOME"
 
@@ -16,4 +16,4 @@ echo "ANDROID_HOME=$ANDROID_HOME"
 ./gradlew :app:testDebugUnitTest
 ./gradlew :app:lintDebug
 
-echo "Voice Lab quality gate passed."
+echo "TTS workbench quality gate passed."

@@ -1,121 +1,58 @@
 package com.mewmix.nabu
 
 import NabuTheme
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import com.mewmix.nabu.screens.BookScreen
-import com.mewmix.nabu.screens.CreationsScreen
-import com.mewmix.nabu.screens.SettingsScreen
-import com.mewmix.nabu.screens.MixerScreen
-import com.mewmix.nabu.screens.MoreScreen
-import com.mewmix.nabu.screens.ModelsScreen
-import com.mewmix.nabu.screens.DebugLogScreen
-import com.mewmix.nabu.screens.CreditsConstellationScreen
-import com.mewmix.nabu.screens.VoiceLabScreen
-import com.mewmix.nabu.galleryport.PerfHud
-import com.mewmix.nabu.api.ApiServerManager
-import com.mewmix.nabu.api.ApiServerBackgroundService
-import com.mewmix.nabu.api.ApiServerRuntime
 import android.app.Application
-import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Replay
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material3.Icon
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import com.mewmix.nabu.ui.brutalist.BrutalIconButton
-import com.mewmix.nabu.ui.brutalist.PanelBox
-import com.mewmix.nabu.ui.brutalist.BrutalSlider
-import com.mewmix.nabu.ui.brutalist.PanelRow
-import com.mewmix.nabu.ui.brutalist.Brutal
-import com.mewmix.nabu.ui.components.ModernBottomBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
-import com.mewmix.nabu.data.UserPreferencesRepository
-import com.mewmix.nabu.utils.PhonemeConverter
-import com.mewmix.nabu.utils.StyleLoader
-import com.mewmix.nabu.utils.createAudio
-import com.mewmix.nabu.utils.BenchmarkManager
-import com.mewmix.nabu.utils.playAudio
-import com.mewmix.nabu.utils.saveAudio
-import com.mewmix.nabu.utils.SettingsManager
-import com.mewmix.nabu.utils.DebugLogger
-import com.mewmix.nabu.utils.OnnxRuntimeManager
-import com.mewmix.nabu.utils.formatBytes
-import com.mewmix.nabu.utils.UpdateChecker
-import com.mewmix.nabu.utils.AudioWorkspaceState
-import com.mewmix.nabu.utils.loadWorkspaceAudio
-import com.mewmix.nabu.utils.persistWorkspaceAudio
-import com.mewmix.nabu.kokoro.Downloader
-import com.mewmix.nabu.kokoro.RunEp
-import com.google.android.material.color.DynamicColors
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.Locale
-import com.mewmix.nabu.data.ModelManager
-import com.mewmix.nabu.data.TtsModelValidator
-import com.mewmix.nabu.data.ModelType
-import com.mewmix.nabu.screens.InitScreen
-import com.mewmix.nabu.screens.OptionalPermissionsScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.mewmix.nabu.viewmodel.GlobalRuntimeViewModel
+import com.google.android.material.color.DynamicColors
+import com.mewmix.nabu.api.ApiServerBackgroundService
+import com.mewmix.nabu.api.ApiServerManager
+import com.mewmix.nabu.api.ApiServerRuntime
+import com.mewmix.nabu.data.UserPreferencesRepository
+import com.mewmix.nabu.screens.AudioScreen
+import com.mewmix.nabu.screens.BookScreen
+import com.mewmix.nabu.screens.CreationsScreen
+import com.mewmix.nabu.screens.CreditsConstellationScreen
+import com.mewmix.nabu.screens.DebugLogScreen
+import com.mewmix.nabu.screens.InitScreen
+import com.mewmix.nabu.screens.MixerScreen
+import com.mewmix.nabu.screens.ModelsScreen
+import com.mewmix.nabu.screens.MoreScreen
+import com.mewmix.nabu.screens.OptionalPermissionsScreen
+import com.mewmix.nabu.screens.SettingsScreen
 import com.mewmix.nabu.ui.components.GlobalStatusBar
-import com.mewmix.nabu.ui.components.RuntimeStatusLine
-import com.mewmix.nabu.data.ModelState
-import androidx.compose.runtime.collectAsState
-import java.io.File
+import com.mewmix.nabu.utils.PhonemeConverter
+import com.mewmix.nabu.utils.SettingsManager
+import com.mewmix.nabu.utils.StyleLoader
+import com.mewmix.nabu.utils.UpdateChecker
+import com.mewmix.nabu.viewmodel.GlobalRuntimeViewModel
+import com.mewmix.nabu.viewmodel.TtsWorkbenchViewModel
 
 const val EXTRA_START_SCREEN = "start_screen"
 const val EXTRA_BOOK_URI = "book_uri"
@@ -164,7 +101,6 @@ class MyApplication : Application() {
 
 class MainActivity : ComponentActivity() {
     private lateinit var phonemeConverter: PhonemeConverter
-    private val scope = MainScope()
     private lateinit var userPreferencesRepository: UserPreferencesRepository
     private val requestedScreen = mutableStateOf<Screen?>(null)
 
@@ -212,23 +148,11 @@ class MainActivity : ComponentActivity() {
                     )
                 } else {
                     val viewModel: GlobalRuntimeViewModel = viewModel()
+                    val ttsWorkbenchViewModel: TtsWorkbenchViewModel = viewModel()
                     MainScreen(
                         viewModel = viewModel,
+                        ttsWorkbenchViewModel = ttsWorkbenchViewModel,
                         phonemeConverter = phonemeConverter,
-                        onGenerateAudio = { text, style, speed, shouldSave, onGenerated, onComplete ->
-                            generateAudio(
-                                viewModel,
-                                phonemeConverter,
-                                text,
-                                style,
-                                speed,
-                                this@MainActivity,
-                                scope,
-                                shouldSave,
-                                onGenerated,
-                                onComplete
-                            )
-                        },
                         userPreferencesRepository = userPreferencesRepository,
                         initialScreen = startScreen,
                         requestedScreen = requestedScreen.value,
@@ -250,7 +174,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        scope.cancel()
         // Stop method tracing if running
         com.mewmix.nabu.utils.MethodTraceManager.stop()
     }
@@ -267,109 +190,6 @@ class MainActivity : ComponentActivity() {
 
 }
 
-private fun generateAudio(
-    viewModel: GlobalRuntimeViewModel,
-    phonemeConverter: PhonemeConverter,
-    text: String,
-    style: String,
-    speed: Float,
-    context: Context,
-    scope: CoroutineScope,
-    shouldSave: Boolean,
-    onGenerated: (FloatArray, Int) -> Unit,
-    onComplete: () -> Unit
-) {
-    val modelManager = com.mewmix.nabu.data.ModelManager(context)
-    scope.launch(Dispatchers.IO) {
-        com.mewmix.nabu.utils.DebugLogger.log("Main.generateAudio: requesting engine")
-        val engine = com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
-        if (engine == null) {
-             val preferredEngine = SettingsManager.getTtsEngine(context)
-             val unavailableMessage = if (preferredEngine == "soprano") {
-                 val modelId = "soprano-80m-onnx"
-                 val modelDir = File(context.filesDir, "models/$modelId")
-                 val partialDir = File(context.filesDir, "models/${modelId}_partial")
-                 val missing = TtsModelValidator.missingFiles(modelId, modelDir, partialDir)
-                 if (missing.isEmpty()) {
-                     "Soprano model is not ready yet. Please retry download."
-                 } else {
-                     "Soprano download incomplete. Missing: ${missing.joinToString()}"
-                 }
-             } else {
-                 "No TTS engine available"
-             }
-             withContext(Dispatchers.Main) {
-                Toast.makeText(context, unavailableMessage, Toast.LENGTH_LONG).show()
-                onComplete()
-            }
-            return@launch
-        }
-
-        val styleLoader = StyleLoader(context)
-        try {
-            val ttsStart = SystemClock.elapsedRealtime()
-            val phonemes = phonemeConverter.phonemize(text)
-            DebugLogger.log("Phonemes: $phonemes")
-            withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
-            }
-
-            val rawEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
-            com.mewmix.nabu.utils.DebugLogger.log("Main.generateAudio: using engine='${rawEngine.name}' provider='${rawEngine.provider}'")
-
-            val (audioData, sampleRate) = if (rawEngine is com.mewmix.nabu.kokoro.KokoroEngine) {
-                PerfHud.record("TTS synth") {
-                     createAudio(
-                        phonemes = phonemes,
-                        voice = style,
-                        speed = speed,
-                        engine = rawEngine,
-                        styleLoader = styleLoader
-                    )
-                }
-            } else {
-                // Supertonic and others are suspend functions, so we can't use PerfHud.record (which expects non-suspend)
-                // We can manually measure if needed, but for now just call directly.
-                if (rawEngine is com.mewmix.nabu.supertonic.DebugSupertonicEngine) {
-                    rawEngine.setStyle(style)
-                    val result = rawEngine.synthesize(text, speed)
-                    result.wav to result.sampleRate
-                } else {
-                    val result = engine.synthesize(text, speed)
-                    result.wav to result.sampleRate
-                }
-            }
-
-            val genMs = SystemClock.elapsedRealtime() - ttsStart
-            if (SettingsManager.isBenchmark(context)) {
-                val audioMs = audioData.size * 1000L / sampleRate
-                BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
-                BenchmarkManager.profileSystem(context)
-                
-                val rtf = if (audioMs > 0) genMs.toFloat() / audioMs.toFloat() else 0f
-                viewModel.updateBenchmarkStat("RTF", rtf)
-                viewModel.updateBenchmarkStat("Latency", genMs.toFloat())
-            }
-
-            withContext(Dispatchers.Main) { onGenerated(audioData, sampleRate) }
-            playAudio(audioData, sampleRate, scope, onComplete = {})
-
-            if (shouldSave) {
-                saveAudio(audioData, context, style, sampleRate)
-            }
-        } catch (e: Exception) {
-            DebugLogger.log("Error: ${e.message}")
-            withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        } finally {
-            withContext(Dispatchers.Main) {
-                onComplete()
-            }
-        }
-    }
-}
-
 private fun screenFromString(name: String?): Screen = when (name) {
     "Basic" -> Screen.Basic
     "Mixer" -> Screen.Mixer
@@ -379,8 +199,9 @@ private fun screenFromString(name: String?): Screen = when (name) {
     "Creations" -> Screen.Creations
     "Settings" -> Screen.Settings
     "Models" -> Screen.Models
-    "VoiceLab" -> Screen.VoiceLab
+    "VoiceLab" -> Screen.Basic
     "DebugLog" -> Screen.DebugLog
+    "Credits" -> Screen.Credits
     else -> Screen.Basic
 }
 
@@ -393,7 +214,6 @@ private fun screenToString(screen: Screen): String = when (screen) {
     Screen.Creations -> "Creations"
     Screen.Settings -> "Settings"
     Screen.Models -> "Models"
-    Screen.VoiceLab -> "VoiceLab"
     Screen.DebugLog -> "DebugLog"
     Screen.Credits -> "Credits"
 }
@@ -407,17 +227,15 @@ sealed class Screen {
     object Creations : Screen()
     object Settings : Screen()
     object Models : Screen()
-    object VoiceLab : Screen()
     object DebugLog : Screen()
     object Credits : Screen()
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: GlobalRuntimeViewModel,
+    ttsWorkbenchViewModel: TtsWorkbenchViewModel,
     phonemeConverter: PhonemeConverter,
-    onGenerateAudio: (String, String, Float, Boolean, (FloatArray, Int) -> Unit, () -> Unit) -> Unit,
     userPreferencesRepository: UserPreferencesRepository,
     initialScreen: Screen = Screen.Basic,
     requestedScreen: Screen? = null,
@@ -425,6 +243,7 @@ fun MainScreen(
     onThemeChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val styleLoader = remember(context) { StyleLoader(context) }
     val screenStack = rememberSaveable(
         saver = listSaver(
             save = { stateList -> stateList.map(::screenToString) },
@@ -507,13 +326,10 @@ fun MainScreen(
                     .weight(1f)
             ) {
                 when (currentScreen) {
-                    Screen.Basic -> BasicScreen(
-                        onGenerateAudio = onGenerateAudio,
-                        modelState = modelState
-                    )
+                    Screen.Basic -> AudioScreen(ttsWorkbenchViewModel)
                     Screen.Mixer -> MixerScreen(
-                        phonemeConverter = phonemeConverter,
-                        styleLoader = StyleLoader(context)
+                        styleLoader = styleLoader,
+                        workbench = ttsWorkbenchViewModel,
                     )
                     Screen.Book -> BookScreen(
                         phonemeConverter = phonemeConverter
@@ -526,7 +342,6 @@ fun MainScreen(
                             "Creations" -> Screen.Creations
                             "Settings" -> Screen.Settings
                             "Models" -> Screen.Models
-                            "VoiceLab" -> Screen.VoiceLab
                             "Credits" -> Screen.Credits
                             "DebugLog" -> Screen.DebugLog
                             else -> null
@@ -535,14 +350,19 @@ fun MainScreen(
                     }
                     Screen.Creations -> CreationsScreen()
                     Screen.Settings -> SettingsScreen(
-                        onRuntimeSettingsChanged = { viewModel.retryInitialization() },
+                        onRuntimeSettingsChanged = {
+                            viewModel.retryInitialization()
+                            ttsWorkbenchViewModel.refreshCatalog()
+                        },
                         onThemeChanged = onThemeChanged
                     )
                     Screen.Models -> ModelsScreen(
                         userPreferencesRepository = userPreferencesRepository,
-                        onModelArtifactsChanged = { viewModel.retryInitialization() }
+                        onModelArtifactsChanged = {
+                            viewModel.retryInitialization()
+                            ttsWorkbenchViewModel.refreshCatalog()
+                        }
                     )
-                    Screen.VoiceLab -> VoiceLabScreen()
                     Screen.Credits -> CreditsConstellationScreen()
                     Screen.DebugLog -> DebugLogScreen()
                 }
@@ -550,240 +370,3 @@ fun MainScreen(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun BasicScreen(
-    onGenerateAudio: (String, String, Float, Boolean, (FloatArray, Int) -> Unit, () -> Unit) -> Unit,
-    modelState: ModelState
-) {
-    val context = LocalContext.current
-    val playbackScope = rememberCoroutineScope()
-    val styleLoader = remember { StyleLoader(context) }
-    val names = styleLoader.names.sorted()
-
-    val initialWorkspace = remember { SettingsManager.getAudioWorkspace(context) }
-    var text by remember { mutableStateOf(initialWorkspace.text) }
-    var style by remember {
-        mutableStateOf(
-            initialWorkspace.style.takeIf { it in names }
-                ?: names.firstOrNull().orEmpty()
-        )
-    }
-    var speed by remember { mutableFloatStateOf(initialWorkspace.speed) }
-    var isProcessing by remember { mutableStateOf(false) }
-    var shouldSaveFile by remember { mutableStateOf(false) }
-    var expanded by remember { mutableStateOf(false) }
-    var lastGeneratedAudio by remember { mutableStateOf(loadWorkspaceAudio(initialWorkspace.lastAudio)) }
-    var lastAudioRef by remember { mutableStateOf(initialWorkspace.lastAudio) }
-
-    fun persistWorkspace() {
-        SettingsManager.setAudioWorkspace(
-            context,
-            AudioWorkspaceState(text, style, speed, lastAudioRef)
-        )
-    }
-    
-    var isSupertonic by remember { mutableStateOf(SettingsManager.getTtsEngine(context) == "supertonic") }
-    var isSoprano by remember { mutableStateOf(SettingsManager.getTtsEngine(context) == "soprano") }
-    var hasSupertonicModels by remember { mutableStateOf(false) }
-    val styleRequired = !isSoprano
-
-    LaunchedEffect(Unit) {
-        val preferredEngine = SettingsManager.getTtsEngine(context)
-        isSupertonic = preferredEngine == "supertonic"
-        isSoprano = preferredEngine == "soprano"
-        if (isSupertonic) {
-            val modelManager = ModelManager(context)
-            val selectedId = SettingsManager.getSupertonicModelId(context)
-            val downloadedModels = modelManager.models.filter { model ->
-                model.type == ModelType.TTS && model.isDownloaded
-            }
-            val selectedModel = selectedId?.let { id -> downloadedModels.firstOrNull { it.id == id } }
-            hasSupertonicModels = if (selectedId != null) selectedModel != null else downloadedModels.isNotEmpty()
-        }
-        
-        if (style.isEmpty() && names.isNotEmpty()) {
-            style = names.first()
-            persistWorkspace()
-        }
-    }
-
-    PanelBox(
-        title = "Audio",
-        modifier = Modifier
-            .padding(16.dp)
-            .fillMaxSize()
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            RuntimeStatusLine()
-
-            if (isSupertonic && !hasSupertonicModels) {
-                Text(
-                    text = if (SettingsManager.getSupertonicModelId(context) != null) {
-                        "Selected Supertonic model is not downloaded yet. Open Models to download it."
-                    } else {
-                        "No Supertonic voice models found. Open Models to download one."
-                    },
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-
-            TextField(
-                value = text,
-                minLines = 6,
-                maxLines = 14,
-                onValueChange = {
-                    text = it
-                    persistWorkspace()
-                },
-                label = { Text("Text to speak") },
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions.Default.copy(
-                    keyboardType = KeyboardType.Text
-                )
-            )
-
-            if (styleRequired) {
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    TextField(
-                        value = style,
-                        onValueChange = {},
-                        label = { Text("Voice") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        readOnly = true,
-                        trailingIcon = {
-                            Icon(
-                                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                                contentDescription = if (expanded) "Collapse voices" else "Expand voices"
-                            )
-                        }
-                    )
-
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        names.forEach { name ->
-                            DropdownMenuItem(
-                                text = { Text(name.uppercase()) },
-                                onClick = {
-                                    style = name
-                                    persistWorkspace()
-                                    expanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            PanelRow(name = "Speed") {
-                BrutalSlider(
-                    value = speed,
-                    onValueChange = {
-                        speed = it
-                        persistWorkspace()
-                    },
-                    range = 0.5f..2.0f,
-                    modifier = Modifier.weight(1f)
-                )
-                Text("%.2f".format(speed))
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
-            ) {
-                val playEnabled = !isProcessing &&
-                    (!styleRequired || style.isNotEmpty()) &&
-                    modelState is ModelState.Ready &&
-                    (!isSupertonic || hasSupertonicModels)
-
-                BrutalIconButton(
-                    imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = if (isProcessing) "Processing audio" else "Play audio",
-                    onClick = {
-                        shouldSaveFile = false
-                        isProcessing = true
-                        onGenerateAudio(
-                            text,
-                            style,
-                            speed,
-                            shouldSaveFile,
-                            { audio, sampleRate ->
-                                lastGeneratedAudio = audio to sampleRate
-                                playbackScope.launch(Dispatchers.IO) {
-                                    val ref = persistWorkspaceAudio(context, "audio", audio, sampleRate)
-                                    withContext(Dispatchers.Main) {
-                                        lastAudioRef = ref
-                                        persistWorkspace()
-                                    }
-                                }
-                            },
-                            { isProcessing = false }
-                        )
-                    },
-                    enabled = playEnabled
-                )
-
-                BrutalIconButton(
-                    imageVector = Icons.Filled.Save,
-                    contentDescription = if (isProcessing) "Processing audio" else "Save audio",
-                    onClick = {
-                        shouldSaveFile = true
-                        isProcessing = true
-                        onGenerateAudio(
-                            text,
-                            style,
-                            speed,
-                            shouldSaveFile,
-                            { audio, sampleRate ->
-                                lastGeneratedAudio = audio to sampleRate
-                                playbackScope.launch(Dispatchers.IO) {
-                                    val ref = persistWorkspaceAudio(context, "audio", audio, sampleRate)
-                                    withContext(Dispatchers.Main) {
-                                        lastAudioRef = ref
-                                        persistWorkspace()
-                                    }
-                                }
-                            },
-                            { isProcessing = false }
-                        )
-                    },
-                    enabled = playEnabled
-                )
-            }
-            lastGeneratedAudio?.let { (audio, sampleRate) ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
-                ) {
-                    BrutalIconButton(
-                        imageVector = Icons.Filled.Replay,
-                        contentDescription = "Replay audio",
-                        onClick = { playAudio(audio, sampleRate, playbackScope) {} },
-                        enabled = !isProcessing
-                    )
-                    BrutalIconButton(
-                        imageVector = Icons.Filled.Save,
-                        contentDescription = "Save audio again",
-                        onClick = { saveAudio(audio, context, style, sampleRate) },
-                        enabled = !isProcessing
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun RunEp.displayName(): String =
-    name.lowercase(Locale.ROOT).replaceFirstChar { it.titlecase(Locale.ROOT) }

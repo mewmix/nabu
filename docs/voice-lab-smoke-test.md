@@ -1,6 +1,6 @@
-# Voice Lab Smoke Test
+# TTS Workbench Smoke Test
 
-Use this checklist for each device build before treating Voice Lab results as product evidence.
+Use this checklist for each device build before treating Audio or Mixer results as product evidence.
 
 Current quality baseline and remaining risk notes are tracked in `docs/voice-lab-quality-baseline.md`.
 
@@ -14,14 +14,14 @@ scripts/check-voice-lab-connected.sh
 
 That connected gate runs focused Compose smoke tests:
 
-- `VoiceLabSmokeTest` verifies Voice Lab is reachable from the app shell and exposes stable automation tags for the script input, engine selector, voice selector, parameter controls, preview, full render, runtime diagnostics, and playback controls.
+- `TtsWorkbenchSmokeTest` verifies Audio is reachable from the app shell and exposes stable automation tags for the script input, engine selector, voice selector, parameter controls, preview, full render, and playback controls.
 - `ModelsSmokeTest` verifies the Models screen is reachable and every known TTS model row exposes stable row/action hooks without starting downloads or deleting files.
 
 ## Device Setup
 
 - Install the debug APK from `app/build/outputs/apk/debug/app-debug.apk`.
-- Open Nabu and navigate to More -> Voice Lab.
-- Confirm the screen opens without changing existing app settings.
+- Open Nabu and navigate to Audio, then Mixer.
+- Confirm each workspace restores its own saved engine, voice, parameters, and text.
 - Confirm Android volume is audible and Do Not Disturb is not blocking playback.
 - Confirm storage/export permissions are granted if prompted.
 
@@ -44,7 +44,7 @@ Run this checklist for Kokoro, Supertonic 2, Supertonic 3, and Soprano where the
 | Pause works |  |  |
 | Restart works |  |  |
 | WAV export creates a playable file |  |  |
-| Export filename includes Voice Lab, engine, and voice |  |  |
+| Export filename includes workspace, engine, and voice |  |  |
 | Diagnostics show generation time |  |  |
 | Diagnostics show audio duration |  |  |
 | Diagnostics show real-time factor |  |  |
@@ -152,7 +152,7 @@ Do not add subjective voice-quality ratings until a human evaluator supplies the
   - tests were updated to seed first-run settings and launch `MainActivity` directly with `EXTRA_START_SCREEN`
   - `scripts/check-voice-lab-connected.sh` passed after the fix
 - Coverage confirmed:
-  - `VoiceLabSmokeTest` passed
+  - The prototype Compose smoke test passed
   - `ModelsSmokeTest` passed
   - Voice Lab screen is reachable and tagged controls are visible
   - Models screen is reachable and known TTS model rows expose download/delete automation hooks

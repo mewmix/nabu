@@ -9,11 +9,24 @@ data class GeneratedAudioRef(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
+data class TtsWorkspaceSelection(
+    val engineId: String? = null,
+    val voiceId: String? = null,
+    val parameters: Map<String, String> = emptyMap(),
+)
+
+data class MixerSnapshot(
+    val voiceMix: VoiceMixConfig,
+    val speed: Float,
+    val selection: TtsWorkspaceSelection? = null,
+)
+
 data class AudioWorkspaceState(
     val text: String,
     val style: String,
     val speed: Float,
     val lastAudio: GeneratedAudioRef? = null,
+    val selection: TtsWorkspaceSelection? = null,
 )
 
 data class MixerWorkspaceState(
@@ -22,6 +35,9 @@ data class MixerWorkspaceState(
     val speed: Float,
     val settingsExpanded: Boolean = false,
     val lastAudio: GeneratedAudioRef? = null,
+    val selection: TtsWorkspaceSelection? = null,
+    val snapshotA: MixerSnapshot? = null,
+    val snapshotB: MixerSnapshot? = null,
 )
 
 data class ChatWorkspaceState(

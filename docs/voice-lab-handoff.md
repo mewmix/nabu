@@ -1,6 +1,10 @@
 # Voice Lab Handoff
 
-This branch contains the internal Voice Lab prototype for evaluating Nabu's existing production-usable text-to-speech engines and voices.
+The Voice Lab prototype has been incorporated into Nabu's production Audio and Mixer workspaces. Audio now owns direct voice generation; Mixer owns voice blending and A/B configuration comparison. Both use the same explicit per-render engine boundary, and the standalone Voice Lab destination has been retired.
+
+## Product Goal
+
+Give creators one coherent TTS workflow: generate and tune a single voice in Audio, shape and compare configurations in Mixer, and keep engine selection, playback, export, diagnostics, and saved workspace state consistent between them.
 
 ## Repository
 
@@ -73,9 +77,9 @@ When an Android emulator or physical device is attached, run the connected Voice
 scripts/check-voice-lab-connected.sh
 ```
 
-The connected gate runs `VoiceLabSmokeTest` and `ModelsSmokeTest`.
+The connected gate runs `TtsWorkbenchSmokeTest` and `ModelsSmokeTest`.
 
-- `VoiceLabSmokeTest` verifies that Voice Lab can be reached from the app shell and that the script, engine, voice, parameter, preview, render, and playback controls are addressable by stable test tags.
+- `TtsWorkbenchSmokeTest` verifies that the Audio workbench can be reached from the app shell and that the script, engine, voice, parameter, preview, render, and playback controls are addressable by stable test tags.
 - `ModelsSmokeTest` verifies that the Models screen is reachable and that every known TTS model row exposes stable row/action hooks without starting downloads or deleting files.
 
 ## Current Validation State
@@ -87,4 +91,4 @@ The latest pushed validation notes are in:
 - `docs/voice-lab-inventory.md`
 - `docs/voice-lab-runtime-diagnostics.md`
 
-At this checkpoint, the prototype builds, unit tests pass, lint passes, Kokoro has been smoke-tested, and Supertonic 2 has been emulator-tested through preview, playback/export path, and WAV file inspection.
+The recorded baseline applies to the original prototype checkpoint: it built, passed unit tests and lint, smoke-tested Kokoro, and exercised Supertonic 2 through preview, playback/export, and WAV inspection. Rerun both quality gates for the incorporated Audio/Mixer workbench before release.
