@@ -40,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
@@ -47,6 +48,7 @@ import com.mewmix.nabu.data.importableLlmMetadata
 import com.mewmix.nabu.data.Model
 import com.mewmix.nabu.data.ModelDownloader
 import com.mewmix.nabu.data.ModelManager
+import com.mewmix.nabu.data.ModelTestTags
 import com.mewmix.nabu.data.UserPreferencesRepository
 import com.mewmix.nabu.utils.DebugLogger
 import java.io.File
@@ -171,15 +173,21 @@ fun ModelsScreen(
             title = "Models",
             modifier = Modifier
                 .fillMaxSize()
+                .testTag(ModelTestTags.Screen)
                 .padding(16.dp)
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag(ModelTestTags.List),
                 contentPadding = PaddingValues(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
-                    BrutalButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                    BrutalButton(
+                        onClick = { importLauncher.launch(arrayOf("*/*")) },
+                        modifier = Modifier.testTag(ModelTestTags.ImportLocalModelButton)
+                    ) {
                         Text("Import Local Model")
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -191,6 +199,7 @@ fun ModelsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .testTag(ModelTestTags.row(model.id))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(22.dp))
                             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f), RoundedCornerShape(22.dp))
                             .padding(14.dp)
@@ -203,7 +212,9 @@ fun ModelsScreen(
                         if (progress != null) {
                             LinearProgressIndicator(
                                 progress = { progress.coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag(ModelTestTags.progress(model.id))
                             )
                             Text(
                                 text = "${(progress * 100).toInt()}%",
@@ -234,35 +245,44 @@ fun ModelsScreen(
                                         contentDescription = "Downloaded",
                                         tint = MaterialTheme.colorScheme.primary
                                     )
-                                    BrutalButton(onClick = {
-                                        DebugLogger.log("ModelsScreen: Deleting ${model.name}")
-                                        modelManager.deleteModel(model)
-                                        onModelArtifactsChanged()
-                                    }) {
+                                    BrutalButton(
+                                        onClick = {
+                                            DebugLogger.log("ModelsScreen: Deleting ${model.name}")
+                                            modelManager.deleteModel(model)
+                                            onModelArtifactsChanged()
+                                        },
+                                        modifier = Modifier.testTag(ModelTestTags.deleteButton(model.id))
+                                    ) {
                                         Icon(Icons.Filled.Delete, contentDescription = "Delete model")
                                     }
                                 } else {
-                                    BrutalButton(onClick = {
-                                        if (model.gated) {
-                                            selectedModel = model
-                                            showDialog = true
-                                            DebugLogger.log("ModelsScreen: Prompting token for ${model.name}")
-                                        } else {
-                                            DebugLogger.log("ModelsScreen: Starting TTS model download for ${model.name}")
-                                            modelDownloader.downloadModel(model)
-                                        }
-                                    }) {
+                                    BrutalButton(
+                                        onClick = {
+                                            if (model.gated) {
+                                                selectedModel = model
+                                                showDialog = true
+                                                DebugLogger.log("ModelsScreen: Prompting token for ${model.name}")
+                                            } else {
+                                                DebugLogger.log("ModelsScreen: Starting TTS model download for ${model.name}")
+                                                modelDownloader.downloadModel(model)
+                                            }
+                                        },
+                                        modifier = Modifier.testTag(ModelTestTags.downloadButton(model.id))
+                                    ) {
                                         Icon(
                                             Icons.Filled.CloudDownload,
                                             contentDescription = if (model.hasPartial) "Resume download" else "Download model",
                                         )
                                     }
                                     if (model.hasPartial) {
-                                        BrutalButton(onClick = {
-                                            DebugLogger.log("ModelsScreen: Deleting partial ${model.name}")
-                                            modelManager.deleteModel(model)
-                                            onModelArtifactsChanged()
-                                        }) {
+                                        BrutalButton(
+                                            onClick = {
+                                                DebugLogger.log("ModelsScreen: Deleting partial ${model.name}")
+                                                modelManager.deleteModel(model)
+                                                onModelArtifactsChanged()
+                                            },
+                                            modifier = Modifier.testTag(ModelTestTags.deletePartialButton(model.id))
+                                        ) {
                                             Icon(Icons.Filled.Delete, contentDescription = "Delete partial model")
                                         }
                                     }

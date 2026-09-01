@@ -1,5 +1,6 @@
 package com.mewmix.nabu.assistant
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -20,6 +21,7 @@ class NabuTileService : TileService() {
         tile.updateTile()
     }
 
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
         val intent = Intent(this, NabuActionEntryActivity::class.java).apply {

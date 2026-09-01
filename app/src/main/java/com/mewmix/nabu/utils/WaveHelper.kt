@@ -23,10 +23,15 @@ fun saveAudio(audioData: FloatArray, context: Context, name: String, sampleRate:
         "soprano" -> "SOPRANO"
         else -> "KOKORO"
     }
+    return saveAudioWithDisplayName(audioData, context, "${enginePrefix}_${safeName}", sampleRate)
+}
+
+fun saveAudioWithDisplayName(audioData: FloatArray, context: Context, displayName: String, sampleRate: Int): Uri? {
+    val safeName = displayName.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 
     val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, "${enginePrefix}_${safeName}_$timeStamp.wav")
+        put(MediaStore.MediaColumns.DISPLAY_NAME, "${safeName}_$timeStamp.wav")
         put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
         put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
     }

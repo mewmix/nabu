@@ -27,7 +27,18 @@ import java.io.File
  * Helps prevent runtime re-initialization on tab switches.
  * Inspired by architectural improvements in PR #72.
  */
-class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(application) {
+class GlobalRuntimeViewModel : AndroidViewModel {
+
+    constructor(application: Application) : this(application, initializeOnCreate = true)
+
+    internal constructor(
+        application: Application,
+        initializeOnCreate: Boolean,
+    ) : super(application) {
+        if (initializeOnCreate) {
+            initializeRuntime()
+        }
+    }
 
     private val _modelState = MutableStateFlow<ModelState>(ModelState.Loading)
     val modelState: StateFlow<ModelState> = _modelState.asStateFlow()
@@ -38,10 +49,6 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
     // Benchmark stats
     private val _benchmarkStats = MutableStateFlow<Map<String, Float>>(emptyMap())
     val benchmarkStats: StateFlow<Map<String, Float>> = _benchmarkStats.asStateFlow()
-
-    init {
-        initializeRuntime()
-    }
 
     fun initializeRuntime() {
         viewModelScope.launch(Dispatchers.IO) {

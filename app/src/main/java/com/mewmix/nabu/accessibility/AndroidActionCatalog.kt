@@ -1,5 +1,6 @@
 package com.mewmix.nabu.accessibility
 
+import android.annotation.SuppressLint
 import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 import android.accessibilityservice.AccessibilityService
@@ -113,8 +114,10 @@ object AndroidActionCatalog {
             add(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK, StandardNodeAction.CLICK)
             add(AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK, StandardNodeAction.LONG_CLICK)
             add(AccessibilityNodeInfo.AccessibilityAction.ACTION_CONTEXT_CLICK, StandardNodeAction.CONTEXT_CLICK)
-            add(AccessibilityNodeInfo.AccessibilityAction.ACTION_PRESS_AND_HOLD, StandardNodeAction.PRESS_AND_HOLD)
-            add(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER, StandardNodeAction.IME_ENTER)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                add(AccessibilityNodeInfo.AccessibilityAction.ACTION_PRESS_AND_HOLD, StandardNodeAction.PRESS_AND_HOLD)
+                add(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER, StandardNodeAction.IME_ENTER)
+            }
             add(AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND, StandardNodeAction.EXPAND)
             add(AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE, StandardNodeAction.COLLAPSE)
             add(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN, StandardNodeAction.SHOW_ON_SCREEN)
@@ -137,10 +140,14 @@ object AndroidActionCatalog {
             }
             add(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS, StandardNodeAction.SET_PROGRESS)
             add(AccessibilityNodeInfo.AccessibilityAction.ACTION_MOVE_WINDOW, StandardNodeAction.MOVE_WINDOW)
-            add(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_TEXT_SUGGESTIONS, StandardNodeAction.SHOW_TEXT_SUGGESTIONS)
-            add(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_START, StandardNodeAction.DRAG_START)
-            add(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_DROP, StandardNodeAction.DRAG_DROP)
-            add(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_CANCEL, StandardNodeAction.DRAG_CANCEL)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_TEXT_SUGGESTIONS, StandardNodeAction.SHOW_TEXT_SUGGESTIONS)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S_V2) {
+                add(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_START, StandardNodeAction.DRAG_START)
+                add(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_DROP, StandardNodeAction.DRAG_DROP)
+                add(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_CANCEL, StandardNodeAction.DRAG_CANCEL)
+            }
         }
     }
 
@@ -167,6 +174,7 @@ object AndroidActionCatalog {
     }
 }
 
+@SuppressLint("InlinedApi")
 enum class GlobalSystemAction(
     val token: String,
     val actionId: Int,

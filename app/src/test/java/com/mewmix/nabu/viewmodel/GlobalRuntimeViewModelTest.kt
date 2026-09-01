@@ -7,16 +7,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE)
 class GlobalRuntimeViewModelTest {
 
     @Test
     fun testInitialStateIsLoading() {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        val viewModel = GlobalRuntimeViewModel(app)
+        val viewModel = GlobalRuntimeViewModel(app, initializeOnCreate = false)
         
         // Initial state should be Loading
         assertTrue(viewModel.modelState.value is ModelState.Loading)

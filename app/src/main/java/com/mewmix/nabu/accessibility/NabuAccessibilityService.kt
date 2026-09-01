@@ -2,6 +2,8 @@ package com.mewmix.nabu.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
@@ -9,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.Display
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -47,14 +50,12 @@ class NabuAccessibilityService : AccessibilityService() {
         )
         actionOverlay = ActionSessionOverlay(this)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            accessibilityButtonController.registerAccessibilityButtonCallback(object : android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback() {
-                override fun onClicked(controller: android.accessibilityservice.AccessibilityButtonController) {
-                    super.onClicked(controller)
-                    actionOverlay?.show()
-                }
-            })
-        }
+        accessibilityButtonController.registerAccessibilityButtonCallback(object : android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback() {
+            override fun onClicked(controller: android.accessibilityservice.AccessibilityButtonController) {
+                super.onClicked(controller)
+                actionOverlay?.show()
+            }
+        })
     }
 
     private val serviceScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
@@ -125,7 +126,7 @@ class NabuAccessibilityService : AccessibilityService() {
             }
             val packageName = root.packageName?.toString().orEmpty()
             val windowTitle = window?.title?.toString().orEmpty()
-            val rotation = runCatching { display?.rotation ?: 0 }.getOrDefault(0)
+            val rotation = currentDisplayRotation()
 
             val uiNodeRoot = buildUiNodeTree(root, "0")
 
@@ -283,7 +284,7 @@ class NabuAccessibilityService : AccessibilityService() {
         val observationId = UUID.randomUUID().toString()
         val packageName = root.packageName?.toString().orEmpty()
         val capturedAt = System.currentTimeMillis()
-        val rotation = runCatching { display?.rotation ?: 0 }.getOrDefault(0)
+        val rotation = currentDisplayRotation()
         val snapshot = UiSnapshotStore.updateSnapshot(
             UiSnapshot(
                 id = observationId,
@@ -339,7 +340,7 @@ class NabuAccessibilityService : AccessibilityService() {
         val window = targetWindow()
         val root = window?.root ?: rootInActiveWindow ?: throw IllegalStateException("No active application window is available.")
         val currentPackage = root.packageName?.toString().orEmpty()
-        val rotation = runCatching { display?.rotation ?: 0 }.getOrDefault(0)
+        val rotation = currentDisplayRotation()
         val currentFingerprint = UiSnapshotFingerprint.compute(
             packageName = currentPackage,
             windowTitle = window?.title?.toString().orEmpty(),
@@ -472,21 +473,13 @@ class NabuAccessibilityService : AccessibilityService() {
             "ui_gesture" -> {
                 val token = params.optString("gesture").trim().lowercase()
                 val destination = params.optJSONObject("destination_selector")?.let { findNode(root, it) }
-                val semanticDragAvailable = token == "drag_drop" && target != null && destination != null &&
-                    target.actionList.any { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_START.id } &&
-                    destination.actionList.any { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_DROP.id }
-                val gestureSuccess = if (semanticDragAvailable) {
-                    val started = target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_START.id)
-                    if (started) {
-                        val dropped = destination.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_DROP.id)
-                        if (!dropped) {
-                            target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_CANCEL.id)
-                        }
-                        if (dropped) params.put("mechanism", "semantic_drag_transaction")
-                        dropped
-                    } else {
-                        false
-                    }
+                val gestureSuccess = if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S_V2 &&
+                    token == "drag_drop" &&
+                    target != null &&
+                    destination != null
+                ) {
+                    performSemanticDrag(target, destination, params)
                 } else {
                     false
                 }
@@ -524,6 +517,7 @@ class NabuAccessibilityService : AccessibilityService() {
         actionObservationLease.clear()
     }
 
+    @SuppressLint("InlinedApi")
     private fun buildNodeActionArguments(
         action: StandardNodeAction,
         node: AccessibilityNodeInfo,
@@ -680,6 +674,28 @@ class NabuAccessibilityService : AccessibilityService() {
         performGlobalAction(action.actionId)
     }
 
+    @RequiresApi(Build.VERSION_CODES.S_V2)
+    private fun performSemanticDrag(
+        target: AccessibilityNodeInfo,
+        destination: AccessibilityNodeInfo,
+        params: JSONObject,
+    ): Boolean {
+        val semanticDragAvailable =
+            target.actionList.any { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_START.id } &&
+                destination.actionList.any { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_DROP.id }
+        if (!semanticDragAvailable) return false
+
+        val started = target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_START.id)
+        if (!started) return false
+
+        val dropped = destination.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_DROP.id)
+        if (!dropped) {
+            target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_CANCEL.id)
+        }
+        if (dropped) params.put("mechanism", "semantic_drag_transaction")
+        return dropped
+    }
+
     private fun writeHierarchy(
         root: AccessibilityNodeInfo,
         window: AccessibilityWindowInfo?,
@@ -693,7 +709,7 @@ class NabuAccessibilityService : AccessibilityService() {
             setAttribute("observation-id", observationId)
             setAttribute("package", root.packageName?.toString().orEmpty())
             setAttribute("window-title", window?.title?.toString().orEmpty())
-            val rotation = runCatching { display?.rotation ?: 0 }.getOrDefault(0)
+            val rotation = currentDisplayRotation()
             setAttribute("rotation", rotation.toString())
         }
         document.appendChild(hierarchy)
@@ -706,6 +722,17 @@ class NabuAccessibilityService : AccessibilityService() {
     } catch (error: Exception) {
         Log.e(TAG, "Failed to dump XML", error)
         false
+    }
+
+    private fun currentDisplayRotation(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching { display?.rotation ?: 0 }.getOrDefault(0)
+        } else {
+            @Suppress("DEPRECATION")
+            runCatching {
+                (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
+            }.getOrDefault(0)
+        }
     }
 
     private fun buildXmlTree(node: AccessibilityNodeInfo, parent: Element, document: Document, path: String) {
