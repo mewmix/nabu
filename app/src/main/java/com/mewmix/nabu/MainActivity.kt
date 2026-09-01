@@ -47,6 +47,7 @@ import com.mewmix.nabu.screens.MoreScreen
 import com.mewmix.nabu.screens.OptionalPermissionsScreen
 import com.mewmix.nabu.screens.SettingsScreen
 import com.mewmix.nabu.ui.components.GlobalStatusBar
+import com.mewmix.nabu.ui.components.ModernBottomBar
 import com.mewmix.nabu.utils.PhonemeConverter
 import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.utils.StyleLoader
