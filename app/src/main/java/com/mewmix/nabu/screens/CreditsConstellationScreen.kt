@@ -65,34 +65,40 @@ data class CreditGroup(
 fun CreditsConstellationScreen() {
     val communityCredits = remember {
         CreditGroup(
-            title = "Community constellation",
-            subtitle = "People and projects shaping Nabu",
+            title = "Community",
+            subtitle = "People and projects",
             entries = listOf(
                 CreditEntry(
                     name = "djzeroone",
-                    contribution = "Voice Lab prototype, runtime diagnostics, and connected smoke testing",
+                    contribution = "Bubble Pop, UI fixes, and Voice Lab polish",
                     url = "https://github.com/djzeroone",
                     featured = true,
                 ),
                 CreditEntry(
+                    name = "richdrummer33 · PR #73",
+                    contribution = "Enhancements shipped in 0.5.0 and 0.5.1",
+                    url = "https://github.com/mewmix/nabu/pull/73",
+                    featured = true,
+                ),
+                CreditEntry(
                     name = "puff-dayo",
-                    contribution = "Original Android Kokoro TTS implementation, ONNX runtime, style mixer, and app template",
+                    contribution = "Original Android Kokoro app and style mixer",
                     url = "https://github.com/puff-dayo/Kokoro-82M-Android",
                     featured = true,
                 ),
                 CreditEntry(
                     name = "Google AI Edge Gallery",
-                    contribution = "LLM integration and Hugging Face model downloading",
+                    contribution = "LLM integration and model downloads",
                     url = "https://github.com/google-ai-edge/gallery",
                 ),
                 CreditEntry(
                     name = "LiteRT Community",
-                    contribution = "Android-ready model collection on Hugging Face",
+                    contribution = "Android-ready models",
                     url = "https://huggingface.co/litert-community",
                 ),
                 CreditEntry(
                     name = "jsoup",
-                    contribution = "HTML parsing for EPUB support (MIT), by Jonathan Hedley",
+                    contribution = "EPUB HTML parsing (MIT)",
                     url = "https://jsoup.org/",
                 ),
             ),
@@ -101,46 +107,46 @@ fun CreditsConstellationScreen() {
     val modelCredits = remember {
         CreditGroup(
             title = "Models & foundations",
-            subtitle = "The open work underneath the experience",
+            subtitle = "Open work beneath Nabu",
             entries = listOf(
                 CreditEntry(
                     name = "Kokoro",
-                    contribution = "Frontier text-to-speech model (Apache 2.0)",
+                    contribution = "Text-to-speech model (Apache 2.0)",
                     url = "https://huggingface.co/hexgrad/Kokoro-82M",
                 ),
                 CreditEntry(
                     name = "Kokoro ONNX",
-                    contribution = "ONNX conversion and runtime tooling (MIT)",
+                    contribution = "ONNX conversion and runtime (MIT)",
                     url = "https://github.com/thewh1teagle/kokoro-onnx",
                 ),
                 CreditEntry(
                     name = "Supertonic",
-                    contribution = "Lightweight text-to-speech engine for Android",
+                    contribution = "Lightweight Android TTS",
                     url = "https://github.com/supertonic-tts/supertonic",
                 ),
                 CreditEntry(
                     name = "Soprano",
-                    contribution = "Original model and inference code (Apache 2.0)",
+                    contribution = "Model and inference code (Apache 2.0)",
                     url = "https://github.com/ekwek1/soprano",
                 ),
                 CreditEntry(
                     name = "Soprano Web ONNX",
-                    contribution = "Browser inference reference and deployable ONNX model packaging",
+                    contribution = "Browser inference and ONNX packaging",
                     url = "https://github.com/KevinAHM/soprano-web-onnx",
                 ),
                 CreditEntry(
                     name = "CMU Pronouncing Dictionary",
-                    contribution = "Pronunciation data for speech processing",
+                    contribution = "Pronunciation data",
                     url = "https://www.speech.cs.cmu.edu/cgi-bin/cmudict",
                 ),
                 CreditEntry(
                     name = "IPA Transcribers",
-                    contribution = "Language transliterators (GPL-3.0)",
+                    contribution = "Language transliteration (GPL-3.0)",
                     url = "https://github.com/kotlinguistics/IPA-Transcribers",
                 ),
                 CreditEntry(
                     name = "Android NNAPI",
-                    contribution = "Android's neural-network acceleration API",
+                    contribution = "Neural-network acceleration",
                     url = "https://developer.android.com/ndk/guides/neuralnetworks",
                 ),
             ),
@@ -175,7 +181,7 @@ fun CreditsConstellationScreen() {
                     CreditSection(modelCredits)
                 }
                 Text(
-                    text = "Nabu stands on open source, shared experiments, and generous people.",
+                    text = "Built with open source and shared experiments.",
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp),
@@ -276,13 +282,13 @@ private fun CreditsHero() {
                     fontWeight = FontWeight.Black,
                 )
                 Text(
-                    text = "The constellation behind Nabu",
+                    text = "Built Together",
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                 )
                 Text(
-                    text = "Tap any star to visit the work that helped make Nabu possible.",
+                    text = "Tap a credit to explore the work.",
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
                     style = MaterialTheme.typography.bodyMedium,
                 )
