@@ -628,5 +628,25 @@ object ActionRequestDispatcher {
         return null
     }
 
+    fun inspectPersistedSession(context: Context, sessionId: String): SessionInspectionReport? =
+        AutomationTraceStore.getInstance(context).inspectSession(sessionId)
+
+    fun listPersistedSessions(
+        context: Context,
+        statusFilter: String? = null,
+        limit: Int = 50
+    ): List<PersistedTraceSession> =
+        AutomationTraceStore.getInstance(context).listSessions(statusFilter = statusFilter, limit = limit)
+
+    fun recoverPersistedSessionsAfterRestart(context: Context): List<PersistedTraceSession> {
+        val activeIds = synchronized(lock) {
+            listOfNotNull(_activeSession.value?.id).toSet()
+        }
+        return AutomationTraceStore.getInstance(context).recoverAfterProcessRestart(activeIds)
+    }
+
+    fun replayPersistedSessionEvidence(context: Context, sessionId: String): TraceReplayReport? =
+        AutomationTraceStore.getInstance(context).inspectSession(sessionId)?.replayReport
+
     private const val ACTION_MODEL_IDLE_TIMEOUT_MS = 10 * 60 * 1_000L
 }

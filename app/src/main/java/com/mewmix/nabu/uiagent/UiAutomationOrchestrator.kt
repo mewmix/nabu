@@ -72,6 +72,7 @@ class UiAutomationOrchestrator(
     private var pendingExternalEffect: PendingExternalEffect? = null
     private var activeTrace: AutomationTraceRecorder? = null
     private var activeSessionId: String? = null
+    private var lastStepVerificationStatus: UiVerificationStatus = UiVerificationStatus.UNVERIFIABLE
     private var invocationStartedMonotonicMs: Long = 0L
     private var firstPhysicalActionRecorded: Boolean = false
     private var activeBackend: LlmBackend? = backend
@@ -80,16 +81,38 @@ class UiAutomationOrchestrator(
     private var appResolutionDurationMs: Long = 0L
     private var backendLeaseAcquired: Boolean = false
 
+    private fun emitStepRecord(record: ActionStepRecord, rawGoal: String = "") {
+        val status = record.goalVerificationStatus?.let { raw ->
+            runCatching { UiVerificationStatus.valueOf(raw.uppercase()) }.getOrNull()
+        } ?: record.verificationStatus?.let { raw ->
+            runCatching { UiVerificationStatus.valueOf(raw.uppercase()) }.getOrNull()
+        } ?: UiVerificationStatus.UNVERIFIABLE
+        lastStepVerificationStatus = status
+        activeTrace?.recordStep(record, rawGoal)
+        onStepRecord?.invoke(record)
+    }
+
     suspend fun run(goal: String): ToolResult {
         invocationStartedMonotonicMs = monotonicNowMs()
         firstPhysicalActionRecorded = false
+        lastStepVerificationStatus = UiVerificationStatus.UNVERIFIABLE
         val sessionId = externalSessionId ?: UUID.randomUUID().toString()
+        val traceStore = runCatching { AutomationTraceStore.getInstance(context) }.getOrNull()
+        runCatching {
+            traceStore?.startOrUpdateSession(
+                sessionId = sessionId,
+                rawGoal = goal,
+                status = "running",
+                verificationStatus = UiVerificationStatus.UNVERIFIABLE
+            )
+        }
         val trace = AutomationTraceRecorder(
             sessionId = sessionId,
             logger = logger,
             onEvent = { event ->
                 onRuntimeEvent(event.name, event.elapsedMs, event.fields)
-            }
+            },
+            traceStore = traceStore
         )
         trace.emit("session_requested", mapOf("goal" to goal, "scheduled" to isScheduled))
         trace.emit("request_received")
@@ -195,6 +218,27 @@ class UiAutomationOrchestrator(
                         "remaining_media" to pendingMediaUris.size
                     )
                 )
+                val finalStatus = when {
+                    terminalResult == null -> "cancelled"
+                    terminalResult?.isError == true -> "failed"
+                    else -> "completed"
+                }
+                val finalVerification = when {
+                    terminalResult?.isError == false && lastStepVerificationStatus == UiVerificationStatus.GOAL_VERIFIED ->
+                        UiVerificationStatus.GOAL_VERIFIED
+                    lastStepVerificationStatus != UiVerificationStatus.UNVERIFIABLE ->
+                        lastStepVerificationStatus
+                    terminalResult?.isError == true -> UiVerificationStatus.FAILED
+                    else -> UiVerificationStatus.UNVERIFIABLE
+                }
+                runCatching {
+                    traceStore?.finishSession(
+                        sessionId = sessionId,
+                        status = finalStatus,
+                        verificationStatus = finalVerification,
+                        terminationReason = terminalResult?.output ?: "cancelled"
+                    )
+                }
                 activeTrace = null
                 activeSessionId = null
                 if (backendLeaseAcquired) {
@@ -1017,7 +1061,10 @@ class UiAutomationOrchestrator(
                                 resultPackage = observation.screen.packageName
                             )
                         )
-                        onStepRecord?.invoke(
+                        val leaseRejected = result.output.contains("lease", ignoreCase = true) ||
+                            result.output.contains("stale", ignoreCase = true) ||
+                            result.output.contains("drifted", ignoreCase = true)
+                        emitStepRecord(
                             ActionStepRecord(
                                 sequence = actionIndex + 1 + deterministicPrefixCount,
                                 observation = observation.screen.screenId,
@@ -1039,9 +1086,16 @@ class UiAutomationOrchestrator(
                                 transportStatus = UiTransportStatus.REJECTED.name.lowercase(),
                                 postconditionStatus = PostconditionStatus.FAILED.name.lowercase(),
                                 goalVerificationStatus = UiVerificationStatus.FAILED.name.lowercase(),
-                                evidenceCategory = "transport_rejected",
-                                checkpointId = "transport"
-                            )
+                                evidenceCategory = if (leaseRejected) "lease_rejected" else "transport_rejected",
+                                checkpointId = "transport",
+                                sessionId = sessionId,
+                                observationId = observation.bridgeObservationId,
+                                beforeStateFingerprint = observation.screen.screenId,
+                                afterStateFingerprint = observation.screen.screenId,
+                                leaseValidationOutcome = if (leaseRejected) "rejected" else "authorized",
+                                failureClassification = if (leaseRejected) "STALE_OBSERVATION" else "TRANSPORT_REJECTED"
+                            ),
+                            rawGoal = goal
                         )
                         observation = observe() ?: return@execution failure("UI action failed and screen could not be observed.")
                         return@repeat
@@ -1051,6 +1105,7 @@ class UiAutomationOrchestrator(
 
             progress("Verify ${actionIndex + 1}", "Observing the resulting screen")
             trace("verification_started", mapOf("index" to actionIndex))
+            val verifyStartedMs = monotonicNowMs()
             val next = observeAfterAction(observation, action)
             if (next == null) {
                 val unverifiableRecord = ActionStepRecord(
@@ -1075,9 +1130,16 @@ class UiAutomationOrchestrator(
                     postconditionStatus = PostconditionStatus.UNVERIFIABLE.name.lowercase(),
                     goalVerificationStatus = UiVerificationStatus.UNVERIFIABLE.name.lowercase(),
                     evidenceCategory = "observation_unavailable",
-                    checkpointId = "post_observation"
+                    checkpointId = "post_observation",
+                    sessionId = sessionId,
+                    observationId = observation.bridgeObservationId,
+                    beforeStateFingerprint = observation.screen.screenId,
+                    afterStateFingerprint = null,
+                    leaseValidationOutcome = "authorized",
+                    failureClassification = "ACCESSIBILITY_UNAVAILABLE",
+                    verificationLatencyMs = (monotonicNowMs() - verifyStartedMs).coerceAtLeast(0L)
                 )
-                onStepRecord?.invoke(unverifiableRecord)
+                emitStepRecord(unverifiableRecord, rawGoal = goal)
                 return@execution failure("UI action ran (executed), but the resulting screen could not be observed (unverifiable).")
             }
             val assertion = actionPlan.steps.filterIsInstance<UiActionStep.Assert>().lastOrNull()?.condition
@@ -1111,10 +1173,13 @@ class UiAutomationOrchestrator(
 
             var finalNext = next
             var effectivePostcondition = builtInPostcondition
+            var recoveryRetryCount = 0
+            var recoverySummaryText: String? = null
             if (builtInPostcondition.status == PostconditionStatus.FAILED) {
                 if (action is UiActionStep.PressBack || (action is UiActionStep.GlobalAction && action.action == "back")) {
                     val visibleBack = DirectSemanticActionResolver.resolveVisibleBack(observation.screen)
                     if (visibleBack != null) {
+                        recoveryRetryCount += 1
                         val recoveryResult = execute(visibleBack, observation, sessionId, goal)
                         if (!recoveryResult.isError) {
                             val nextRecovery = observeAfterAction(observation, visibleBack)
@@ -1123,6 +1188,7 @@ class UiAutomationOrchestrator(
                                 if (recoveryPost.status.isMechanicalProgress) {
                                     finalNext = nextRecovery
                                     effectivePostcondition = recoveryPost
+                                    recoverySummaryText = "Recovered back navigation via visible toolbar button"
                                 }
                             }
                         }
@@ -1149,6 +1215,7 @@ class UiAutomationOrchestrator(
                 expectedDestination = stepVerifiedDestination,
                 hasPendingUnconfirmedEffect = pendingExternalEffect != null
             )
+            val verificationDurationMs = (monotonicNowMs() - verifyStartedMs).coerceAtLeast(0L)
             trace(
                 "verification_completed",
                 mapOf(
@@ -1211,6 +1278,11 @@ class UiAutomationOrchestrator(
                 sessionId,
                 "${actionLabel(action)}: ${observation.screen.packageName} → ${finalNext.screen.packageName} (${goalVerification.status.name.lowercase()})"
             )
+            val failureCategory = when {
+                postconditionFailed -> "POSTCONDITION_FAILED"
+                goalVerification.status == UiVerificationStatus.FAILED -> "GOAL_NOT_VERIFIED"
+                else -> null
+            }
             val stepRecord = ActionStepRecord(
                 sequence = actionIndex + 1 + deterministicPrefixCount,
                 observation = observation.screen.screenId,
@@ -1221,6 +1293,7 @@ class UiAutomationOrchestrator(
                 postActionObservation = finalNext.screen.screenId,
                 verification = goalVerification.summary.ifBlank { postconditionDetail ?: "" },
                 latencyMs = monotonicNowMs() - stepStartMs,
+                retryCount = recoveryRetryCount,
                 sourcePackage = observation.screen.packageName,
                 resultPackage = finalNext.screen.packageName,
                 actionFamily = actionFamily(action),
@@ -1233,9 +1306,17 @@ class UiAutomationOrchestrator(
                 postconditionStatus = effectivePostcondition.status.name.lowercase(),
                 goalVerificationStatus = goalVerification.status.name.lowercase(),
                 evidenceCategory = goalVerification.evidenceCategory,
-                checkpointId = goalVerification.checkpointId
+                checkpointId = goalVerification.checkpointId,
+                sessionId = sessionId,
+                observationId = observation.bridgeObservationId,
+                beforeStateFingerprint = observation.screen.screenId,
+                afterStateFingerprint = finalNext.screen.screenId,
+                leaseValidationOutcome = "authorized",
+                failureClassification = failureCategory,
+                verificationLatencyMs = verificationDurationMs,
+                recoverySummary = recoverySummaryText
             )
-            onStepRecord?.invoke(stepRecord)
+            emitStepRecord(stepRecord, rawGoal = goal)
             if (goalVerification.isGoalVerified) {
                 trace(
                     "goal_condition_satisfied",
@@ -1843,7 +1924,7 @@ class UiAutomationOrchestrator(
             )
         }
         val targetContext = before ?: after
-        onStepRecord?.invoke(
+        emitStepRecord(
             ActionStepRecord(
                 sequence = sequence,
                 observation = before?.screenId ?: "request_level",
@@ -1866,7 +1947,12 @@ class UiAutomationOrchestrator(
                 evidenceCategory = verificationResult.evidenceCategory,
                 checkpointId = verificationResult.checkpointId,
                 sourceWindow = before?.activityName,
-                resultWindow = after?.activityName
+                resultWindow = after?.activityName,
+                sessionId = activeSessionId,
+                beforeStateFingerprint = before?.screenId ?: "request_level",
+                afterStateFingerprint = after?.screenId,
+                leaseValidationOutcome = if (mechanism == "semantic_node") "authorized" else "not_required",
+                failureClassification = if (verificationResult.status.isFailure) "POSTCONDITION_FAILED" else null
             )
         )
     }

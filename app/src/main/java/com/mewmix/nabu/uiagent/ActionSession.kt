@@ -165,7 +165,21 @@ data class ActionStepRecord(
     val postconditionStatus: String? = null,
     val goalVerificationStatus: String? = verificationStatus,
     val evidenceCategory: String? = null,
-    val checkpointId: String? = null
+    val checkpointId: String? = null,
+    val sessionId: String? = null,
+    val observationId: String? = null,
+    val beforeStateFingerprint: String? = observation,
+    val afterStateFingerprint: String? = postActionObservation,
+    val leaseValidationOutcome: String = "authorized",
+    val failureClassification: String? = null,
+    val observationLatencyMs: Long = 0L,
+    val modelDecisionLatencyMs: Long = 0L,
+    val executionLatencyMs: Long = 0L,
+    val verificationLatencyMs: Long = 0L,
+    val recoverySummary: String? = null,
+    val terminationReason: String? = null,
+    val screenshotArtifactRef: String? = null,
+    val recordedAtMs: Long = System.currentTimeMillis()
 )
 
 data class ActionConversationTurn(

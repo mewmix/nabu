@@ -70,6 +70,9 @@ object AutomationSessionManager {
         synchronized(lock) {
             if (appContext != null) return
             appContext = context.applicationContext
+            runCatching {
+                AutomationTraceStore.getInstance(context.applicationContext).recoverAfterProcessRestart()
+            }
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val id = prefs.getString(KEY_ID, null) ?: return
             val originalGoal = prefs.getString(KEY_ORIGINAL_GOAL, null).orEmpty()

@@ -4,11 +4,14 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class DatabaseHelper(
+    context: Context,
+    databaseName: String? = DATABASE_NAME
+) : SQLiteOpenHelper(context, databaseName, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "kokoro.db"
-        private const val DATABASE_VERSION = 6
+        const val DATABASE_VERSION = 7
         const val TABLE_PROJECTS = "projects"
         const val COLUMN_ID = "_id"
         const val COLUMN_URI = "uri"
@@ -38,6 +41,91 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
         const val TABLE_VOICE_MIXES = "voice_mixes"
         const val COLUMN_POSITION = "position"
+
+        const val TABLE_AUTOMATION_TRACE_SESSIONS = "automation_trace_sessions"
+        const val TABLE_AUTOMATION_TRACE_STEPS = "automation_trace_steps"
+        const val TABLE_AUTOMATION_TRACE_EVENTS = "automation_trace_events"
+
+        fun createAutomationTraceTables(db: SQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_AUTOMATION_TRACE_SESSIONS (
+                    session_id TEXT PRIMARY KEY,
+                    schema_version INTEGER NOT NULL,
+                    goal_digest TEXT NOT NULL,
+                    checkpoint_id TEXT,
+                    status TEXT NOT NULL,
+                    verification_status TEXT NOT NULL,
+                    termination_reason TEXT,
+                    step_count INTEGER NOT NULL DEFAULT 0,
+                    recovery_attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_state_fingerprint TEXT,
+                    last_package TEXT,
+                    last_window TEXT,
+                    screenshot_opt_in INTEGER NOT NULL DEFAULT 0,
+                    created_at_ms INTEGER NOT NULL,
+                    updated_at_ms INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_AUTOMATION_TRACE_STEPS (
+                    _id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    step_sequence INTEGER NOT NULL,
+                    checkpoint_id TEXT,
+                    observation_id TEXT,
+                    before_fingerprint TEXT,
+                    after_fingerprint TEXT,
+                    intended_action TEXT NOT NULL,
+                    sanitized_target TEXT,
+                    lease_validation_outcome TEXT NOT NULL,
+                    execution_result TEXT NOT NULL,
+                    transport_status TEXT NOT NULL,
+                    postcondition_status TEXT,
+                    verification_status TEXT NOT NULL,
+                    evidence_category TEXT,
+                    failure_classification TEXT,
+                    observation_ms INTEGER NOT NULL DEFAULT 0,
+                    model_decision_ms INTEGER NOT NULL DEFAULT 0,
+                    execution_ms INTEGER NOT NULL DEFAULT 0,
+                    verification_ms INTEGER NOT NULL DEFAULT 0,
+                    total_latency_ms INTEGER NOT NULL DEFAULT 0,
+                    recovery_attempts INTEGER NOT NULL DEFAULT 0,
+                    recovery_summary TEXT,
+                    termination_reason TEXT,
+                    source_package TEXT,
+                    result_package TEXT,
+                    source_window TEXT,
+                    result_window TEXT,
+                    screenshot_ref TEXT,
+                    recorded_at_ms INTEGER NOT NULL,
+                    UNIQUE(session_id, step_sequence) ON CONFLICT REPLACE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_trace_steps_session ON $TABLE_AUTOMATION_TRACE_STEPS(session_id, step_sequence)"
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_AUTOMATION_TRACE_EVENTS (
+                    _id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    event_sequence INTEGER NOT NULL,
+                    elapsed_ms INTEGER NOT NULL,
+                    event_name TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    recorded_at_ms INTEGER NOT NULL,
+                    UNIQUE(session_id, event_sequence) ON CONFLICT REPLACE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_trace_events_session ON $TABLE_AUTOMATION_TRACE_EVENTS(session_id, event_sequence)"
+            )
+        }
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -78,6 +166,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.execSQL(createConversationsTable)
 
         createVoiceMixesTable(db)
+        createAutomationTraceTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -103,6 +192,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
         if (oldVersion < 6) {
             createVoiceMixesTable(db)
+        }
+
+        if (oldVersion < 7) {
+            createAutomationTraceTables(db)
         }
     }
 
