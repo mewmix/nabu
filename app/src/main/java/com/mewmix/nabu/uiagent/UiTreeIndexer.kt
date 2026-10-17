@@ -54,7 +54,7 @@ object UiTreeIndexer {
                 password = node.isPassword,
                 parentId = parentId,
                 treePath = node.treePath,
-                hintText = null,
+                hintText = node.hintText.takeIf(String::isNotBlank),
                 focusable = node.isFocusable,
                 focused = node.isFocused,
                 selected = node.isSelected,

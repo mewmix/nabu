@@ -34,6 +34,8 @@ object UiActionValidator {
             validateStep(step, screen)?.let { return it }
         }
 
+        validateSemanticConstraint(plan, screen)?.let { return it }
+
         val confirmationContext = buildCommitBoundaryContext(plan, screen).lowercase()
         confirmationTerms.firstOrNull(confirmationContext::contains)?.let {
             return UiPlanDecision.RequireConfirmation("Confirmation required for action involving '$it'.")
@@ -43,14 +45,14 @@ object UiActionValidator {
 
     private fun validateStep(step: UiActionStep, screen: UiScreenState): UiPlanDecision? = when (step) {
         is UiActionStep.Tap -> validateTarget(step.target, screen, requireEnabled = true)?.let { it }
-            ?: validateCapability(step.target, screen, "clickable") { it.clickable || it.checkable }
+            ?: validateCapability(step.target, screen, "clickable") { it.supports(Operation.TAP) }
         is UiActionStep.Focus -> validateTarget(step.target, screen, requireEnabled = true)?.let { it }
-            ?: validateCapability(step.target, screen, "focusable") { it.focusable || it.clickable || it.checkable }
+            ?: validateCapability(step.target, screen, "focusable") { it.supports(Operation.FOCUS) }
         is UiActionStep.NodeAction -> validateNodeAction(step, screen)
         is UiActionStep.CustomAction -> validateCustomAction(step, screen)
         is UiActionStep.Gesture -> validateGesture(step, screen)
         is UiActionStep.LongPress -> validateTarget(step.target, screen, requireEnabled = true)?.let { it }
-            ?: validateCapability(step.target, screen, "long-clickable") { it.longClickable }
+            ?: validateCapability(step.target, screen, "long-clickable") { it.supports(Operation.LONG_PRESS) }
         is UiActionStep.TypeText -> {
             if (step.text.isBlank()) {
                 UiPlanDecision.Invalid("type_text requires non-blank text.")
@@ -64,6 +66,8 @@ object UiActionValidator {
                     val targetElement = step.target?.elementId?.let(screen::element)
                     if (targetElement?.password == true) {
                         UiPlanDecision.Block("Typing into password fields is blocked.")
+                    } else if (targetElement != null && !targetElement.supports(Operation.TYPE_TEXT)) {
+                        UiPlanDecision.Invalid("Target element '${targetElement.id}' is not editable.")
                     } else {
                         null
                     }
@@ -72,6 +76,7 @@ object UiActionValidator {
         }
         is UiActionStep.Scroll -> step.target?.let { target ->
             validateTarget(target, screen, requireEnabled = true)
+                ?: validateCapability(target, screen, "scrollable") { it.supports(Operation.SCROLL) }
         }
         is UiActionStep.Wait -> if (step.milliseconds !in 0..5_000) {
             UiPlanDecision.Invalid("wait must be between 0 and 5000 ms.")
@@ -245,6 +250,85 @@ object UiActionValidator {
             actionEvidence
         ).joinToString(" ")
     }
+
+    private fun validateSemanticConstraint(plan: UiActionPlan, screen: UiScreenState): UiPlanDecision? {
+        val constraint = RequestedTargetConstraintParser.parse(plan.goal) ?: return null
+        for (step in plan.steps) {
+            val target = when (step) {
+                is UiActionStep.Tap -> if (constraint.operation == Operation.TAP) step.target else null
+                is UiActionStep.LongPress -> if (constraint.operation == Operation.TAP || constraint.operation == Operation.LONG_PRESS) step.target else null
+                is UiActionStep.TypeText -> if (constraint.operation == Operation.TYPE_TEXT) step.target else null
+                is UiActionStep.Focus -> if (constraint.operation == Operation.FOCUS) step.target else null
+                is UiActionStep.NodeAction -> if (constraint.operation == Operation.TAP && step.action in setOf("click", "long_click", "context_click")) step.target else null
+                else -> null
+            } ?: continue
+
+            val element = target.elementId?.let(screen::element) ?: continue
+            val labels = buildList {
+                element.text?.let(::add)
+                element.contentDescription?.let(::add)
+                element.hintText?.let(::add)
+                element.resourceId?.let(::add)
+                screen.plannerLabel(element)?.split('|')?.map(String::trim)?.let(::addAll)
+            }.map { RequestedTargetConstraintParser.normalize(it) }
+             .filter { it.isNotBlank() }
+
+            val matches = labels.any { label ->
+                label == constraint.requestedLabel ||
+                    label.contains(constraint.requestedLabel) ||
+                    constraint.requestedLabel.contains(label)
+            }
+            if (!matches && labels.isNotEmpty()) {
+                return UiPlanDecision.Invalid(
+                    "Plan target '${element.id}' (${labels.firstOrNull()}) does not match the requested target '${constraint.requestedLabel}'."
+                )
+            }
+        }
+        return null
+    }
+}
+
+internal data class RequestedTargetConstraint(
+    val operation: Operation,
+    val requestedLabel: String
+)
+
+internal object RequestedTargetConstraintParser {
+    private val TAP_COMMAND = Regex("""(?is)^\s*(?:please\s+)?(?:tap|click|press|activate)\s+(?:on\s+|the\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_\- ]+))\s*$""")
+    private val TYPE_INTO_COMMAND = Regex("""(?is)^\s*(?:please\s+)?(?:type|enter|input)\s+(?:.+?)\s+(?:in|into)\s+(?:the\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_\- ]+))\s*$""")
+    private val FOCUS_COMMAND = Regex("""(?is)^\s*(?:please\s+)?(?:focus)\s+(?:on\s+|in\s+|the\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_\- ]+))\s*$""")
+
+    fun parse(goal: String): RequestedTargetConstraint? {
+        val trimmed = goal.trim()
+        TAP_COMMAND.matchEntire(trimmed)?.let { match ->
+            val label = (match.groupValues[1].ifBlank { match.groupValues[2] }).trim()
+            if (label.isNotBlank() && !isGenericVerbOrNoun(label)) {
+                return RequestedTargetConstraint(Operation.TAP, normalize(label))
+            }
+        }
+        TYPE_INTO_COMMAND.matchEntire(trimmed)?.let { match ->
+            val label = (match.groupValues[1].ifBlank { match.groupValues[2] }).trim()
+            if (label.isNotBlank() && !isGenericVerbOrNoun(label)) {
+                return RequestedTargetConstraint(Operation.TYPE_TEXT, normalize(label))
+            }
+        }
+        FOCUS_COMMAND.matchEntire(trimmed)?.let { match ->
+            val label = (match.groupValues[1].ifBlank { match.groupValues[2] }).trim()
+            if (label.isNotBlank() && !isGenericVerbOrNoun(label)) {
+                return RequestedTargetConstraint(Operation.FOCUS, normalize(label))
+            }
+        }
+        return null
+    }
+
+    private fun isGenericVerbOrNoun(label: String): Boolean {
+        val norm = normalize(label)
+        return norm in setOf("it", "button", "item", "element", "field", "text", "screen", "here", "there", "back", "home", "recents")
+    }
+
+    fun normalize(value: String): String = value.lowercase()
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .trim()
 }
 
 internal fun UiActionPlan.resolveElementReferences(screen: UiScreenState): UiActionPlan = copy(

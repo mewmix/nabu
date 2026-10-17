@@ -27,6 +27,47 @@ class UiTreeIndexerTest {
         assertTrue(input.selected)
         assertEquals("Message", screen.plannerLabel(input))
     }
+
+    @Test
+    fun `liveSnapshot preserves hintText`() {
+        val node = UiNode(
+            treePath = "0",
+            packageName = "org.telegram.messenger",
+            resourceId = "message_input",
+            className = "android.widget.EditText",
+            text = "",
+            contentDescription = "",
+            isCheckable = false,
+            isChecked = false,
+            isClickable = true,
+            isEnabled = true,
+            isEditable = true,
+            isFocusable = true,
+            isFocused = false,
+            isVisibleToUser = true,
+            isScrollable = false,
+            isLongClickable = true,
+            isPassword = false,
+            isSelected = false,
+            boundsInScreen = Rect(0, 1000, 1080, 1100),
+            children = emptyList(),
+            hintText = "Message",
+            standardActions = listOf(SnapshotNodeAction(16, "click", null), SnapshotNodeAction(2097152, "set_text", null))
+        )
+        val snapshot = UiSnapshot(
+            id = "telegram_chat",
+            capturedAtMs = 1L,
+            packageName = "org.telegram.messenger",
+            windowTitle = "Chat",
+            rotation = 0,
+            displayBounds = Rect(0, 0, 1080, 2400),
+            rootNode = node
+        )
+
+        val element = UiTreeIndexer.build(snapshot).elements.single()
+        assertEquals("Message", element.hintText)
+        assertEquals("Message", UiTreeIndexer.build(snapshot).plannerLabel(element))
+    }
     private val xml = """
         <hierarchy>
           <node package="com.android.settings" class="android.widget.FrameLayout" bounds="[0,0][1080,2400]" enabled="true">

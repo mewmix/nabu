@@ -197,4 +197,30 @@ class ToolCallProtocolTest {
 
         assertFalse(prompt.contains("Filesystem path structure"))
     }
+
+    @Test
+    fun `parseDirectUserToolCommand parses slash and natural grammar`() {
+        val available = setOf("read_screen", "list_files", "set_timer")
+
+        val slash = ToolCallProtocol.parseDirectUserToolCommand("/tool read_screen", available)
+        assertNotNull(slash)
+        assertEquals("read_screen", slash?.toolName)
+
+        val callTool = ToolCallProtocol.parseDirectUserToolCommand("call read screen tool", available)
+        assertNotNull(callTool)
+        assertEquals("read_screen", callTool?.toolName)
+
+        val runTool = ToolCallProtocol.parseDirectUserToolCommand("run read_screen", available)
+        assertNotNull(runTool)
+        assertEquals("read_screen", runTool?.toolName)
+
+        val useTool = ToolCallProtocol.parseDirectUserToolCommand("use list_files {\"path\":\"/sdcard\"}", available)
+        assertNotNull(useTool)
+        assertEquals("list_files", useTool?.toolName)
+        assertEquals("/sdcard", useTool?.arguments?.get("path"))
+
+        // When not in available tool names, returns null for natural grammar
+        val unknown = ToolCallProtocol.parseDirectUserToolCommand("call unknown tool", available)
+        assertNull(unknown)
+    }
 }

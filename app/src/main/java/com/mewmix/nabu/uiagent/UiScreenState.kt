@@ -94,10 +94,7 @@ data class UiScreenState(
 
     fun plannerElements(limit: Int = 100): List<UiElement> = elements.asSequence()
         .filter { it.visible }
-        .filter {
-            it.standardActions.isNotEmpty() || it.customActions.isNotEmpty() ||
-                it.clickable || it.editable || it.scrollable || it.checkable || it.longClickable
-        }
+        .filter { it.isInteractive() }
         .take(limit)
         .toList()
 
@@ -165,3 +162,61 @@ data class UiScreenState(
         return false
     }
 }
+
+private val SCROLL_ACTIONS = setOf(
+    "scroll_forward", "scroll_backward", "scroll_up", "scroll_down",
+    "scroll_left", "scroll_right", "page_up", "page_down",
+    "page_left", "page_right", "scroll_to_position", "scroll_in_direction"
+)
+
+private val INTERACTIVE_STANDARD_ACTIONS = setOf(
+    "click", "long_click", "context_click", "press_and_hold", "ime_enter",
+    "set_text", "copy", "cut", "paste", "set_progress", "set_selection",
+    "scroll_forward", "scroll_backward", "scroll_up", "scroll_down",
+    "scroll_left", "scroll_right", "page_up", "page_down", "page_left",
+    "page_right", "scroll_to_position", "scroll_in_direction",
+    "expand", "collapse", "dismiss"
+)
+
+fun UiElement.supports(operation: Operation): Boolean = when (operation) {
+    Operation.TAP ->
+        enabled && visible && !password &&
+            (clickable || checkable || "click" in standardActions)
+    Operation.TYPE_TEXT ->
+        enabled && visible && !password &&
+            (editable || "set_text" in standardActions)
+    Operation.SCROLL ->
+        enabled && visible &&
+            (scrollable || standardActions.any { it in SCROLL_ACTIONS })
+    Operation.LONG_PRESS ->
+        enabled && visible && !password &&
+            (longClickable || "long_click" in standardActions)
+    Operation.FOCUS ->
+        enabled && visible && !password &&
+            (focusable || clickable || checkable || "focus" in standardActions)
+    Operation.NODE_ACTION ->
+        enabled && visible && standardActions.isNotEmpty()
+    Operation.CUSTOM_ACTION ->
+        enabled && visible && customActions.isNotEmpty()
+    Operation.GESTURE ->
+        enabled && visible && !password
+    else -> false
+}
+
+fun UiElement.isInteractive(): Boolean =
+    supports(Operation.TAP) ||
+        supports(Operation.TYPE_TEXT) ||
+        supports(Operation.SCROLL) ||
+        supports(Operation.LONG_PRESS) ||
+        customActions.isNotEmpty() ||
+        standardActions.any { it in INTERACTIVE_STANDARD_ACTIONS }
+
+fun UiElement.capabilityTokens(): List<String> = buildList {
+    if (supports(Operation.TAP)) add("tap")
+    if (supports(Operation.TYPE_TEXT)) add("type")
+    if (supports(Operation.SCROLL)) add("scroll")
+    if (supports(Operation.LONG_PRESS)) add("long_press")
+    if (customActions.isNotEmpty()) add("custom")
+    if ("set_progress" in standardActions || range != null) add("range")
+}
+

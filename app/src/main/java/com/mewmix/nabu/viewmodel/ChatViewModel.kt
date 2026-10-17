@@ -508,6 +508,8 @@ class ChatViewModel(
             val normalized = userMessage.trim()
             if (normalized.isBlank()) return null
 
+            ToolCallProtocol.parseDirectUserToolCommand(normalized, availableToolNames)?.let { return it }
+
             explicitControlUiGoal(normalized)?.let { goal ->
                 if (UiAutomationOrchestrator.CONTROL_UI_TOOL in availableToolNames) {
                     return ToolCall(
@@ -1672,13 +1674,13 @@ class ChatViewModel(
             .filter { it.isAvailable }
             .map { it.name }
             .toSet()
-        val explicitToolCall = ToolCallProtocol.parseDirectUserToolCommand(trimmed)
+        val explicitToolCall = ToolCallProtocol.parseDirectUserToolCommand(trimmed, availableToolNames)
         val inferredToolCall = if (explicitToolCall == null && image == null && audio == null) {
             inferToolCallFromModelFailure(trimmed, availableToolNames)
         } else {
             null
         }
-        val directToolCall = explicitToolCall ?: inferredToolCall?.takeUnless { it.toolName == "read_screen" }
+        val directToolCall = explicitToolCall ?: inferredToolCall
 
         beginSpeechSession(playbackAllowed = _ttsEnabled.value)
         _orchestration.value = null

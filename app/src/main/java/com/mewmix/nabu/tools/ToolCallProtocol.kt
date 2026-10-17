@@ -115,18 +115,45 @@ object ToolCallProtocol {
             )
     }
 
-    fun parseDirectUserToolCommand(text: String): ToolCall? {
-        val match = Regex("""(?is)^\s*/tool\s+([a-zA-Z0-9_]+)(?:\s+(\{[\s\S]*\}))?\s*$""")
-            .find(text.trim()) ?: return null
-        val toolName = match.groupValues[1].trim()
-        if (toolName.isBlank()) return null
-        val argsJson = match.groupValues.getOrNull(2)?.trim().orEmpty()
-        if (argsJson.isBlank()) {
-            return ToolCall(toolName, emptyMap())
+    fun parseDirectUserToolCommand(text: String, availableToolNames: Set<String> = emptySet()): ToolCall? {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return null
+
+        val slashMatch = Regex("""(?is)^\s*/tool\s+([a-zA-Z0-9_\-]+)(?:\s+(\{[\s\S]*\}))?\s*$""").find(trimmed)
+        if (slashMatch != null) {
+            val rawName = slashMatch.groupValues[1].trim().replace('-', '_').lowercase()
+            val argsJson = slashMatch.groupValues.getOrNull(2)?.trim().orEmpty()
+            val args = if (argsJson.isBlank()) {
+                emptyMap()
+            } else {
+                runCatching { JsonParser.parseString(argsJson).asJsonObject }.getOrNull()?.let(::jsonToMap) ?: return null
+            }
+            return ToolCall(rawName, args)
         }
-        val argsObject = runCatching { JsonParser.parseString(argsJson).asJsonObject }.getOrNull()
-            ?: return null
-        return ToolCall(toolName, jsonToMap(argsObject))
+
+        val naturalMatch = Regex("""(?is)^\s*(?:please\s+)?(?:call|run|use|invoke)\s+(?:the\s+)?([a-zA-Z0-9_\- ]+?)(?:\s+tool)?(?:\s+(\{[\s\S]*\}))?\s*$""").find(trimmed)
+        if (naturalMatch != null) {
+            val candidateName = naturalMatch.groupValues[1].trim()
+                .replace(Regex("""\s+"""), "_")
+                .replace('-', '_')
+                .lowercase()
+            val argsJson = naturalMatch.groupValues.getOrNull(2)?.trim().orEmpty()
+            val resolvedName = if (availableToolNames.isEmpty()) {
+                candidateName
+            } else {
+                availableToolNames.firstOrNull { it.equals(candidateName, ignoreCase = true) }
+            }
+            if (resolvedName != null) {
+                val args = if (argsJson.isBlank()) {
+                    emptyMap()
+                } else {
+                    runCatching { JsonParser.parseString(argsJson).asJsonObject }.getOrNull()?.let(::jsonToMap) ?: return null
+                }
+                return ToolCall(resolvedName, args)
+            }
+        }
+
+        return null
     }
 
     fun extractToolCall(text: String): ToolCall? {

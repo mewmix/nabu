@@ -201,6 +201,7 @@ class NabuAccessibilityService : AccessibilityService() {
             isSelected = node.isSelected,
             boundsInScreen = bounds,
             children = children,
+            hintText = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) node.hintText?.toString().orEmpty() else "",
             standardActions = standardActions,
             customActions = customActions,
             movementGranularities = node.movementGranularities,

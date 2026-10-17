@@ -160,7 +160,12 @@ data class ActionStepRecord(
     val executionMechanism: String? = null,
     val verificationStatus: String? = null,
     val sourceWindow: String? = null,
-    val resultWindow: String? = null
+    val resultWindow: String? = null,
+    val transportStatus: String = UiTransportStatus.ACCEPTED.name.lowercase(),
+    val postconditionStatus: String? = null,
+    val goalVerificationStatus: String? = verificationStatus,
+    val evidenceCategory: String? = null,
+    val checkpointId: String? = null
 )
 
 data class ActionConversationTurn(
@@ -170,7 +175,8 @@ data class ActionConversationTurn(
     val stepRecords: List<ActionStepRecord> = emptyList(),
     val timestampMs: Long = System.currentTimeMillis(),
     val isComplete: Boolean = false,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val verificationStatus: UiVerificationStatus = UiVerificationStatus.UNVERIFIABLE
 )
 
 data class ActionSession(
@@ -186,6 +192,7 @@ data class ActionSession(
     val lastObservedPackage: String? = null,
     val lastObservedWindow: String? = null,
     val lastVerificationResult: String? = null,
+    val lastVerificationStatus: UiVerificationStatus = UiVerificationStatus.UNVERIFIABLE,
     val metrics: ActionSessionMetrics = ActionSessionMetrics(),
     val createdAtMs: Long = System.currentTimeMillis(),
     val updatedAtMs: Long = System.currentTimeMillis()
@@ -199,6 +206,7 @@ data class ActionSession(
         "last_package" to (lastObservedPackage ?: ""),
         "last_window" to (lastObservedWindow ?: ""),
         "last_verification" to (lastVerificationResult ?: ""),
+        "last_verification_status" to lastVerificationStatus.name.lowercase(),
         "step_count" to stepHistory.size.toString(),
         "turn_count" to turns.size.toString()
     )
@@ -212,6 +220,7 @@ data class ActionSession(
         putString("last_package", lastObservedPackage)
         putString("last_window", lastObservedWindow)
         putString("last_verification", lastVerificationResult)
+        putString("last_verification_status", lastVerificationStatus.name.lowercase())
         putInt("step_count", stepHistory.size)
         putInt("turn_count", turns.size)
     }

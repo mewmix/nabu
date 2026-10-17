@@ -27,6 +27,7 @@ data class UiNode(
     val isSelected: Boolean,
     val boundsInScreen: Rect,
     val children: List<UiNode>,
+    val hintText: String = "",
     val standardActions: List<SnapshotNodeAction> = emptyList(),
     val customActions: List<SnapshotCustomAction> = emptyList(),
     val movementGranularities: Int = 0,
@@ -130,6 +131,7 @@ object UiSnapshotFingerprint {
             add(node.className)
             add(node.text)
             add(node.contentDescription)
+            add(node.hintText)
             add(node.isCheckable)
             add(node.isChecked)
             add(node.isClickable)

@@ -125,7 +125,7 @@ class CrossAppAutomationTest {
     }
 
     @Test
-    fun appTransitionWaitsPastTheOldWindowAndAcceptsTheNewPackage() {
+    fun `openApp settles on expected package`() {
         val oldScreen = screen("old", "com.mewmix.nabu")
         val staleScreen = screen("old", "com.mewmix.nabu")
         val targetScreen = screen("youtube", "com.google.android.youtube")
@@ -136,27 +136,12 @@ class CrossAppAutomationTest {
     }
 
     @Test
-    fun samePackageLaunchStillWaitsForAChangedWindow() {
-        val oldScreen = screen("old", "com.google.android.youtube")
-        val changedScreen = screen("new", "com.google.android.youtube")
+    fun `openApp does not settle on intermediate package`() {
+        val oldScreen = screen("old", "com.mewmix.nabu")
+        val launcherScreen = screen("launcher", "com.android.launcher")
         val action = UiActionStep.OpenApp("com.google.android.youtube")
 
-        assertFalse(UiTransitionPolicy.isSettled(oldScreen, oldScreen, action))
-        assertTrue(UiTransitionPolicy.isSettled(oldScreen, changedScreen, action))
-    }
-
-    @Test
-    fun transitionAcceptsAnIntermediateSystemWindowForPlannerHandling() {
-        val oldScreen = screen("old", "com.mewmix.nabu")
-        val permissionDialog = screen("permission", "com.google.android.permissioncontroller")
-
-        assertTrue(
-            UiTransitionPolicy.isSettled(
-                oldScreen,
-                permissionDialog,
-                UiActionStep.OpenApp("com.google.android.youtube")
-            )
-        )
+        assertFalse(UiTransitionPolicy.isSettled(oldScreen, launcherScreen, action))
     }
 
     private fun screen(id: String, packageName: String) = UiScreenState(

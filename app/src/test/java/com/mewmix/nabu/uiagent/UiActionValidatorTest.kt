@@ -365,4 +365,62 @@ class UiActionValidatorTest {
 
         assertTrue(UiActionValidator.validate(plan, customScreen) is UiPlanDecision.RequireConfirmation)
     }
+
+    @Test
+    fun `planner excludes accessibility focus only node`() {
+        val nonInteractive = screen.elements.first { it.text == "Dark mode" }.copy(
+            id = "non_interactive",
+            clickable = false,
+            editable = false,
+            scrollable = false,
+            checkable = false,
+            longClickable = false,
+            standardActions = setOf("accessibility_focus", "clear_accessibility_focus")
+        )
+        val customScreen = screen.copy(elements = listOf(nonInteractive))
+        assertTrue(customScreen.plannerElements().isEmpty())
+    }
+
+    @Test
+    fun `planner excludes show on screen only node`() {
+        val nonInteractive = screen.elements.first { it.text == "Dark mode" }.copy(
+            id = "non_interactive",
+            clickable = false,
+            editable = false,
+            scrollable = false,
+            checkable = false,
+            longClickable = false,
+            standardActions = setOf("show_on_screen")
+        )
+        val customScreen = screen.copy(elements = listOf(nonInteractive))
+        assertTrue(customScreen.plannerElements().isEmpty())
+    }
+
+    @Test
+    fun `typeText rejects non-editable target`() {
+        val sendBtn = screen.elements.first { it.text == "Send" }
+        val plan = UiActionPlan(
+            "type text",
+            screen.screenId,
+            listOf(UiActionStep.TypeText("hello", UiTarget(sendBtn.id, null)))
+        )
+
+        val decision = UiActionValidator.validate(plan, screen)
+        assertTrue(decision is UiPlanDecision.Invalid)
+        assertTrue((decision as UiPlanDecision.Invalid).reason.contains("not editable"))
+    }
+
+    @Test
+    fun `explicitTapLabel rejects semantically different target`() {
+        val sendBtn = screen.elements.first { it.text == "Send" }
+        val plan = UiActionPlan(
+            "tap Message",
+            screen.screenId,
+            listOf(UiActionStep.Tap(UiTarget(sendBtn.id, null)))
+        )
+
+        val decision = UiActionValidator.validate(plan, screen)
+        assertTrue(decision is UiPlanDecision.Invalid)
+        assertTrue((decision as UiPlanDecision.Invalid).reason.contains("does not match the requested target 'message'"))
+    }
 }

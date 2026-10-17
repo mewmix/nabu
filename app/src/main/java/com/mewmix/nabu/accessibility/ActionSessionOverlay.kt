@@ -85,6 +85,25 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
     private var observerJob: Job? = null
     private var currentMode: ActionSessionMode = ActionSessionMode.SINGLE_TURN
     private var palette: OverlayPalette = OverlayPalette.resolve(service)
+    private var pendingConfirmation: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
+
+    suspend fun handleConfirmation(prompt: String): Boolean {
+        pendingConfirmation?.complete(false)
+        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        pendingConfirmation = deferred
+        val result = try {
+            kotlinx.coroutines.withTimeoutOrNull(30_000L) {
+                deferred.await()
+            } ?: false
+        } catch (e: Exception) {
+            false
+        } finally {
+            if (pendingConfirmation == deferred) {
+                pendingConfirmation = null
+            }
+        }
+        return result
+    }
 
     private fun dp(value: Float): Int = (value * service.resources.displayMetrics.density).toInt()
 
@@ -253,6 +272,8 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
             background = chipBackground(0x00000000, p.controlRadiusDp, p.error, p.borderWidthDp)
             setPadding(dp(14f), dp(8f), dp(14f), dp(8f))
             setOnClickListener {
+                pendingConfirmation?.complete(false)
+                pendingConfirmation = null
                 ActionRequestDispatcher.activeSession.value?.let { session ->
                     ActionRequestDispatcher.cancelSession(session.id)
                 }
@@ -262,9 +283,57 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
         actionButtonsRow.addView(handoffBtn)
         actionButtonsRow.addView(cancelBtn)
 
+        val confirmationRow = LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(8f)
+            }
+        }
+
+        val denyBtn = TextView(service).apply {
+            text = "Deny"
+            textSize = 13f
+            setTextColor(p.onSurface)
+            typeface = p.titleTypeface ?: Typeface.DEFAULT_BOLD
+            background = chipBackground(p.surfaceVariant, p.controlRadiusDp, p.outline, p.borderWidthDp)
+            setPadding(dp(14f), dp(8f), dp(14f), dp(8f))
+            setOnClickListener {
+                pendingConfirmation?.complete(false)
+                pendingConfirmation = null
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(8f)
+            }
+        }
+
+        val confirmBtn = TextView(service).apply {
+            text = "Confirm"
+            textSize = 13f
+            setTextColor(p.onPrimary)
+            typeface = p.titleTypeface ?: Typeface.DEFAULT_BOLD
+            background = chipBackground(p.primary, p.controlRadiusDp)
+            setPadding(dp(14f), dp(8f), dp(14f), dp(8f))
+            setOnClickListener {
+                pendingConfirmation?.complete(true)
+                pendingConfirmation = null
+            }
+        }
+
+        confirmationRow.addView(denyBtn)
+        confirmationRow.addView(confirmBtn)
+
         statusContainer.addView(statusText)
         statusContainer.addView(progressBar)
         statusContainer.addView(actionButtonsRow)
+        statusContainer.addView(confirmationRow)
         card.addView(statusContainer)
 
         // Input row
@@ -303,6 +372,8 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
         }
 
         fun doSubmit() {
+            pendingConfirmation?.complete(false)
+            pendingConfirmation = null
             val text = inputField.text.toString().trim()
             if (text.isBlank()) return
             inputField.text.clear()
@@ -314,13 +385,15 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
                 ActionRequestDispatcher.submitFollowUp(
                     context = service,
                     sessionId = currentSession.id,
-                    followUpRequest = text
+                    followUpRequest = text,
+                    requestConfirmation = ::handleConfirmation
                 )
             } else {
                 ActionRequestDispatcher.submitRequest(
                     context = service,
                     request = text,
-                    mode = currentMode
+                    mode = currentMode,
+                    requestConfirmation = ::handleConfirmation
                 )
             }
         }
@@ -364,6 +437,7 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
             ActionSessionStatus.COMPLETED -> p.secondary
             ActionSessionStatus.FAILED -> p.error
             ActionSessionStatus.CANCELLED, ActionSessionStatus.IDLE -> p.onSurfaceVariant
+            ActionSessionStatus.WAITING_FOR_USER -> p.error
             else -> p.primary
         }
 
@@ -375,6 +449,7 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
                     statusText.text = ""
                     inputRow.visibility = View.VISIBLE
                     header.visibility = View.VISIBLE
+                    confirmationRow.visibility = View.GONE
                     return@collectLatest
                 }
 
@@ -386,22 +461,34 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
                     ActionSessionStatus.VERIFYING
                 )
 
-                // Collapse input row during active execution to prevent obstruction
-                if (isRunning) {
+                if (session.status == ActionSessionStatus.WAITING_FOR_USER) {
                     inputRow.visibility = View.GONE
-                    header.visibility = View.GONE
+                    header.visibility = View.VISIBLE
                     handoffBtn.visibility = View.GONE
                     cancelBtn.visibility = View.VISIBLE
-                    params.width = WindowManager.LayoutParams.WRAP_CONTENT
-                    root.setPadding(dp(8f), dp(6f), dp(8f), dp(10f))
-                    card.setPadding(dp(12f), dp(8f), dp(12f), dp(8f))
-                } else {
-                    inputRow.visibility = View.VISIBLE
-                    header.visibility = View.VISIBLE
-                    handoffBtn.visibility = View.VISIBLE
+                    confirmationRow.visibility = View.VISIBLE
                     params.width = WindowManager.LayoutParams.MATCH_PARENT
                     root.setPadding(dp(16f), dp(12f), dp(16f), dp(24f))
                     card.setPadding(dp(20f), dp(18f), dp(20f), dp(18f))
+                } else {
+                    confirmationRow.visibility = View.GONE
+                    // Collapse input row during active execution to prevent obstruction
+                    if (isRunning) {
+                        inputRow.visibility = View.GONE
+                        header.visibility = View.GONE
+                        handoffBtn.visibility = View.GONE
+                        cancelBtn.visibility = View.VISIBLE
+                        params.width = WindowManager.LayoutParams.WRAP_CONTENT
+                        root.setPadding(dp(8f), dp(6f), dp(8f), dp(10f))
+                        card.setPadding(dp(12f), dp(8f), dp(12f), dp(8f))
+                    } else {
+                        inputRow.visibility = View.VISIBLE
+                        header.visibility = View.VISIBLE
+                        handoffBtn.visibility = View.VISIBLE
+                        params.width = WindowManager.LayoutParams.MATCH_PARENT
+                        root.setPadding(dp(16f), dp(12f), dp(16f), dp(24f))
+                        card.setPadding(dp(20f), dp(18f), dp(20f), dp(18f))
+                    }
                 }
                 runCatching { windowManager.updateViewLayout(root, params) }
 
@@ -412,6 +499,7 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
                     ActionSessionStatus.OBSERVING -> "Observing screen..."
                     ActionSessionStatus.EXECUTING -> "Acting: ${session.pendingObjective ?: session.currentGoal}"
                     ActionSessionStatus.VERIFYING -> "Verifying: ${session.pendingObjective ?: ""}"
+                    ActionSessionStatus.WAITING_FOR_USER -> session.pendingObjective ?: "Confirmation required"
                     ActionSessionStatus.COMPLETED -> "Done: ${session.lastVerificationResult ?: "Complete"}"
                     ActionSessionStatus.FAILED -> "Failed: ${session.lastVerificationResult ?: "Action could not complete"}"
                     ActionSessionStatus.CANCELLED -> "Stopped"
@@ -433,6 +521,8 @@ class ActionSessionOverlay(private val service: NabuAccessibilityService) {
     }
 
     fun hide() {
+        pendingConfirmation?.complete(false)
+        pendingConfirmation = null
         observerJob?.cancel()
         observerJob = null
         overlayView?.let { view ->

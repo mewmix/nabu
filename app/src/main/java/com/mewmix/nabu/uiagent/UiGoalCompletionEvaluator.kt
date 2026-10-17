@@ -3,7 +3,10 @@ package com.mewmix.nabu.uiagent
 import com.mewmix.nabu.actions.DeviceAction
 
 internal sealed interface UiSuccessCondition {
-    data class SearchResultsVisible(val query: String) : UiSuccessCondition
+    data class SearchResultsVisible(
+        val query: String,
+        val requiredPackages: Set<String> = emptySet()
+    ) : UiSuccessCondition
 }
 
 internal data class UiGoalCompletion(
@@ -33,8 +36,9 @@ internal object UiGoalCompletionEvaluator {
         query = query
             .replace(Regex("""(?i)^(?:the|a|an)\s+"""), "")
             .trim()
+        val requiredPackages = appCandidates.map { it.packageName.lowercase() }.filter { it.isNotBlank() }.toSet()
         return query.takeIf(String::isNotBlank)
-            ?.let { listOf(UiSuccessCondition.SearchResultsVisible(it)) }
+            ?.let { listOf(UiSuccessCondition.SearchResultsVisible(it, requiredPackages)) }
             .orEmpty()
     }
 
@@ -44,27 +48,41 @@ internal object UiGoalCompletionEvaluator {
         appCandidates: List<DeviceAction.AppCandidate> = emptyList()
     ): UiGoalCompletion? {
         return compile(goal, appCandidates).firstNotNullOfOrNull { condition ->
-            when (condition) {
-                is UiSuccessCondition.SearchResultsVisible ->
-                    evaluateSearch(condition, screen)
-            }
+            evaluateCondition(condition, screen)
         }
     }
 
     fun plannerDescriptions(
         goal: String,
         appCandidates: List<DeviceAction.AppCandidate> = emptyList()
-    ): List<String> = compile(goal, appCandidates).map { condition ->
-        when (condition) {
-            is UiSuccessCondition.SearchResultsVisible ->
-                "search_results_visible: query field equals '${condition.query}' and results or an empty-results state are visible"
+    ): List<String> {
+        val searchDescriptions = compile(goal, appCandidates).map { condition ->
+            when (condition) {
+                is UiSuccessCondition.SearchResultsVisible ->
+                    "search_results_visible: query field equals '${condition.query}' and results or an empty-results state are visible"
+            }
         }
+        val checkpointDescriptions = UiGoalVerifier.compileCheckpoints(goal, appCandidates)
+            .map { "${it.id}: ${it.expectedOutcome.description}" }
+        return (searchDescriptions + checkpointDescriptions).distinct()
+    }
+
+    internal fun evaluateCondition(
+        condition: UiSuccessCondition,
+        screen: UiScreenState
+    ): UiGoalCompletion? = when (condition) {
+        is UiSuccessCondition.SearchResultsVisible -> evaluateSearch(condition, screen)
     }
 
     private fun evaluateSearch(
         condition: UiSuccessCondition.SearchResultsVisible,
         screen: UiScreenState
     ): UiGoalCompletion? {
+        if (condition.requiredPackages.isNotEmpty() &&
+            condition.requiredPackages.none { screen.packageName.equals(it, ignoreCase = true) }
+        ) {
+            return null
+        }
         val expected = normalize(condition.query)
         if (expected.isBlank()) return null
         val queryField = screen.elements.firstOrNull { element ->

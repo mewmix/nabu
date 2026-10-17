@@ -9,7 +9,51 @@ object DirectSemanticActionResolver {
         focusAction(normalized, screen)?.let { return it }
         expandCollapseAction(normalized, screen)?.let { return it }
         progressAction(normalized, screen)?.let { return it }
+        telegramAction(normalized, screen)?.let { return it }
         return clickAction(normalized, screen)
+    }
+
+    fun resolveVisibleBack(screen: UiScreenState): UiActionStep? {
+        val backTerms = setOf("back", "navigate up", "go back", "up", "close")
+        val candidates = screen.elements.filter { element ->
+            element.visible && element.enabled && !element.password &&
+                element.supports(Operation.TAP) &&
+                (
+                    listOfNotNull(element.text, element.contentDescription, element.hintText).any { label ->
+                        val norm = normalize(label)
+                        backTerms.any { norm == it || norm.startsWith("back ") || norm.startsWith("navigate up") }
+                    } ||
+                    element.resourceId?.lowercase()?.let { id ->
+                        id.endsWith(":id/back") || id.endsWith(":id/btn_back") || id.contains("navigate_up") || id.contains("action_bar_up")
+                    } == true
+                )
+        }
+        return candidates.firstOrNull()?.let { target ->
+            UiActionStep.Tap(UiTarget(target.id, null))
+        }
+    }
+
+    private fun telegramAction(normalized: String, screen: UiScreenState): UiActionStep? {
+        val context = TelegramUiAdapter.inspect(screen) ?: return null
+        return when {
+            normalized in setOf("tap message", "tap composer", "focus message", "focus composer", "click message", "click composer") ->
+                context.targets.firstOrNull { it.kind == "composer" }?.let { target ->
+                    UiActionStep.Tap(UiTarget(target.elementId, null))
+                }
+            normalized in setOf("tap send", "click send", "press send") ->
+                context.targets.firstOrNull { it.kind == "send" }?.let { target ->
+                    UiActionStep.Tap(UiTarget(target.elementId, null))
+                }
+            normalized in setOf("tap search", "click search", "focus search") ->
+                context.targets.firstOrNull { it.kind == "search_input" }?.let { target ->
+                    UiActionStep.Tap(UiTarget(target.elementId, null))
+                }
+            normalized in setOf("tap saved messages", "open saved messages", "click saved messages") ->
+                context.targets.firstOrNull { it.kind == "chat" }?.let { target ->
+                    UiActionStep.Tap(UiTarget(target.elementId, null))
+                }
+            else -> null
+        }
     }
 
     private fun globalAction(normalized: String, screen: UiScreenState): UiActionStep? {
@@ -103,7 +147,7 @@ object DirectSemanticActionResolver {
     private fun exactElements(label: String, screen: UiScreenState, action: String): List<UiElement> =
         screen.elements.filter { element ->
             element.visible && element.enabled && !element.password &&
-                action in element.standardActions &&
+                (action in element.standardActions || (action == "click" && element.supports(Operation.TAP))) &&
                 listOfNotNull(element.text, element.contentDescription, element.hintText)
                     .any { normalize(it) == label }
         }

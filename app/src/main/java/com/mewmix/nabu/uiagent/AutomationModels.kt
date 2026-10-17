@@ -125,20 +125,14 @@ internal object UiTransitionPolicy {
         next: UiScreenState,
         action: UiActionStep
     ): Boolean {
-        val expectedPackage = when (action) {
-            is UiActionStep.OpenApp -> action.packageName
-            is UiActionStep.ShareText -> action.targetPackage
-            is UiActionStep.ShareCapturedMedia -> action.targetPackage
-            else -> null
+        if (action is UiActionStep.OpenApp) {
+            return next.packageName.equals(action.packageName, ignoreCase = true)
         }
-        if (!expectedPackage.isNullOrBlank() &&
-            next.packageName.equals(expectedPackage, ignoreCase = true) &&
-            (
-                !previous.packageName.equals(expectedPackage, ignoreCase = true) ||
-                    next.screenId != previous.screenId
-                )
-        ) {
-            return true
+        if (action is UiActionStep.ShareText && !action.targetPackage.isNullOrBlank()) {
+            return next.packageName.equals(action.targetPackage, ignoreCase = true)
+        }
+        if (action is UiActionStep.ShareCapturedMedia && action.targetPackage.isNotBlank()) {
+            return next.packageName.equals(action.targetPackage, ignoreCase = true)
         }
         return next.screenId != previous.screenId ||
             !next.packageName.equals(previous.packageName, ignoreCase = true)

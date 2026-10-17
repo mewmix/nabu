@@ -260,29 +260,83 @@ class UiAutomationOrchestrator(
             if (execution.isError) return execution
             progress("Verify", "Observing the deterministic action result")
             trace("verification_started", mapOf("route" to "request_fast_path"))
-            observation = observe()
-                ?: return failure("${actionLabel(executableDirectResolution.action)} ran, but its result could not be observed.")
+            val observedAfterDirect = observeAfterDirectAction(beforeSnapshot, executableDirectResolution.action)
+            if (observedAfterDirect == null) {
+                val unverifiable = GoalVerificationResult(
+                    status = UiVerificationStatus.UNVERIFIABLE,
+                    transportStatus = UiTransportStatus.ACCEPTED,
+                    postconditionStatus = PostconditionStatus.UNVERIFIABLE,
+                    checkpointId = "post_observation",
+                    evidenceCategory = "observation_unavailable",
+                    summary = "${actionLabel(executableDirectResolution.action)} ran (executed), but its resulting screen could not be observed (unverifiable)."
+                )
+                publishFastPathReceipt(
+                    sequence = 1,
+                    action = executableDirectResolution.action,
+                    before = beforeScreen,
+                    after = beforeScreen,
+                    verificationResult = unverifiable,
+                    mechanism = if (executableDirectResolution.action is UiActionStep.OpenApp) "trusted_intent" else "global_action",
+                    startedMs = fastPathStartedMs
+                )
+                return failure(unverifiable.summary)
+            }
+            observation = observedAfterDirect
             val verification = verifyRequestLevelAction(
+                goal = goal,
                 action = executableDirectResolution.action,
                 before = beforeScreen,
-                after = observation.screen
+                after = observation.screen,
+                completesGoalWhenVerified = executableDirectResolution.completesGoalWhenVerified
             )
             trace(
                 "verification_completed",
-                mapOf("route" to "request_fast_path", "verified" to verification.first)
+                mapOf(
+                    "route" to "request_fast_path",
+                    "verified" to verification.isGoalVerified,
+                    "verification_status" to verification.status.name.lowercase(),
+                    "postcondition_status" to verification.postconditionStatus.name.lowercase(),
+                    "evidence_category" to verification.evidenceCategory
+                )
             )
-            if (!verification.first) return failure(verification.second)
+            val mechanism = if (executableDirectResolution.action is UiActionStep.OpenApp) {
+                "trusted_intent"
+            } else {
+                "global_action"
+            }
+            if (executableDirectResolution.completesGoalWhenVerified && !verification.isGoalVerified) {
+                publishFastPathReceipt(
+                    sequence = 1,
+                    action = executableDirectResolution.action,
+                    before = beforeScreen,
+                    after = observation.screen,
+                    verificationResult = verification,
+                    mechanism = mechanism,
+                    startedMs = fastPathStartedMs
+                )
+                return failure(verification.summary)
+            }
+            if (!executableDirectResolution.completesGoalWhenVerified &&
+                (verification.status == UiVerificationStatus.FAILED || verification.status == UiVerificationStatus.UNVERIFIABLE)
+            ) {
+                publishFastPathReceipt(
+                    sequence = 1,
+                    action = executableDirectResolution.action,
+                    before = beforeScreen,
+                    after = observation.screen,
+                    verificationResult = verification,
+                    mechanism = mechanism,
+                    startedMs = fastPathStartedMs
+                )
+                return failure(verification.summary)
+            }
             publishFastPathReceipt(
                 sequence = 1,
                 action = executableDirectResolution.action,
                 before = beforeScreen,
                 after = observation.screen,
-                verification = verification.second,
-                mechanism = if (executableDirectResolution.action is UiActionStep.OpenApp) {
-                    "trusted_intent"
-                } else {
-                    "global_action"
-                },
+                verificationResult = verification,
+                mechanism = mechanism,
                 startedMs = fastPathStartedMs
             )
             deterministicPrefixCount = 1
@@ -291,11 +345,12 @@ class UiAutomationOrchestrator(
                 mapOf(
                     "reason" to executableDirectResolution.reason,
                     "action" to actionLabel(executableDirectResolution.action),
-                    "result_package" to observation.screen.packageName
+                    "result_package" to observation.screen.packageName,
+                    "verification_status" to verification.status.name.lowercase()
                 )
             )
             if (executableDirectResolution.completesGoalWhenVerified) {
-                return success(verification.second)
+                return success(verification.summary)
             }
         } else {
             progress("Observe", "Capturing the active window and accessibility tree")
@@ -321,6 +376,8 @@ class UiAutomationOrchestrator(
             progress("Execute", "Running ${actionLabel(action)} without model inference")
             val actionPlan = UiActionPlan(goal, observation.screen.screenId, listOf(action))
             var directObservation = observation
+            var fastPathConfirmationGranted = false
+            var fastPathVerifiedDestination: String? = null
             when (val decision = UiActionValidator.validate(actionPlan, observation.screen)) {
                 UiPlanDecision.Allow -> Unit
                 is UiPlanDecision.Invalid -> return failure(decision.reason)
@@ -390,40 +447,94 @@ class UiAutomationOrchestrator(
                     ) {
                         return failure("Confirmation expired or invalid.")
                     }
+                    fastPathConfirmationGranted = true
+                    fastPathVerifiedDestination = verifiedDestination
                 }
             }
             val result = execute(action, directObservation, sessionId, goal)
             if (result.isError) return result
             val next = observeAfterAction(directObservation, action)
-                ?: return failure("${actionLabel(action)} ran, but the resulting screen could not be observed.")
-            val postcondition = UiActionPostconditionVerifier.verify(
+            if (next == null) {
+                val unverifiable = GoalVerificationResult(
+                    status = UiVerificationStatus.UNVERIFIABLE,
+                    transportStatus = UiTransportStatus.ACCEPTED,
+                    postconditionStatus = PostconditionStatus.UNVERIFIABLE,
+                    checkpointId = "post_observation",
+                    evidenceCategory = "observation_unavailable",
+                    summary = "${actionLabel(action)} ran (executed), but the resulting screen could not be observed (unverifiable)."
+                )
+                publishFastPathReceipt(
+                    sequence = deterministicPrefixCount + 1,
+                    action = action,
+                    before = directObservation.screen,
+                    after = directObservation.screen,
+                    verificationResult = unverifiable,
+                    mechanism = "semantic_node",
+                    startedMs = fastPathStartedMs
+                )
+                return failure(unverifiable.summary)
+            }
+            var finalNext = next
+            var postcondition = UiActionPostconditionVerifier.verify(
                 action,
                 directObservation.screen,
-                next.screen
+                finalNext.screen
             )
-            if (postcondition.status != PostconditionStatus.VERIFIED) {
-                return failure(postcondition.detail)
+            if (postcondition.status == PostconditionStatus.FAILED) {
+                if (action is UiActionStep.PressBack || (action is UiActionStep.GlobalAction && action.action == "back")) {
+                    val visibleBack = DirectSemanticActionResolver.resolveVisibleBack(directObservation.screen)
+                    if (visibleBack != null) {
+                        val recoveryResult = execute(visibleBack, directObservation, sessionId, goal)
+                        if (!recoveryResult.isError) {
+                            val nextRecovery = observeAfterAction(directObservation, visibleBack)
+                            if (nextRecovery != null) {
+                                val recoveryPost = UiActionPostconditionVerifier.verify(visibleBack, directObservation.screen, nextRecovery.screen)
+                                if (recoveryPost.status.isMechanicalProgress) {
+                                    finalNext = nextRecovery
+                                    postcondition = recoveryPost
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            val goalVerification = UiGoalVerifier.verify(
+                goal = goal,
+                action = action,
+                before = directObservation.screen,
+                after = finalNext.screen,
+                transportStatus = UiTransportStatus.ACCEPTED,
+                postcondition = postcondition,
+                goalAppCandidates = DeviceAction.findGoalAppCandidates(context, goal),
+                confirmationGranted = fastPathConfirmationGranted,
+                expectedDestination = fastPathVerifiedDestination,
+                hasPendingUnconfirmedEffect = pendingExternalEffect != null
+            )
+            publishFastPathReceipt(
+                sequence = deterministicPrefixCount + 1,
+                action = action,
+                before = directObservation.screen,
+                after = finalNext.screen,
+                verificationResult = goalVerification,
+                mechanism = "semantic_node",
+                startedMs = fastPathStartedMs
+            )
+            if (!goalVerification.isGoalVerified) {
+                return failure(goalVerification.summary)
             }
             trace(
                 "deterministic_action_verified",
                 mapOf(
                     "action" to actionLabel(action),
                     "source_screen_id" to directObservation.screen.screenId,
-                    "result_screen_id" to next.screen.screenId,
+                    "result_screen_id" to finalNext.screen.screenId,
                     "source_package" to directObservation.screen.packageName,
-                    "result_package" to next.screen.packageName
+                    "result_package" to finalNext.screen.packageName,
+                    "verification_status" to goalVerification.status.name.lowercase(),
+                    "evidence_category" to goalVerification.evidenceCategory
                 )
             )
-            publishFastPathReceipt(
-                sequence = deterministicPrefixCount + 1,
-                action = action,
-                before = directObservation.screen,
-                after = next.screen,
-                verification = postcondition.detail,
-                mechanism = "semantic_node",
-                startedMs = fastPathStartedMs
-            )
-            return success("${actionLabel(action).replaceFirstChar(Char::uppercase)} completed.")
+            return success(goalVerification.summary)
         }
         
         var activeDeadlineMs = monotonicNowMs() + budget.maxWallClockDurationMs
@@ -621,6 +732,8 @@ class UiAutomationOrchestrator(
             val fingerprint = "${actionLabel(action)}|${hashContent(action.toJson().toString(), goal)}|${observation.screen.screenId}"
             val contentHash = confirmationContentHash(action, observation.screen, goal)
             
+            var stepConfirmationGranted = false
+            var stepVerifiedDestination: String? = null
             when (val decision = UiActionValidator.validate(actionPlan, observation.screen)) {
                 UiPlanDecision.Allow -> Unit
                 is UiPlanDecision.Invalid -> {
@@ -686,6 +799,8 @@ class UiAutomationOrchestrator(
                     if (!ConfirmationManager.consumeConfirmation(grantId, sessionId, latestObservation.screen.screenId, updatedFingerprint, verifiedDestination, contentHash)) {
                         return@execution failure("Confirmation expired or invalid.")
                     }
+                    stepConfirmationGranted = true
+                    stepVerifiedDestination = verifiedDestination
                 }
             }
             
@@ -730,9 +845,41 @@ class UiAutomationOrchestrator(
             var executedResult: ToolResult? = null
             when (action) {
                 is UiActionStep.Done -> {
-                    val explicitConditions = UiGoalCompletionEvaluator.compile(goal, goalAppCandidates)
-                    if (explicitConditions.isEmpty()) {
-                        return@execution success(action.summary)
+                    val terminalVerification = UiGoalVerifier.verifyTerminalDone(
+                        goal = goal,
+                        currentScreen = observation.screen,
+                        actionHistory = actionHistory,
+                        goalAppCandidates = goalAppCandidates,
+                        confirmationGranted = stepConfirmationGranted,
+                        expectedDestination = stepVerifiedDestination,
+                        hasPendingUnconfirmedEffect = pendingExternalEffect != null
+                    )
+                    if (terminalVerification.isGoalVerified) {
+                        trace(
+                            "goal_condition_satisfied",
+                            mapOf(
+                                "summary" to terminalVerification.summary,
+                                "screen_id" to observation.screen.screenId,
+                                "package" to observation.screen.packageName,
+                                "verification_status" to terminalVerification.status.name.lowercase(),
+                                "evidence_category" to terminalVerification.evidenceCategory,
+                                "checkpoint_id" to terminalVerification.checkpointId
+                            )
+                        )
+                        return@execution success(terminalVerification.summary)
+                    }
+                    trace(
+                        "done_rejected_unverified",
+                        mapOf(
+                            "index" to actionIndex,
+                            "verification_status" to terminalVerification.status.name.lowercase(),
+                            "evidence_category" to terminalVerification.evidenceCategory,
+                            "checkpoint_id" to terminalVerification.checkpointId,
+                            "reason" to terminalVerification.summary
+                        )
+                    )
+                    val priorDoneRejectionsOnScreen = actionHistory.count {
+                        it.action == "done" && it.sourceScreenId == observation.screen.screenId && it.outcome == Outcome.FAILED
                     }
                     actionHistory.add(
                         UiActionHistoryEntry(
@@ -744,11 +891,14 @@ class UiAutomationOrchestrator(
                             resultScreenId = observation.screen.screenId,
                             outcome = Outcome.FAILED,
                             changedScreen = false,
-                            detail = "Completion rejected: the compiled success condition is not visible yet.",
+                            detail = "Completion rejected (${terminalVerification.status.name.lowercase()}): ${terminalVerification.summary}",
                             sourcePackage = observation.screen.packageName,
                             resultPackage = observation.screen.packageName
                         )
                     )
+                    if (priorDoneRejectionsOnScreen >= 1) {
+                        return@execution failure(terminalVerification.summary)
+                    }
                     return@repeat
                 }
                 is UiActionStep.AskUser -> {
@@ -842,6 +992,7 @@ class UiAutomationOrchestrator(
                             "index" to actionIndex,
                             "action" to actionLabel(action),
                             "status" to if (result.isError) "failed" else "succeeded",
+                            "transport_status" to if (result.isError) UiTransportStatus.REJECTED.name.lowercase() else UiTransportStatus.ACCEPTED.name.lowercase(),
                             "result_length" to result.output.length,
                             "result_hash" to hashContent(result.output)
                         )
@@ -866,6 +1017,32 @@ class UiAutomationOrchestrator(
                                 resultPackage = observation.screen.packageName
                             )
                         )
+                        onStepRecord?.invoke(
+                            ActionStepRecord(
+                                sequence = actionIndex + 1 + deterministicPrefixCount,
+                                observation = observation.screen.screenId,
+                                reasoningSummary = actionLabel(action),
+                                action = actionLabel(action),
+                                target = getTargetLabel(action, observation.screen),
+                                result = "failed",
+                                postActionObservation = observation.screen.screenId,
+                                verification = result.output,
+                                latencyMs = monotonicNowMs() - stepStartMs,
+                                sourcePackage = observation.screen.packageName,
+                                resultPackage = observation.screen.packageName,
+                                actionFamily = actionFamily(action),
+                                semanticAction = actionLabel(action),
+                                executionMechanism = executionMechanism(action, executedResult),
+                                verificationStatus = UiVerificationStatus.FAILED.name.lowercase(),
+                                sourceWindow = observation.screen.activityName,
+                                resultWindow = observation.screen.activityName,
+                                transportStatus = UiTransportStatus.REJECTED.name.lowercase(),
+                                postconditionStatus = PostconditionStatus.FAILED.name.lowercase(),
+                                goalVerificationStatus = UiVerificationStatus.FAILED.name.lowercase(),
+                                evidenceCategory = "transport_rejected",
+                                checkpointId = "transport"
+                            )
+                        )
                         observation = observe() ?: return@execution failure("UI action failed and screen could not be observed.")
                         return@repeat
                     }
@@ -875,7 +1052,34 @@ class UiAutomationOrchestrator(
             progress("Verify ${actionIndex + 1}", "Observing the resulting screen")
             trace("verification_started", mapOf("index" to actionIndex))
             val next = observeAfterAction(observation, action)
-                ?: return@execution failure("UI action ran, but the resulting screen could not be observed.")
+            if (next == null) {
+                val unverifiableRecord = ActionStepRecord(
+                    sequence = actionIndex + 1 + deterministicPrefixCount,
+                    observation = observation.screen.screenId,
+                    reasoningSummary = actionLabel(action),
+                    action = actionLabel(action),
+                    target = getTargetLabel(action, observation.screen),
+                    result = "unverifiable",
+                    postActionObservation = null,
+                    verification = "UI action ran (executed), but the resulting screen could not be observed.",
+                    latencyMs = monotonicNowMs() - stepStartMs,
+                    sourcePackage = observation.screen.packageName,
+                    resultPackage = null,
+                    actionFamily = actionFamily(action),
+                    semanticAction = actionLabel(action),
+                    executionMechanism = executionMechanism(action, executedResult),
+                    verificationStatus = UiVerificationStatus.UNVERIFIABLE.name.lowercase(),
+                    sourceWindow = observation.screen.activityName,
+                    resultWindow = null,
+                    transportStatus = UiTransportStatus.ACCEPTED.name.lowercase(),
+                    postconditionStatus = PostconditionStatus.UNVERIFIABLE.name.lowercase(),
+                    goalVerificationStatus = UiVerificationStatus.UNVERIFIABLE.name.lowercase(),
+                    evidenceCategory = "observation_unavailable",
+                    checkpointId = "post_observation"
+                )
+                onStepRecord?.invoke(unverifiableRecord)
+                return@execution failure("UI action ran (executed), but the resulting screen could not be observed (unverifiable).")
+            }
             val assertion = actionPlan.steps.filterIsInstance<UiActionStep.Assert>().lastOrNull()?.condition
             val assertionMatched = assertion?.let { assertionMatches(it, next.screen) }
             val builtInPostcondition = UiActionPostconditionVerifier.verify(action, observation.screen, next.screen)
@@ -896,6 +1100,8 @@ class UiAutomationOrchestrator(
                     mapOf(
                         "index" to actionIndex,
                         "status" to builtInPostcondition.status.name.lowercase(),
+                        "verification_status" to builtInPostcondition.verificationStatus.name.lowercase(),
+                        "evidence_category" to builtInPostcondition.evidenceCategory,
                         "detail" to builtInPostcondition.detail,
                         "screen_id" to next.screen.screenId,
                         "package" to next.screen.packageName
@@ -903,26 +1109,65 @@ class UiAutomationOrchestrator(
                 )
             }
 
-            val changed = next.screen.screenId != observation.screen.screenId
+            var finalNext = next
+            var effectivePostcondition = builtInPostcondition
+            if (builtInPostcondition.status == PostconditionStatus.FAILED) {
+                if (action is UiActionStep.PressBack || (action is UiActionStep.GlobalAction && action.action == "back")) {
+                    val visibleBack = DirectSemanticActionResolver.resolveVisibleBack(observation.screen)
+                    if (visibleBack != null) {
+                        val recoveryResult = execute(visibleBack, observation, sessionId, goal)
+                        if (!recoveryResult.isError) {
+                            val nextRecovery = observeAfterAction(observation, visibleBack)
+                            if (nextRecovery != null) {
+                                val recoveryPost = UiActionPostconditionVerifier.verify(visibleBack, observation.screen, nextRecovery.screen)
+                                if (recoveryPost.status.isMechanicalProgress) {
+                                    finalNext = nextRecovery
+                                    effectivePostcondition = recoveryPost
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val changed = finalNext.screen.screenId != observation.screen.screenId
             unchangedCount = if (changed) 0 else unchangedCount + 1
             val postconditionFailed = assertionMatched == false ||
-                builtInPostcondition.status == PostconditionStatus.FAILED
+                effectivePostcondition.status == PostconditionStatus.FAILED ||
+                effectivePostcondition.status == PostconditionStatus.UNVERIFIABLE
+            val goalVerification = UiGoalVerifier.verify(
+                goal = goal,
+                action = action,
+                before = observation.screen,
+                after = finalNext.screen,
+                transportStatus = UiTransportStatus.ACCEPTED,
+                postcondition = effectivePostcondition,
+                goalAppCandidates = goalAppCandidates,
+                explicitAssertion = assertion,
+                actionHistory = actionHistory,
+                confirmationGranted = stepConfirmationGranted,
+                expectedDestination = stepVerifiedDestination,
+                hasPendingUnconfirmedEffect = pendingExternalEffect != null
+            )
             trace(
                 "verification_completed",
                 mapOf(
                     "index" to actionIndex,
                     "success" to !postconditionFailed,
-                    "status" to builtInPostcondition.status.name.lowercase()
+                    "status" to effectivePostcondition.status.name.lowercase(),
+                    "goal_verification_status" to goalVerification.status.name.lowercase(),
+                    "evidence_category" to goalVerification.evidenceCategory,
+                    "checkpoint_id" to goalVerification.checkpointId
                 )
             )
             val postconditionDetail = buildList {
                 when (assertionMatched) {
-                    true -> add("Planner postcondition matched; continue until an explicit done action.")
+                    true -> add("Planner postcondition matched; continue until goal outcome is verified.")
                     false -> add("Planner postcondition did not match; replan from the observed state.")
                     null -> Unit
                 }
-                if (builtInPostcondition.status != PostconditionStatus.NOT_APPLICABLE) {
-                    add(builtInPostcondition.detail)
+                if (effectivePostcondition.status != PostconditionStatus.NOT_APPLICABLE) {
+                    add(effectivePostcondition.detail)
                 }
             }.takeIf { it.isNotEmpty() }?.joinToString(" ")
             
@@ -935,35 +1180,36 @@ class UiAutomationOrchestrator(
                         targetElementId = getTargetElementId(action),
                         targetLabel = getTargetLabel(action, observation.screen),
                         sourceScreenId = observation.screen.screenId,
-                        resultScreenId = next.screen.screenId,
+                        resultScreenId = finalNext.screen.screenId,
                         outcome = if (postconditionFailed) Outcome.FAILED else Outcome.SUCCEEDED,
                         changedScreen = changed,
                         detail = postconditionDetail,
                         sourcePackage = observation.screen.packageName,
-                        resultPackage = next.screen.packageName
+                        resultPackage = finalNext.screen.packageName
                     )
                 )
             }
             
             logger(
                 "UiAutomation step=${actionIndex + 1} action=${action::class.simpleName} " +
-                    "screen=${observation.screen.screenId}->${next.screen.screenId} unchanged=$unchangedCount"
+                    "screen=${observation.screen.screenId}->${finalNext.screen.screenId} " +
+                    "postcondition=${effectivePostcondition.status} goalStatus=${goalVerification.status} unchanged=$unchangedCount"
             )
             trace(
                 "transition_observed",
                 mapOf(
                     "index" to actionIndex,
                     "source_screen_id" to observation.screen.screenId,
-                    "result_screen_id" to next.screen.screenId,
+                    "result_screen_id" to finalNext.screen.screenId,
                     "source_package" to observation.screen.packageName,
-                    "result_package" to next.screen.packageName,
+                    "result_package" to finalNext.screen.packageName,
                     "changed" to changed,
                     "unchanged_count" to unchangedCount
                 )
             )
             AutomationSessionManager.actionCompleted(
                 sessionId,
-                "${actionLabel(action)}: ${observation.screen.packageName} → ${next.screen.packageName}"
+                "${actionLabel(action)}: ${observation.screen.packageName} → ${finalNext.screen.packageName} (${goalVerification.status.name.lowercase()})"
             )
             val stepRecord = ActionStepRecord(
                 sequence = actionIndex + 1 + deterministicPrefixCount,
@@ -972,26 +1218,47 @@ class UiAutomationOrchestrator(
                 action = actionLabel(action),
                 target = getTargetLabel(action, observation.screen),
                 result = if (postconditionFailed) "failed" else "succeeded",
-                postActionObservation = next.screen.screenId,
-                verification = postconditionDetail,
+                postActionObservation = finalNext.screen.screenId,
+                verification = goalVerification.summary.ifBlank { postconditionDetail ?: "" },
                 latencyMs = monotonicNowMs() - stepStartMs,
                 sourcePackage = observation.screen.packageName,
-                resultPackage = next.screen.packageName,
+                resultPackage = finalNext.screen.packageName,
                 actionFamily = actionFamily(action),
                 semanticAction = actionLabel(action),
                 executionMechanism = executionMechanism(action, executedResult),
-                verificationStatus = builtInPostcondition.status.name.lowercase(),
+                verificationStatus = goalVerification.status.name.lowercase(),
                 sourceWindow = observation.screen.activityName,
-                resultWindow = next.screen.activityName
+                resultWindow = finalNext.screen.activityName,
+                transportStatus = goalVerification.transportStatus.name.lowercase(),
+                postconditionStatus = effectivePostcondition.status.name.lowercase(),
+                goalVerificationStatus = goalVerification.status.name.lowercase(),
+                evidenceCategory = goalVerification.evidenceCategory,
+                checkpointId = goalVerification.checkpointId
             )
             onStepRecord?.invoke(stepRecord)
-            UiGoalCompletionEvaluator.evaluate(goal, next.screen, goalAppCandidates)?.let { completion ->
+            if (goalVerification.isGoalVerified) {
+                trace(
+                    "goal_condition_satisfied",
+                    mapOf(
+                        "summary" to goalVerification.summary,
+                        "screen_id" to finalNext.screen.screenId,
+                        "package" to finalNext.screen.packageName,
+                        "verification_status" to goalVerification.status.name.lowercase(),
+                        "evidence_category" to goalVerification.evidenceCategory,
+                        "checkpoint_id" to goalVerification.checkpointId
+                    )
+                )
+                return@execution success(goalVerification.summary)
+            }
+            UiGoalCompletionEvaluator.evaluate(goal, finalNext.screen, goalAppCandidates)?.let { completion ->
                 trace(
                     "goal_condition_satisfied",
                     mapOf(
                         "summary" to completion.summary,
-                        "screen_id" to next.screen.screenId,
-                        "package" to next.screen.packageName
+                        "screen_id" to finalNext.screen.screenId,
+                        "package" to finalNext.screen.packageName,
+                        "verification_status" to UiVerificationStatus.GOAL_VERIFIED.name.lowercase(),
+                        "evidence_category" to "search_results"
                     )
                 )
                 return@execution success(completion.summary)
@@ -999,7 +1266,7 @@ class UiAutomationOrchestrator(
             if (unchangedCount >= budget.maxUnchangedObservations) {
                 return@execution failure("UI did not change after repeated actions; stopping automation.")
             }
-            observation = next
+            observation = finalNext
             }
             failure("UI action limit reached before the goal was verified.")
         }
@@ -1115,6 +1382,49 @@ class UiAutomationOrchestrator(
             }
         } while (monotonicNowMs() < deadline)
         return observe(requestScreenshot = false)
+    }
+
+    private suspend fun observeAfterDirectAction(
+        beforeSnapshot: com.mewmix.nabu.accessibility.UiSnapshot?,
+        action: UiActionStep
+    ): Observation? {
+        val maxWaitMs = UiTransitionPolicy.maxWaitMs(action, budget)
+        if (maxWaitMs <= 0) return observe(requestScreenshot = false)
+
+        progress("Transition", "Waiting for Android to settle after ${actionLabel(action)}")
+        val deadline = monotonicNowMs() + maxWaitMs
+        var latest: Observation? = null
+        var observedSequence = beforeSnapshot?.sequence
+            ?: com.mewmix.nabu.accessibility.UiSnapshotStore.currentSnapshot.value?.sequence
+            ?: 0L
+        val beforeScreen = beforeSnapshot?.let(UiTreeIndexer::build)
+
+        do {
+            val remainingMs = deadline - monotonicNowMs()
+            if (remainingMs <= 0) break
+            val eventSnapshot = com.mewmix.nabu.accessibility.UiSnapshotStore.awaitAfter(
+                sequence = observedSequence,
+                timeoutMs = remainingMs
+            ) ?: break
+            observedSequence = eventSnapshot.sequence
+            val promoted = com.mewmix.nabu.accessibility.NabuAccessibilityService.instance
+                ?.promoteSnapshotForAction(eventSnapshot)
+                ?: continue
+            val now = monotonicNowMs()
+            val candidate = observationFromSnapshot(
+                snapshot = promoted,
+                requestScreenshot = false,
+                captureStartedMs = now,
+                capturedMs = now,
+                source = "event_promotion"
+            )
+            latest?.let { cleanupArtifacts(it.artifactPaths) }
+            latest = candidate
+            if (beforeScreen != null && UiTransitionPolicy.isSettled(beforeScreen, candidate.screen, action)) break
+            if (action is UiActionStep.OpenApp && candidate.screen.packageName.equals(action.packageName, ignoreCase = true)) break
+        } while (true)
+
+        return latest ?: observe(requestScreenshot = false)
     }
 
     private suspend fun observeAfterAction(
@@ -1274,8 +1584,9 @@ class UiAutomationOrchestrator(
             LlmMessage(role = "user", content = userContent, images = images)
         )
         val structuredStartedMs = monotonicNowMs()
+        val decisionTools = buildDecisionTools(observation.screen, plannerElementLimit())
         val structuredResult = try {
-            plannerBackend.generateStructured(conversation, UI_DECISION_TOOLS)
+            plannerBackend.generateStructured(conversation, decisionTools)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -1423,22 +1734,81 @@ class UiAutomationOrchestrator(
     }
 
     private fun verifyRequestLevelAction(
+        goal: String,
         action: UiActionStep,
         before: UiScreenState?,
-        after: UiScreenState
-    ): Pair<Boolean, String> {
-        if (action is UiActionStep.OpenApp) {
-            val verified = after.packageName.equals(action.packageName, ignoreCase = true)
-            return if (verified) {
-                true to "Opened ${after.packageName} and verified it in the foreground."
-            } else {
-                false to "Expected ${action.packageName} to foreground, but observed ${after.packageName}."
+        after: UiScreenState?,
+        completesGoalWhenVerified: Boolean
+    ): GoalVerificationResult {
+        val postcondition = when {
+            after == null -> PostconditionResult(
+                status = PostconditionStatus.UNVERIFIABLE,
+                detail = "No trusted post-action screen state was observed for ${actionLabel(action)}.",
+                verificationStatus = UiVerificationStatus.UNVERIFIABLE,
+                evidenceCategory = "post_observation_missing"
+            )
+            action is UiActionStep.OpenApp -> {
+                if (after.packageName.equals(action.packageName, ignoreCase = true)) {
+                    PostconditionResult(
+                        status = PostconditionStatus.VERIFIED,
+                        detail = "Opened ${after.packageName} and verified it in the foreground.",
+                        verificationStatus = if (completesGoalWhenVerified) UiVerificationStatus.GOAL_VERIFIED else UiVerificationStatus.EXECUTED,
+                        evidenceCategory = "app_launch_package"
+                    )
+                } else {
+                    PostconditionResult(
+                        status = PostconditionStatus.FAILED,
+                        detail = "Expected ${action.packageName} to foreground, but observed ${after.packageName}.",
+                        verificationStatus = UiVerificationStatus.FAILED,
+                        evidenceCategory = "app_launch_mismatch"
+                    )
+                }
             }
+            before != null -> UiActionPostconditionVerifier.verify(action, before, after)
+            action == UiActionStep.OpenNotifications -> {
+                val eval = UiSystemSurfaceDetector.evaluate(after, SystemSurfaceKind.NOTIFICATION_SHADE)
+                PostconditionResult(
+                    status = if (eval.matched) PostconditionStatus.VERIFIED else PostconditionStatus.FAILED,
+                    detail = eval.detail,
+                    verificationStatus = if (eval.matched) UiVerificationStatus.GOAL_VERIFIED else UiVerificationStatus.FAILED,
+                    evidenceCategory = "system_surface_notification_shade"
+                )
+            }
+            action == UiActionStep.OpenQuickSettings -> {
+                val eval = UiSystemSurfaceDetector.evaluate(after, SystemSurfaceKind.QUICK_SETTINGS)
+                PostconditionResult(
+                    status = if (eval.matched) PostconditionStatus.VERIFIED else PostconditionStatus.FAILED,
+                    detail = eval.detail,
+                    verificationStatus = if (eval.matched) UiVerificationStatus.GOAL_VERIFIED else UiVerificationStatus.FAILED,
+                    evidenceCategory = "system_surface_quick_settings"
+                )
+            }
+            else -> PostconditionResult(
+                status = PostconditionStatus.UNVERIFIABLE,
+                detail = "No trusted pre-action screen was available to verify ${actionLabel(action)}.",
+                verificationStatus = UiVerificationStatus.UNVERIFIABLE,
+                evidenceCategory = "pre_observation_missing"
+            )
         }
-        val source = before
-            ?: return false to "No trusted pre-action screen was available to verify ${actionLabel(action)}."
-        val result = UiActionPostconditionVerifier.verify(action, source, after)
-        return (result.status == PostconditionStatus.VERIFIED) to result.detail
+        val candidates = if (action is UiActionStep.OpenApp) {
+            val resolved = DeviceAction.findGoalAppCandidates(context, goal)
+            if (resolved.any { it.packageName.equals(action.packageName, ignoreCase = true) }) {
+                resolved
+            } else {
+                listOf(DeviceAction.AppCandidate(action.packageName, action.packageName)) + resolved
+            }
+        } else {
+            DeviceAction.findGoalAppCandidates(context, goal)
+        }
+        return UiGoalVerifier.verify(
+            goal = goal,
+            action = action,
+            before = before,
+            after = after,
+            transportStatus = UiTransportStatus.ACCEPTED,
+            postcondition = postcondition,
+            goalAppCandidates = candidates
+        )
     }
 
     private fun directRequestProgress(resolution: DirectRequestResolution.Resolved): String =
@@ -1461,36 +1831,42 @@ class UiAutomationOrchestrator(
         sequence: Int,
         action: UiActionStep,
         before: UiScreenState?,
-        after: UiScreenState,
-        verification: String,
+        after: UiScreenState?,
+        verificationResult: GoalVerificationResult,
         mechanism: String,
         startedMs: Long
     ) {
         activeSessionId?.let { sessionId ->
             AutomationSessionManager.actionCompleted(
                 sessionId,
-                "${actionLabel(action)}: ${before?.packageName ?: "request"} → ${after.packageName}"
+                "${actionLabel(action)}: ${before?.packageName ?: "request"} → ${after?.packageName ?: "unknown"} (${verificationResult.status.name})"
             )
         }
+        val targetContext = before ?: after
         onStepRecord?.invoke(
             ActionStepRecord(
                 sequence = sequence,
                 observation = before?.screenId ?: "request_level",
                 reasoningSummary = "Deterministic ${actionLabel(action)}",
                 action = actionLabel(action),
-                target = getTargetLabel(action, before ?: after),
-                result = "succeeded",
-                postActionObservation = after.screenId,
-                verification = verification,
+                target = if (targetContext != null) getTargetLabel(action, targetContext) else actionLabel(action),
+                result = if (verificationResult.status.isFailure) "failed" else "succeeded",
+                postActionObservation = after?.screenId ?: "unavailable",
+                verification = verificationResult.summary,
                 latencyMs = (monotonicNowMs() - startedMs).coerceAtLeast(0L),
                 sourcePackage = before?.packageName,
-                resultPackage = after.packageName,
+                resultPackage = after?.packageName,
                 actionFamily = actionFamily(action),
                 semanticAction = actionLabel(action),
                 executionMechanism = mechanism,
-                verificationStatus = PostconditionStatus.VERIFIED.name.lowercase(),
+                verificationStatus = verificationResult.status.name.lowercase(),
+                transportStatus = verificationResult.transportStatus.name.lowercase(),
+                postconditionStatus = verificationResult.postconditionStatus.name.lowercase(),
+                goalVerificationStatus = verificationResult.status.name.lowercase(),
+                evidenceCategory = verificationResult.evidenceCategory,
+                checkpointId = verificationResult.checkpointId,
                 sourceWindow = before?.activityName,
-                resultWindow = after.activityName
+                resultWindow = after?.activityName
             )
         )
     }
@@ -2250,76 +2626,68 @@ class UiAutomationOrchestrator(
         private val PLANNER_OPERATION_SCHEMA = PLANNER_OPERATION_TOKENS.joinToString(",", "[", "]") { "\"$it\"" }
         private val PLANNER_OPERATION_PROMPT = PLANNER_OPERATION_TOKENS.joinToString(", ")
 
-        private val UI_DECISION_TOOLS = listOf(
-            LlmToolDefinition(
-                name = "ui_act",
-                description = "Choose exactly one next Android accessibility action from the supplied screen state.",
-                parametersJson = """
-                    {
-                      "type":"object",
-                      "properties":{
-                        "op":{"type":"string","enum":$PLANNER_OPERATION_SCHEMA},
-                        "target":{"type":"string","description":"A supplied pN target ID; required for tap, long_press, and type_text."},
-                        "expect":{"type":"string","enum":["surface_change","mutation","content_appear","no_change"]},
-                        "text":{"type":"string"},
-                        "direction":{"type":"string","enum":["up","down","left","right"]},
-                        "package_name":{"type":"string"},
-                        "page":{"type":"string"},
-                        "url":{"type":"string"},
-                        "mode":{"type":"string"},
-                        "facing":{"type":"string"},
-                        "ms":{"type":"integer"},
-                        "target_package":{"type":"string"},
-                        "expected_destination":{"type":"string"}
-                        ,"action":{"type":"string","description":"For node_action, one action token advertised on the target."}
-                        ,"action_ref":{"type":"string","pattern":"^ca[0-9]+$","description":"For custom_action, one ref advertised on the target."}
-                        ,"value":{"type":"number"}
-                        ,"selection_start":{"type":"integer"}
-                        ,"selection_end":{"type":"integer"}
-                        ,"row":{"type":"integer"}
-                        ,"column":{"type":"integer"}
-                        ,"granularity":{"type":"string"}
-                        ,"extend_selection":{"type":"boolean"}
-                        ,"x":{"type":"integer"}
-                        ,"y":{"type":"integer"}
-                        ,"duration_ms":{"type":"integer"}
-                        ,"global_action":{"type":"string","description":"For global_action, one token from current system_actions."}
-                        ,"gesture":{"type":"string","enum":["tap_point","double_tap","long_press_point","press_and_hold","swipe_path","drag_drop","polyline_drag","pinch_in","pinch_out","two_finger_swipe"]}
-                        ,"destination_target":{"type":"string","description":"A supplied pN destination for drag_drop."}
-                        ,"start_x":{"type":"number","minimum":0,"maximum":1}
-                        ,"start_y":{"type":"number","minimum":0,"maximum":1}
-                        ,"end_x":{"type":"number","minimum":0,"maximum":1}
-                        ,"end_y":{"type":"number","minimum":0,"maximum":1}
-                        ,"center_x":{"type":"number","minimum":0,"maximum":1}
-                        ,"center_y":{"type":"number","minimum":0,"maximum":1}
-                        ,"points":{"type":"string","description":"At most 8 normalized x,y pairs separated by semicolons."}
-                        ,"html_element":{"type":"string"}
-                        ,"scroll_amount":{"type":"number","exclusiveMinimum":0}
-                      },
-                      "required":["op"],
-                      "additionalProperties":false
-                    }
-                """.trimIndent()
-            ),
-            LlmToolDefinition(
-                name = "ui_ask",
-                description = "Ask the user one question only when the target or required information is ambiguous.",
-                parametersJson = """{"type":"object","properties":{"question":{"type":"string"}},"required":["question"],"additionalProperties":false}"""
-            ),
-            LlmToolDefinition(
-                name = "ui_finish",
-                description = "Finish only when current screen state or successful action history proves the goal is complete.",
-                parametersJson = """{"type":"object","properties":{"outcome":{"type":"string"}},"required":["outcome"],"additionalProperties":false}"""
+        fun buildDecisionTools(screen: UiScreenState, limit: Int = MAX_PROMPT_ELEMENTS): List<LlmToolDefinition> {
+            val candidates = screen.plannerElements(limit)
+            val targetEnumJson = if (candidates.isNotEmpty()) {
+                candidates.indices.joinToString(",", "[", "]") { "\"p$it\"" }
+            } else {
+                "[\"p0\"]"
+            }
+            return listOf(
+                LlmToolDefinition(
+                    name = "ui_act",
+                    description = "Choose exactly one next Android UI action from the supplied screen state.",
+                    parametersJson = """
+                        {
+                          "type":"object",
+                          "properties":{
+                            "op":{"type":"string","enum":$PLANNER_OPERATION_SCHEMA},
+                            "target":{"type":"string","enum":$targetEnumJson,"description":"Supplied candidate ID."},
+                            "expect":{"type":"string","enum":["surface_change","mutation","content_appear","no_change"]},
+                            "text":{"type":"string"},
+                            "direction":{"type":"string","enum":["up","down","left","right"]},
+                            "package_name":{"type":"string"},
+                            "page":{"type":"string"},
+                            "url":{"type":"string"},
+                            "mode":{"type":"string"},
+                            "facing":{"type":"string"},
+                            "ms":{"type":"integer"},
+                            "target_package":{"type":"string"},
+                            "expected_destination":{"type":"string"},
+                            "action":{"type":"string"},
+                            "action_ref":{"type":"string","pattern":"^ca[0-9]+$"},
+                            "value":{"type":"number"},
+                            "global_action":{"type":"string"},
+                            "gesture":{"type":"string","enum":["tap_point","double_tap","long_press_point","press_and_hold","swipe_path","drag_drop","polyline_drag","pinch_in","pinch_out","two_finger_swipe"]},
+                            "destination_target":{"type":"string","enum":$targetEnumJson}
+                          },
+                          "required":["op"],
+                          "additionalProperties":false
+                        }
+                    """.trimIndent()
+                ),
+                LlmToolDefinition(
+                    name = "ui_ask",
+                    description = "Ask the user one question only when the target or required information is ambiguous.",
+                    parametersJson = """{"type":"object","properties":{"question":{"type":"string"}},"required":["question"],"additionalProperties":false}"""
+                ),
+                LlmToolDefinition(
+                    name = "ui_finish",
+                    description = "Finish only when current screen state or successful action history proves the goal is complete.",
+                    parametersJson = """{"type":"object","properties":{"outcome":{"type":"string"}},"required":["outcome"],"additionalProperties":false}"""
+                )
             )
-        )
+        }
 
         private val JSON_RETRY_SYSTEM_PROMPT = """
             Return exactly one V3 JSON object and no other text.
-            Act: {"v":3,"kind":"act","op":"tap","target":"p0","expect":"surface_change"}
-            Ask: {"v":3,"kind":"ask","question":"Which item should I choose?"}
-            Finish: {"v":3,"kind":"finish","outcome":"The requested state is verified."}
+            Act: {"v":3,"kind":"act","op":"<operation>","target":"<target_id>","expect":"<expected_effect>"}
+            Ask: {"v":3,"kind":"ask","question":"<clarification_question>"}
+            Finish: {"v":3,"kind":"finish","outcome":"<completion_summary>"}
             Put action inputs in "args", for example:
-            {"v":3,"kind":"act","op":"type_text","target":"p1","args":{"text":"hello"},"expect":"mutation"}
+            {"v":3,"kind":"act","op":"type_text","target":"<target_id>","args":{"text":"<text>"},"expect":"mutation"}
+            {"v":3,"kind":"act","op":"scroll","target":"<target_id>","args":{"direction":"down"},"expect":"mutation"}
+            {"v":3,"kind":"act","op":"open_app","args":{"package_name":"<package_name>"},"expect":"surface_change"}
             Allowed ops: $PLANNER_OPERATION_PROMPT.
             For node_action, supply args.action using only an action advertised on that target.
             For custom_action, supply args.action_ref using only a caN ref advertised on that target.
@@ -2333,13 +2701,13 @@ class UiAutomationOrchestrator(
 
         private val PLANNER_SYSTEM_PROMPT = """
             Choose exactly one next Android UI decision. Return one V3 JSON object only, without Markdown.
-            Act: {"v":3,"kind":"act","op":"tap","target":"p0","expect":"surface_change"}
-            Ask: {"v":3,"kind":"ask","question":"Which item should I choose?"}
-            Finish: {"v":3,"kind":"finish","outcome":"The requested state is verified."}
-            Put action inputs in "args":
-            {"v":3,"kind":"act","op":"type_text","target":"p1","args":{"text":"hello"},"expect":"mutation"}
-            {"v":3,"kind":"act","op":"scroll","target":"p2","args":{"direction":"down"},"expect":"mutation"}
-            {"v":3,"kind":"act","op":"open_app","args":{"package_name":"com.example"},"expect":"surface_change"}
+            Act: {"v":3,"kind":"act","op":"<operation>","target":"<target_id>","expect":"<expected_effect>"}
+            Ask: {"v":3,"kind":"ask","question":"<clarification_question>"}
+            Finish: {"v":3,"kind":"finish","outcome":"<completion_summary>"}
+            Put action inputs in "args", for example:
+            {"v":3,"kind":"act","op":"type_text","target":"<target_id>","args":{"text":"<text>"},"expect":"mutation"}
+            {"v":3,"kind":"act","op":"scroll","target":"<target_id>","args":{"direction":"down"},"expect":"mutation"}
+            {"v":3,"kind":"act","op":"open_app","args":{"package_name":"<package_name>"},"expect":"surface_change"}
             Allowed ops: $PLANNER_OPERATION_PROMPT.
             Prefer node_action with an action advertised on the target; use custom_action only with that target's advertised caN ref.
             Use global_action only with a token in current system_actions.

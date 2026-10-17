@@ -44,6 +44,23 @@ class UiSnapshotFingerprintTest {
     }
 
     @Test
+    fun `fingerprint changes when hint changes`() {
+        val before = snapshot(text = "").let {
+            it.copy(
+                rootNode = it.rootNode?.copy(hintText = "Message"),
+                stateFingerprint = UiSnapshotFingerprint.compute(it.packageName, it.windowTitle, it.rotation, it.rootNode?.copy(hintText = "Message"))
+            )
+        }
+        val after = snapshot(text = "").let {
+            it.copy(
+                rootNode = it.rootNode?.copy(hintText = "Search"),
+                stateFingerprint = UiSnapshotFingerprint.compute(it.packageName, it.windowTitle, it.rotation, it.rootNode?.copy(hintText = "Search"))
+            )
+        }
+        assertNotEquals(before.stateFingerprint, after.stateFingerprint)
+    }
+
+    @Test
     fun `promotion requires the exact latest immutable observation`() {
         val expected = snapshot(text = "Settings").copy(id = "obs", sequence = 7L, windowId = 4)
 

@@ -340,11 +340,18 @@ object ActionRequestDispatcher {
             backendProvider = { acquireEligibleActionBackend(context, preferredModelId) },
             backendReadyProvider = { isConfiguredBackendReady(context, preferredModelId) },
             onBackendReleased = { releaseEligibleActionBackend(context) },
-            requestConfirmation = requestConfirmation ?: { prompt ->
-                // If no confirmation requester is provided (e.g. non-interactive background),
-                // reject potentially destructive unconfirmed actions safely.
-                DebugLogger.log("ActionRequestDispatcher: confirmation requested without interactive handler: $prompt")
-                false
+            requestConfirmation = { prompt ->
+                updateOwned(session.id, epoch) { current ->
+                    current.copy(
+                        status = ActionSessionStatus.WAITING_FOR_USER,
+                        pendingObjective = prompt,
+                        updatedAtMs = System.currentTimeMillis()
+                    )
+                }
+                (requestConfirmation ?: { p ->
+                    DebugLogger.log("ActionRequestDispatcher: confirmation requested without interactive handler: $p")
+                    false
+                }).invoke(prompt)
             },
             budget = AutomationBudget(maxExecutedActions = 14),
             isScheduled = false,
@@ -364,11 +371,15 @@ object ActionRequestDispatcher {
                         current.stepHistory,
                         stepRecord
                     )
+                    val stepVerificationStatus = parseVerificationStatus(
+                        stepRecord.goalVerificationStatus ?: stepRecord.verificationStatus
+                    )
                     current.copy(
                         stepHistory = updatedSteps,
                         currentStep = stepRecord.sequence,
                         lastObservedPackage = stepRecord.resultPackage ?: stepRecord.sourcePackage,
                         lastObservedWindow = stepRecord.resultWindow ?: stepRecord.sourceWindow,
+                        lastVerificationStatus = stepVerificationStatus ?: current.lastVerificationStatus,
                         metrics = current.metrics.copy(
                             totalStepLatencyMs = current.metrics.totalStepLatencyMs + stepRecord.latencyMs
                         ),
@@ -403,21 +414,31 @@ object ActionRequestDispatcher {
 
         val result = orchestrator.run(goal)
         updateOwned(session.id, epoch) { current ->
+            val terminalStatus = turnSteps.lastOrNull()
+                ?.let { parseVerificationStatus(it.goalVerificationStatus ?: it.verificationStatus) }
+                ?: if (!result.isError) UiVerificationStatus.GOAL_VERIFIED else UiVerificationStatus.FAILED
             val finalTurn = turn.copy(
                 assistantResponse = result.output,
                 stepRecords = turnSteps.toList(),
                 isComplete = true,
-                isError = result.isError
+                isError = result.isError || !terminalStatus.isGoalVerified,
+                verificationStatus = terminalStatus
             )
             val updatedTurns = ActionSessionWorkingMemory.appendTurn(current.turns, finalTurn)
             current.copy(
                 turns = updatedTurns,
                 lastVerificationResult = result.output,
+                lastVerificationStatus = terminalStatus,
                 updatedAtMs = System.currentTimeMillis()
             )
         }
         return result
     }
+
+    private fun parseVerificationStatus(raw: String?): UiVerificationStatus? =
+        raw?.uppercase()?.let { token ->
+            UiVerificationStatus.entries.firstOrNull { it.name == token }
+        }
 
     private fun isOwner(sessionId: String, epoch: Long): Boolean = synchronized(lock) {
         isOwnerLocked(sessionId, epoch)

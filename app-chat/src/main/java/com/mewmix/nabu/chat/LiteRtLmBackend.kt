@@ -114,7 +114,7 @@ class LiteRtLmBackend(
         } else {
             runtimeConfig.preferredBackend.uppercase().takeUnless { it == "DEFAULT" } ?: "AUTO"
         }
-        return "LITERT-LM / $accelerator"
+        return "LITERT-LM / Engine: $accelerator"
     }
 
     override fun initialize() {
