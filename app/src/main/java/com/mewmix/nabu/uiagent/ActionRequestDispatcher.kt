@@ -391,6 +391,15 @@ object ActionRequestDispatcher {
                     onStep?.invoke(stepRecord)
                 }
             },
+            onIncidentsUpdated = { active, resolved ->
+                updateOwned(session.id, epoch) { current ->
+                    current.copy(
+                        activeIncidents = active,
+                        resolvedIncidents = resolved,
+                        updatedAtMs = System.currentTimeMillis()
+                    )
+                }
+            },
             externalSessionId = session.id,
             onRuntimeEvent = { name, _, fields ->
                 if (name in metricRuntimeEvents) {

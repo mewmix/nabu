@@ -202,6 +202,8 @@ data class ActionSession(
     val currentStep: Int = 0,
     val turns: List<ActionConversationTurn> = emptyList(),
     val stepHistory: List<ActionStepRecord> = emptyList(),
+    val activeIncidents: List<UiExecutionIncident> = emptyList(),
+    val resolvedIncidents: List<UiExecutionIncident> = emptyList(),
     val pendingObjective: String? = null,
     val lastObservedPackage: String? = null,
     val lastObservedWindow: String? = null,
@@ -222,7 +224,8 @@ data class ActionSession(
         "last_verification" to (lastVerificationResult ?: ""),
         "last_verification_status" to lastVerificationStatus.name.lowercase(),
         "step_count" to stepHistory.size.toString(),
-        "turn_count" to turns.size.toString()
+        "turn_count" to turns.size.toString(),
+        "active_incident_count" to activeIncidents.size.toString()
     )
 
     fun toHandoffBundle(): android.os.Bundle = android.os.Bundle().apply {
@@ -237,6 +240,7 @@ data class ActionSession(
         putString("last_verification_status", lastVerificationStatus.name.lowercase())
         putInt("step_count", stepHistory.size)
         putInt("turn_count", turns.size)
+        putInt("active_incident_count", activeIncidents.size)
     }
 }
 

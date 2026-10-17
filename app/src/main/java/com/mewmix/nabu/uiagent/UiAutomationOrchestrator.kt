@@ -41,6 +41,7 @@ class UiAutomationOrchestrator(
     private val onProgress: (phase: String, detail: String) -> Unit = { _, _ -> },
     private val onModelOutput: (String) -> Unit = {},
     private val onStepRecord: ((ActionStepRecord) -> Unit)? = null,
+    private val onIncidentsUpdated: ((active: List<UiExecutionIncident>, resolved: List<UiExecutionIncident>) -> Unit)? = null,
     private val onUserQuestion: suspend (String) -> Unit = {},
     private val onUserQuestionCleared: suspend () -> Unit = {},
     private val externalSessionId: String? = null,
@@ -588,6 +589,14 @@ class UiAutomationOrchestrator(
         val successfulFingerprints = mutableSetOf<String>()
         val actionRepetitions = mutableMapOf<String, Int>()
         var goalAppCandidates = DeviceAction.findGoalAppCandidates(context, goal)
+        val recoveryTracker = UiRecoveryTracker(
+            budget = UiRecoveryBudget(sessionDeadlineMs = budget.maxWallClockDurationMs),
+            startedAtMs = monotonicNowMs(),
+            nowMs = ::monotonicNowMs
+        )
+        fun publishIncidents() {
+            onIncidentsUpdated?.invoke(recoveryTracker.activeIncidents, recoveryTracker.resolvedIncidents)
+        }
 
         DeviceAction.findExplicitGoalAppCandidate(context, goal)?.let { app ->
             val launchAction = UiActionStep.OpenApp(app.packageName)
@@ -1027,43 +1036,19 @@ class UiAutomationOrchestrator(
                     )
                 }
                 else -> {
-                    progress("Execute ${actionIndex + 1}", "Running ${actionLabel(action)}")
-                    val result = execute(action, observation, sessionId, goal)
-                    executedResult = result
-                    trace(
-                        "action_executed",
-                        mapOf(
-                            "index" to actionIndex,
-                            "action" to actionLabel(action),
-                            "status" to if (result.isError) "failed" else "succeeded",
-                            "transport_status" to if (result.isError) UiTransportStatus.REJECTED.name.lowercase() else UiTransportStatus.ACCEPTED.name.lowercase(),
-                            "result_length" to result.output.length,
-                            "result_hash" to hashContent(result.output)
+                    if (recoveryTracker.wasNonIdempotentAlreadyDispatched(action, observation.screen)) {
+                        val haltDecision = recoveryTracker.recordAndDecide(
+                            type = UiExecutionIncidentType.POSTCONDITION_FAILED,
+                            stepSequence = actionIndex + 1 + deterministicPrefixCount,
+                            action = action,
+                            goal = goal,
+                            detail = "Potentially non-idempotent action was already dispatched on this screen.",
+                            beforeScreen = observation.screen,
+                            currentScreen = observation.screen,
+                            actionAlreadyDispatched = true,
+                            goalAppCandidates = goalAppCandidates
                         )
-                    )
-                    if (result.isError) {
-                        logger(
-                            "UiAutomation execution failed action=${actionLabel(action)} " +
-                                "resultLength=${result.output.length} resultHash=${hashContent(result.output)}"
-                        )
-                        actionHistory.add(
-                            UiActionHistoryEntry(
-                                index = actionIndex,
-                                action = actionLabel(action),
-                                targetElementId = getTargetElementId(action),
-                                targetLabel = getTargetLabel(action, observation.screen),
-                                sourceScreenId = observation.screen.screenId,
-                                resultScreenId = observation.screen.screenId,
-                                outcome = Outcome.FAILED,
-                                changedScreen = false,
-                                detail = result.output,
-                                sourcePackage = observation.screen.packageName,
-                                resultPackage = observation.screen.packageName
-                            )
-                        )
-                        val leaseRejected = result.output.contains("lease", ignoreCase = true) ||
-                            result.output.contains("stale", ignoreCase = true) ||
-                            result.output.contains("drifted", ignoreCase = true)
+                        publishIncidents()
                         emitStepRecord(
                             ActionStepRecord(
                                 sequence = actionIndex + 1 + deterministicPrefixCount,
@@ -1073,32 +1058,177 @@ class UiAutomationOrchestrator(
                                 target = getTargetLabel(action, observation.screen),
                                 result = "failed",
                                 postActionObservation = observation.screen.screenId,
-                                verification = result.output,
+                                verification = haltDecision.summary,
                                 latencyMs = monotonicNowMs() - stepStartMs,
                                 sourcePackage = observation.screen.packageName,
                                 resultPackage = observation.screen.packageName,
                                 actionFamily = actionFamily(action),
                                 semanticAction = actionLabel(action),
-                                executionMechanism = executionMechanism(action, executedResult),
+                                executionMechanism = executionMechanism(action, null),
                                 verificationStatus = UiVerificationStatus.FAILED.name.lowercase(),
                                 sourceWindow = observation.screen.activityName,
                                 resultWindow = observation.screen.activityName,
                                 transportStatus = UiTransportStatus.REJECTED.name.lowercase(),
                                 postconditionStatus = PostconditionStatus.FAILED.name.lowercase(),
                                 goalVerificationStatus = UiVerificationStatus.FAILED.name.lowercase(),
-                                evidenceCategory = if (leaseRejected) "lease_rejected" else "transport_rejected",
+                                evidenceCategory = "non_idempotent_duplicate_blocked",
                                 checkpointId = "transport",
                                 sessionId = sessionId,
                                 observationId = observation.bridgeObservationId,
                                 beforeStateFingerprint = observation.screen.screenId,
                                 afterStateFingerprint = observation.screen.screenId,
-                                leaseValidationOutcome = if (leaseRejected) "rejected" else "authorized",
-                                failureClassification = if (leaseRejected) "STALE_OBSERVATION" else "TRANSPORT_REJECTED"
+                                leaseValidationOutcome = "authorized",
+                                failureClassification = haltDecision.incident.type.name,
+                                recoverySummary = haltDecision.summary
                             ),
                             rawGoal = goal
                         )
-                        observation = observe() ?: return@execution failure("UI action failed and screen could not be observed.")
-                        return@repeat
+                        return@execution failure(haltDecision.summary)
+                    }
+                    progress("Execute ${actionIndex + 1}", "Running ${actionLabel(action)}")
+                    var effectiveAction = action
+                    var preRecoveryRetryCount = 0
+                    var preRecoverySummary: String? = null
+                    var result = execute(effectiveAction, observation, sessionId, goal)
+                    executedResult = result
+                    trace(
+                        "action_executed",
+                        mapOf(
+                            "index" to actionIndex,
+                            "action" to actionLabel(effectiveAction),
+                            "status" to if (result.isError) "failed" else "succeeded",
+                            "transport_status" to if (result.isError) UiTransportStatus.REJECTED.name.lowercase() else UiTransportStatus.ACCEPTED.name.lowercase(),
+                            "result_length" to result.output.length,
+                            "result_hash" to hashContent(result.output)
+                        )
+                    )
+                    if (!result.isError) {
+                        recoveryTracker.markNonIdempotentDispatched(effectiveAction, observation.screen, goal)
+                    }
+                    if (result.isError) {
+                        logger(
+                            "UiAutomation execution failed action=${actionLabel(effectiveAction)} " +
+                                "resultLength=${result.output.length} resultHash=${hashContent(result.output)}"
+                        )
+                        val freshObs = observe()
+                        val incidentType = UiRecoveryPolicy.classifyExecutionFailure(
+                            action = effectiveAction,
+                            errorMessage = result.output,
+                            beforeScreen = observation.screen,
+                            currentScreen = freshObs?.screen
+                        )
+                        val decision = recoveryTracker.recordAndDecide(
+                            type = incidentType,
+                            stepSequence = actionIndex + 1 + deterministicPrefixCount,
+                            action = effectiveAction,
+                            goal = goal,
+                            detail = result.output,
+                            beforeScreen = observation.screen,
+                            currentScreen = freshObs?.screen,
+                            actionAlreadyDispatched = false,
+                            goalAppCandidates = goalAppCandidates
+                        )
+                        publishIncidents()
+                        trace(
+                            "recovery_decision",
+                            mapOf(
+                                "index" to actionIndex,
+                                "incident_type" to decision.incident.type.name,
+                                "attempt" to decision.incident.attemptCount,
+                                "decision" to decision::class.simpleName,
+                                "summary" to decision.summary
+                            )
+                        )
+                        if (decision is UiRecoveryDecision.RebindAction && freshObs != null) {
+                            if (decision.delayMs > 0L) delay(decision.delayMs)
+                            val rebindResult = execute(decision.replacementAction, freshObs, sessionId, goal)
+                            if (!rebindResult.isError) {
+                                observation = freshObs
+                                effectiveAction = decision.replacementAction
+                                result = rebindResult
+                                executedResult = rebindResult
+                                preRecoveryRetryCount = decision.incident.attemptCount
+                                preRecoverySummary = decision.summary
+                                recoveryTracker.markNonIdempotentDispatched(effectiveAction, observation.screen, goal)
+                                recoveryTracker.resolveIncident(incidentType, decision.summary)
+                                publishIncidents()
+                            }
+                        }
+                        if (result.isError) {
+                            val historyDetail = when (decision) {
+                                is UiRecoveryDecision.ReplanWithEvidence -> "${result.output} | Recovery: ${decision.plannerHint}"
+                                else -> "${result.output} | Recovery: ${decision.summary}"
+                            }
+                            actionHistory.add(
+                                UiActionHistoryEntry(
+                                    index = actionIndex,
+                                    action = actionLabel(effectiveAction),
+                                    targetElementId = getTargetElementId(effectiveAction),
+                                    targetLabel = getTargetLabel(effectiveAction, observation.screen),
+                                    sourceScreenId = observation.screen.screenId,
+                                    resultScreenId = (freshObs ?: observation).screen.screenId,
+                                    outcome = Outcome.FAILED,
+                                    changedScreen = freshObs != null && freshObs.screen.screenId != observation.screen.screenId,
+                                    detail = historyDetail,
+                                    sourcePackage = observation.screen.packageName,
+                                    resultPackage = (freshObs ?: observation).screen.packageName
+                                )
+                            )
+                            val leaseRejected = incidentType == UiExecutionIncidentType.STALE_OBSERVATION
+                            emitStepRecord(
+                                ActionStepRecord(
+                                    sequence = actionIndex + 1 + deterministicPrefixCount,
+                                    observation = observation.screen.screenId,
+                                    reasoningSummary = actionLabel(effectiveAction),
+                                    action = actionLabel(effectiveAction),
+                                    target = getTargetLabel(effectiveAction, observation.screen),
+                                    result = "failed",
+                                    postActionObservation = (freshObs ?: observation).screen.screenId,
+                                    verification = result.output,
+                                    latencyMs = monotonicNowMs() - stepStartMs,
+                                    retryCount = decision.incident.attemptCount,
+                                    sourcePackage = observation.screen.packageName,
+                                    resultPackage = (freshObs ?: observation).screen.packageName,
+                                    actionFamily = actionFamily(effectiveAction),
+                                    semanticAction = actionLabel(effectiveAction),
+                                    executionMechanism = executionMechanism(effectiveAction, executedResult),
+                                    verificationStatus = UiVerificationStatus.FAILED.name.lowercase(),
+                                    sourceWindow = observation.screen.activityName,
+                                    resultWindow = (freshObs ?: observation).screen.activityName,
+                                    transportStatus = UiTransportStatus.REJECTED.name.lowercase(),
+                                    postconditionStatus = PostconditionStatus.FAILED.name.lowercase(),
+                                    goalVerificationStatus = UiVerificationStatus.FAILED.name.lowercase(),
+                                    evidenceCategory = if (leaseRejected) "lease_rejected" else "transport_rejected",
+                                    checkpointId = "transport",
+                                    sessionId = sessionId,
+                                    observationId = observation.bridgeObservationId,
+                                    beforeStateFingerprint = observation.screen.screenId,
+                                    afterStateFingerprint = (freshObs ?: observation).screen.screenId,
+                                    leaseValidationOutcome = if (leaseRejected) "rejected" else "authorized",
+                                    failureClassification = decision.incident.type.name,
+                                    recoverySummary = decision.summary
+                                ),
+                                rawGoal = goal
+                            )
+                            when (decision) {
+                                is UiRecoveryDecision.Abort,
+                                is UiRecoveryDecision.HaltNonIdempotentAction ->
+                                    return@execution failure(decision.summary)
+                                is UiRecoveryDecision.ReobserveWithBackoff -> {
+                                    delay(decision.delayMs)
+                                    observation = observe() ?: return@execution failure("UI action failed and screen could not be observed.")
+                                    return@repeat
+                                }
+                                else -> {
+                                    observation = freshObs ?: observe() ?: return@execution failure("UI action failed and screen could not be observed.")
+                                    return@repeat
+                                }
+                            }
+                        }
+                    }
+                    // If RebindAction succeeded above, continue with effectiveAction
+                    if (preRecoveryRetryCount > 0) {
+                        trace("recovery_rebind_succeeded", mapOf("index" to actionIndex, "summary" to preRecoverySummary))
                     }
                 }
             }
@@ -1106,7 +1236,39 @@ class UiAutomationOrchestrator(
             progress("Verify ${actionIndex + 1}", "Observing the resulting screen")
             trace("verification_started", mapOf("index" to actionIndex))
             val verifyStartedMs = monotonicNowMs()
-            val next = observeAfterAction(observation, action)
+            var next = observeAfterAction(observation, action)
+            var accessibilityRecoveryAttempts = 0
+            var accessibilityRecoverySummary: String? = null
+            while (next == null) {
+                val a11yDecision = recoveryTracker.recordAndDecide(
+                    type = UiExecutionIncidentType.ACCESSIBILITY_UNAVAILABLE,
+                    stepSequence = actionIndex + 1 + deterministicPrefixCount,
+                    action = action,
+                    goal = goal,
+                    detail = "Post-action observation returned null.",
+                    beforeScreen = observation.screen,
+                    currentScreen = null,
+                    actionAlreadyDispatched = true,
+                    goalAppCandidates = goalAppCandidates
+                )
+                publishIncidents()
+                if (a11yDecision is UiRecoveryDecision.ReobserveWithBackoff) {
+                    accessibilityRecoveryAttempts = a11yDecision.incident.attemptCount
+                    accessibilityRecoverySummary = a11yDecision.summary
+                    delay(a11yDecision.delayMs)
+                    next = observe()
+                    if (next != null) {
+                        recoveryTracker.resolveIncident(
+                            UiExecutionIncidentType.ACCESSIBILITY_UNAVAILABLE,
+                            "Recovered accessibility observation after ${accessibilityRecoveryAttempts} backoff attempt(s)."
+                        )
+                        publishIncidents()
+                    }
+                } else {
+                    accessibilityRecoverySummary = a11yDecision.summary
+                    break
+                }
+            }
             if (next == null) {
                 val unverifiableRecord = ActionStepRecord(
                     sequence = actionIndex + 1 + deterministicPrefixCount,
@@ -1118,6 +1280,7 @@ class UiAutomationOrchestrator(
                     postActionObservation = null,
                     verification = "UI action ran (executed), but the resulting screen could not be observed.",
                     latencyMs = monotonicNowMs() - stepStartMs,
+                    retryCount = accessibilityRecoveryAttempts,
                     sourcePackage = observation.screen.packageName,
                     resultPackage = null,
                     actionFamily = actionFamily(action),
@@ -1136,8 +1299,9 @@ class UiAutomationOrchestrator(
                     beforeStateFingerprint = observation.screen.screenId,
                     afterStateFingerprint = null,
                     leaseValidationOutcome = "authorized",
-                    failureClassification = "ACCESSIBILITY_UNAVAILABLE",
-                    verificationLatencyMs = (monotonicNowMs() - verifyStartedMs).coerceAtLeast(0L)
+                    failureClassification = UiExecutionIncidentType.ACCESSIBILITY_UNAVAILABLE.name,
+                    verificationLatencyMs = (monotonicNowMs() - verifyStartedMs).coerceAtLeast(0L),
+                    recoverySummary = accessibilityRecoverySummary
                 )
                 emitStepRecord(unverifiableRecord, rawGoal = goal)
                 return@execution failure("UI action ran (executed), but the resulting screen could not be observed (unverifiable).")
@@ -1173,23 +1337,45 @@ class UiAutomationOrchestrator(
 
             var finalNext = next
             var effectivePostcondition = builtInPostcondition
-            var recoveryRetryCount = 0
-            var recoverySummaryText: String? = null
+            var recoveryRetryCount = accessibilityRecoveryAttempts
+            var recoverySummaryText: String? = accessibilityRecoverySummary
+            var incidentClassification: String? = null
             if (builtInPostcondition.status == PostconditionStatus.FAILED) {
-                if (action is UiActionStep.PressBack || (action is UiActionStep.GlobalAction && action.action == "back")) {
-                    val visibleBack = DirectSemanticActionResolver.resolveVisibleBack(observation.screen)
-                    if (visibleBack != null) {
-                        recoveryRetryCount += 1
-                        val recoveryResult = execute(visibleBack, observation, sessionId, goal)
-                        if (!recoveryResult.isError) {
-                            val nextRecovery = observeAfterAction(observation, visibleBack)
-                            if (nextRecovery != null) {
-                                val recoveryPost = UiActionPostconditionVerifier.verify(visibleBack, observation.screen, nextRecovery.screen)
-                                if (recoveryPost.status.isMechanicalProgress) {
-                                    finalNext = nextRecovery
-                                    effectivePostcondition = recoveryPost
-                                    recoverySummaryText = "Recovered back navigation via visible toolbar button"
-                                }
+                val postDecision = recoveryTracker.recordAndDecide(
+                    type = UiExecutionIncidentType.POSTCONDITION_FAILED,
+                    stepSequence = actionIndex + 1 + deterministicPrefixCount,
+                    action = action,
+                    goal = goal,
+                    detail = builtInPostcondition.detail,
+                    beforeScreen = observation.screen,
+                    currentScreen = finalNext.screen,
+                    actionAlreadyDispatched = true,
+                    goalAppCandidates = goalAppCandidates
+                )
+                publishIncidents()
+                incidentClassification = postDecision.incident.type.name
+                recoveryRetryCount += 1
+                recoverySummaryText = postDecision.summary
+                if (postDecision is UiRecoveryDecision.RebindAction) {
+                    val recoveryResult = execute(postDecision.replacementAction, observation, sessionId, goal)
+                    if (!recoveryResult.isError) {
+                        val nextRecovery = observeAfterAction(observation, postDecision.replacementAction)
+                        if (nextRecovery != null) {
+                            val recoveryPost = UiActionPostconditionVerifier.verify(
+                                postDecision.replacementAction,
+                                observation.screen,
+                                nextRecovery.screen
+                            )
+                            if (recoveryPost.status.isMechanicalProgress) {
+                                finalNext = nextRecovery
+                                effectivePostcondition = recoveryPost
+                                recoverySummaryText = "Recovered back navigation via visible toolbar button"
+                                recoveryTracker.resolveIncident(
+                                    UiExecutionIncidentType.POSTCONDITION_FAILED,
+                                    recoverySummaryText
+                                )
+                                publishIncidents()
+                                incidentClassification = null
                             }
                         }
                     }
@@ -1215,6 +1401,28 @@ class UiAutomationOrchestrator(
                 expectedDestination = stepVerifiedDestination,
                 hasPendingUnconfirmedEffect = pendingExternalEffect != null
             )
+            if (!goalVerification.isGoalVerified &&
+                !postconditionFailed &&
+                observation.screen.packageName != null &&
+                !observation.screen.packageName.equals(finalNext.screen.packageName, ignoreCase = true) &&
+                goalAppCandidates.isNotEmpty() &&
+                finalNext.screen.packageName.orEmpty().lowercase() !in goalAppCandidates.map { it.packageName.lowercase() }
+            ) {
+                val navDecision = recoveryTracker.recordAndDecide(
+                    type = UiExecutionIncidentType.UNEXPECTED_NAVIGATION,
+                    stepSequence = actionIndex + 1 + deterministicPrefixCount,
+                    action = action,
+                    goal = goal,
+                    detail = "Observed transition from ${observation.screen.packageName} to ${finalNext.screen.packageName}.",
+                    beforeScreen = observation.screen,
+                    currentScreen = finalNext.screen,
+                    actionAlreadyDispatched = true,
+                    goalAppCandidates = goalAppCandidates
+                )
+                publishIncidents()
+                incidentClassification = UiExecutionIncidentType.UNEXPECTED_NAVIGATION.name
+                recoverySummaryText = navDecision.summary
+            }
             val verificationDurationMs = (monotonicNowMs() - verifyStartedMs).coerceAtLeast(0L)
             trace(
                 "verification_completed",
@@ -1278,9 +1486,9 @@ class UiAutomationOrchestrator(
                 sessionId,
                 "${actionLabel(action)}: ${observation.screen.packageName} → ${finalNext.screen.packageName} (${goalVerification.status.name.lowercase()})"
             )
-            val failureCategory = when {
-                postconditionFailed -> "POSTCONDITION_FAILED"
-                goalVerification.status == UiVerificationStatus.FAILED -> "GOAL_NOT_VERIFIED"
+            val failureCategory = incidentClassification ?: when {
+                postconditionFailed -> UiExecutionIncidentType.POSTCONDITION_FAILED.name
+                goalVerification.status == UiVerificationStatus.FAILED -> UiExecutionIncidentType.GOAL_NOT_VERIFIED.name
                 else -> null
             }
             val stepRecord = ActionStepRecord(
@@ -1318,6 +1526,8 @@ class UiAutomationOrchestrator(
             )
             emitStepRecord(stepRecord, rawGoal = goal)
             if (goalVerification.isGoalVerified) {
+                recoveryTracker.resolveAllActive("Goal verified: ${goalVerification.summary}")
+                publishIncidents()
                 trace(
                     "goal_condition_satisfied",
                     mapOf(
@@ -1332,6 +1542,8 @@ class UiAutomationOrchestrator(
                 return@execution success(goalVerification.summary)
             }
             UiGoalCompletionEvaluator.evaluate(goal, finalNext.screen, goalAppCandidates)?.let { completion ->
+                recoveryTracker.resolveAllActive("Goal completion evaluated: ${completion.summary}")
+                publishIncidents()
                 trace(
                     "goal_condition_satisfied",
                     mapOf(
