@@ -2570,16 +2570,40 @@ class UiAutomationOrchestrator(
                 add("prior_turns", turnsArray)
             }
             if (history.isNotEmpty()) {
-                val recentEntries = history.takeLast(8)
-                val olderEntries = history.dropLast(8)
+                val (recentEntries, compactedSummaries) = ActionSessionWorkingMemory.compactPlannerHistory(
+                    sessionId = activeSessionId ?: "session",
+                    goal = goal,
+                    history = history,
+                    rawWindowSize = ActionSessionWorkingMemory.MAX_RAW_RECENT_STEPS
+                )
+                val olderEntries = history.dropLast(ActionSessionWorkingMemory.MAX_RAW_RECENT_STEPS)
                 val olderSuccesses = olderEntries.count { it.outcome == Outcome.SUCCEEDED }
-                
                 if (olderSuccesses > 0) {
                     addProperty("older_successful_actions", olderSuccesses)
                 }
+                if (compactedSummaries.isNotEmpty()) {
+                    val compactedArray = JsonArray()
+                    compactedSummaries.forEach { summary ->
+                        compactedArray.add(JsonObject().apply {
+                            addProperty("trace_ref", summary.traceReference.toCompactTag())
+                            addProperty("status", summary.highestVerificationStatus.name.lowercase())
+                            addProperty("summary", summary.summaryText)
+                            if (summary.verifiedTransitions.isNotEmpty()) {
+                                add("verified_transitions", JsonArray().apply { summary.verifiedTransitions.forEach(::add) })
+                            }
+                            if (summary.failedAttempts.isNotEmpty()) {
+                                add("failed_attempts", JsonArray().apply { summary.failedAttempts.forEach(::add) })
+                            }
+                            if (summary.unresolvedUncertainties.isNotEmpty()) {
+                                add("unresolved", JsonArray().apply { summary.unresolvedUncertainties.forEach(::add) })
+                            }
+                        })
+                    }
+                    add("compacted_history", compactedArray)
+                }
 
                 val historyArray = JsonArray()
-                recentEntries.forEach { entry -> 
+                recentEntries.forEach { entry ->
                     historyArray.add(JsonObject().apply {
                         addProperty("action", entry.action)
                         entry.targetLabel?.let { addProperty("target_label", it) }

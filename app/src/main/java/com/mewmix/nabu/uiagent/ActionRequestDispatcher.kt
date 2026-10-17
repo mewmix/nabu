@@ -367,15 +367,26 @@ object ActionRequestDispatcher {
             },
             onStepRecord = { stepRecord ->
                 val published = updateOwned(session.id, epoch) { current ->
-                    val updatedSteps = ActionSessionWorkingMemory.appendStep(
+                    val appendedSteps = ActionSessionWorkingMemory.appendStep(
                         current.stepHistory,
                         stepRecord
+                    )
+                    val compacted = ActionSessionWorkingMemory.compactStepRecords(
+                        sessionId = current.id,
+                        goal = current.currentGoal,
+                        steps = appendedSteps,
+                        existingSummaries = current.compactedHistory,
+                        activeIncidents = current.activeIncidents
                     )
                     val stepVerificationStatus = parseVerificationStatus(
                         stepRecord.goalVerificationStatus ?: stepRecord.verificationStatus
                     )
                     current.copy(
-                        stepHistory = updatedSteps,
+                        stepHistory = compacted.allRetainedSteps,
+                        recentRawSteps = compacted.recentRawSteps,
+                        compactedHistory = compacted.compactedSummaries,
+                        taskConstraints = compacted.taskConstraints,
+                        activeIncidents = compacted.activeIncidents,
                         currentStep = stepRecord.sequence,
                         lastObservedPackage = stepRecord.resultPackage ?: stepRecord.sourcePackage,
                         lastObservedWindow = stepRecord.resultWindow ?: stepRecord.sourceWindow,
