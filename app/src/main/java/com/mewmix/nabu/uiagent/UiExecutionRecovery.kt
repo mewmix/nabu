@@ -563,6 +563,18 @@ internal object UiRecoveryPolicy {
         }
     }
 
+    private val GENERIC_RESOURCE_ID_SUFFIXES = setOf(
+        "title", "summary", "text", "text1", "text2", "icon", "icon1", "icon2",
+        "button", "button1", "button2", "button3", "content", "container", "row",
+        "item", "label", "value", "widget frame", "checkbox", "switch widget", "list"
+    )
+
+    private fun extractSpecificResourceLabel(resourceId: String?): String? {
+        val raw = resourceId?.substringAfterLast('/')?.replace('_', ' ')?.trim()?.lowercase()
+            ?.takeIf { it.isNotBlank() } ?: return null
+        return raw.takeUnless { it in GENERIC_RESOURCE_ID_SUFFIXES }
+    }
+
     private fun locateAlternativeSemanticTarget(
         action: UiActionStep,
         beforeScreen: UiScreenState?,
@@ -575,7 +587,7 @@ internal object UiRecoveryPolicy {
             originalElement?.text,
             originalElement?.contentDescription,
             originalElement?.hintText,
-            originalElement?.resourceId?.substringAfterLast('/')?.replace('_', ' ')
+            extractSpecificResourceLabel(originalElement?.resourceId)
         ).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
 
         if (searchLabels.isEmpty()) {
@@ -599,7 +611,7 @@ internal object UiRecoveryPolicy {
                 el.text,
                 el.contentDescription,
                 el.hintText,
-                el.resourceId?.substringAfterLast('/')?.replace('_', ' ')
+                extractSpecificResourceLabel(el.resourceId)
             ).map { it.trim().lowercase() }
             searchLabels.any { wanted ->
                 elTerms.any { candidate -> candidate == wanted || candidate.contains(wanted) }
